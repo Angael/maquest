@@ -16,8 +16,9 @@ A desktop app for writing stories, novels, screenplays and tabletop RPG campaign
 - Choose a view mode for everyday filtering. **Advanced** exposes individual node and connection filters and the full list of connection types.
 - Pin a card to keep its position during auto-layout. Movable cards are placed around pinned cards; pins are saved in the node's markdown frontmatter.
 - Connections drawn from a card's top, right, bottom, or left connector keep those attachment sides. Older connections without saved sides still attach automatically.
-- Select a card or connection to emphasize its immediate neighborhood and dim unrelated graph content.
-- Press **Delete** outside a text editor to delete the current selection, including selections made in the sidebar. Node deletion asks for confirmation.
+- Select a card or connection to emphasize its immediate neighborhood. Unrelated cards stay at 65% opacity and connections at 50%, keeping connection targets visible.
+- Press **Delete** outside a text editor to immediately delete the current selection, including selections made in the sidebar, without confirmation. Unselected children survive and are detached from deleted parents. Use undo to restore deleted nodes or connections.
+- The trash button in Recent moves a project to the system trash immediately, without confirmation; restore it through your system trash if needed.
 - Drag the inspector's left divider to resize it, or focus the divider and use the arrow keys. Its width is remembered.
 
 Undo/redo history belongs to the open desktop session, not the project files or MCP server. Conflicting external edits are protected rather than silently overwritten.

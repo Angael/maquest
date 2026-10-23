@@ -25,7 +25,7 @@ export const StoryCard = memo(function StoryCard({ data, selected }: NodeProps<N
         isMedia ? 'w-64' : 'w-56',
         selected ? 'shadow-amber-500/20 ring-2 ring-amber-400/70' : 'border-stone-800',
         data.emphasis === 'neighbor' && !selected && 'ring-1 ring-amber-200/40 shadow-amber-500/10',
-        data.emphasis === 'dimmed' && 'opacity-25',
+        data.emphasis === 'dimmed' && 'opacity-65',
       )}
       style={{ borderColor: selected ? undefined : `${S.color}55` }}
     >

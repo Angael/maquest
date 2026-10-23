@@ -164,7 +164,7 @@ export function Canvas() {
       const incident = focus.lines.has(id)
       return {
         selected,
-        style: { stroke: selected ? '#fbbf24' : s.color, strokeWidth: (s.width ?? 1.5) + (selected ? 2 : focus.active && incident ? 1 : 0), strokeDasharray: s.dash, opacity: focus.active && !incident ? 0.14 : 1 },
+        style: { stroke: selected ? '#fbbf24' : s.color, strokeWidth: (s.width ?? 1.5) + (selected ? 2 : focus.active && incident ? 1 : 0), strokeDasharray: s.dash, opacity: focus.active && !incident ? 0.5 : 1 },
         animated: s.animated && (!focus.active || incident),
         markerEnd: kind === 'contains' || kind === 'link' || kind === 'relationship' ? undefined : { type: MarkerType.ArrowClosed, color: selected ? '#fbbf24' : s.color },
       }
