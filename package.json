@@ -1,0 +1,17 @@
+{
+  "name": "maquest",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.3.4",
+  "scripts": {
+    "dev": "pnpm --filter @maquest/mcp build && pnpm --filter @maquest/desktop dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "tsx --test apps/desktop/src/main/history.test.ts packages/core/src/frontmatter.test.mjs",
+    "mcp:build": "pnpm --filter @maquest/mcp build",
+    "install:desktop": "bash scripts/install-desktop.sh"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.15"
+  }
+}

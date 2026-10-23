@@ -1,0 +1,59 @@
+@import 'tailwindcss';
+@import '@xyflow/react/dist/style.css';
+
+@theme {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-serif: 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  @apply bg-stone-950 text-stone-200 antialiased;
+}
+
+.react-flow {
+  --xy-background-color: transparent;
+  --xy-edge-label-background-color: #1c1917;
+  --xy-edge-label-color: #e7e5e4;
+  --xy-controls-button-background-color: #1c1917;
+  --xy-controls-button-background-color-hover: #292524;
+  --xy-controls-button-color: #e7e5e4;
+  --xy-controls-button-border-color: #292524;
+  --xy-minimap-background-color: #0c0a09;
+  --xy-handle-background-color: #78716c;
+  --xy-handle-border-color: #0c0a09;
+  --xy-selection-background-color: rgb(245 158 11 / 0.08);
+  --xy-selection-border: 1px dotted #f59e0b;
+}
+
+.canvas-workspace { container: canvas / inline-size; }
+@container canvas (max-width: 620px) {
+  .canvas-toolbar { max-width: calc(100% - 32px); }
+  .canvas-workspace .react-flow__panel.canvas-modes { top: 104px; right: auto; left: 0; max-width: calc(100% - 32px); }
+  .canvas-modes > div { width: 100%; }
+}
+@container canvas (max-width: 820px) {
+  .react-flow__panel.bottom.center > div:first-child { display: none; }
+}
+
+.prose-md {
+  @apply font-serif text-[15px] leading-7 text-stone-300;
+}
+.prose-md h1 { @apply mt-4 mb-2 text-2xl font-semibold text-stone-100; }
+.prose-md h2 { @apply mt-4 mb-2 text-xl font-semibold text-stone-100; }
+.prose-md h3 { @apply mt-3 mb-1 text-lg font-semibold text-stone-100; }
+.prose-md p { @apply my-2; }
+.prose-md ul { @apply my-2 list-disc pl-5; }
+.prose-md ol { @apply my-2 list-decimal pl-5; }
+.prose-md blockquote { @apply my-3 border-l-2 border-amber-500/60 pl-3 text-stone-400 italic; }
+.prose-md code { @apply rounded bg-stone-800 px-1 font-mono text-[13px]; }
+.prose-md a { @apply text-amber-400 underline; }
+.prose-md img,
+.prose-md video { @apply my-3 max-h-96 rounded-md; }
+.prose-md table { @apply my-3 w-full text-sm; }
+.prose-md th,
+.prose-md td { @apply border border-stone-800 px-2 py-1; }
