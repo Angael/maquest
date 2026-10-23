@@ -20,6 +20,7 @@ A desktop app for writing stories, novels, screenplays and tabletop RPG campaign
 - Press **Delete** outside a text editor to immediately delete the current selection, including selections made in the sidebar, without confirmation. Unselected children survive and are detached from deleted parents. Use undo to restore deleted nodes or connections.
 - The trash button in Recent moves a project to the system trash immediately, without confirmation; restore it through your system trash if needed.
 - Drag the inspector's left divider to resize it, or focus the divider and use the arrow keys. Its width is remembered.
+- Click a sidebar section heading (Stories, Characters, Locations, Factions, Items, or Notes) to collapse or expand it independently; focused headings also support Enter and Space. The **+** button stays available when collapsed and expands the section when adding a node.
 
 Undo/redo history belongs to the open desktop session, not the project files or MCP server. Conflicting external edits are protected rather than silently overwritten.
 

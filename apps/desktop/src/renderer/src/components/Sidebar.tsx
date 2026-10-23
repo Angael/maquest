@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import clsx from 'clsx'
 import { useReactFlow } from '@xyflow/react'
 import { ChevronRight, Plus } from 'lucide-react'
@@ -76,15 +76,28 @@ function Tree({ node, depth }: { node: OutlineNode; depth: number }) {
 
 function Section({ title, type, children }: { title: string; type: NodeType; children: React.ReactNode }) {
   const create = useCreateNode()
+  const [open, setOpen] = useState(true)
+  const contentId = useId()
   return (
     <div className="mb-3">
       <div className="group flex items-center px-2 py-1 text-[11px] font-medium tracking-wider text-stone-500 uppercase">
-        {title}
-        <button title={`New ${type}`} className="ml-auto rounded p-0.5 hover:bg-stone-800 hover:text-stone-200" onClick={() => void create(type)}>
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={contentId}
+          className="flex min-w-0 flex-1 items-center gap-1 rounded text-left uppercase outline-none hover:text-stone-200 focus-visible:ring-1 focus-visible:ring-amber-500/60"
+          onClick={() => setOpen((value) => !value)}
+        >
+          <ChevronRight size={14} className={clsx('shrink-0 transition-transform', open && 'rotate-90')} />
+          {title}
+        </button>
+        <button type="button" title={`New ${type}`} className="ml-auto rounded p-0.5 outline-none hover:bg-stone-800 hover:text-stone-200 focus-visible:ring-1 focus-visible:ring-amber-500/60" onClick={() => { setOpen(true); void create(type) }}>
           <Plus size={14} />
         </button>
       </div>
-      {children}
+      <div id={contentId} hidden={!open}>
+        {children}
+      </div>
     </div>
   )
 }
