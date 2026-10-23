@@ -85,6 +85,10 @@ export const handlers = {
     current = null
     history = new ProjectHistory()
   },
+  /** Removes only the recent entry; project files are left untouched. */
+  removeRecent: (root: string) => {
+    fs.writeFileSync(recentFile(), JSON.stringify(readRecent().filter((p) => p !== root), null, 2))
+  },
   /** Moves a project folder to the OS trash (recoverable) and drops it from the recent list. */
   trash: async (root: string) => {
     if (!Project.isProject(root)) throw new Error(`Not a Maquest project: ${root}`)

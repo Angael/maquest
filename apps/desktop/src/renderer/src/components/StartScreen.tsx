@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { FolderOpen, Plus, Sparkles, Trash2 } from 'lucide-react'
+import { FolderOpen, Plus, Sparkles, Trash2, X } from 'lucide-react'
 import { PROJECT_KINDS, type ProjectKind } from '@maquest/core/schema'
 import { api } from '../lib/api'
 import { useRecent } from '../lib/queries'
@@ -11,6 +11,21 @@ export function StartScreen() {
   const { data: recent } = useRecent()
   const [name, setName] = useState('')
   const [kind, setKind] = useState<ProjectKind>('mixed')
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+  const updateRecent = async (root: string, trash: boolean) => {
+    setError(null)
+    setBusy(root)
+    try {
+      if (trash) await api.trash(root)
+      else await api.removeRecent(root)
+      await qc.invalidateQueries({ queryKey: ['app'] })
+    } catch (err) {
+      setError(`${err instanceof Error ? err.message : String(err)}. You can remove the entry from Recent without deleting its folder.`)
+    } finally {
+      setBusy(null)
+    }
+  }
   const done = (r: unknown) => r && qc.invalidateQueries()
 
   return (
@@ -47,6 +62,8 @@ export function StartScreen() {
           </div>
         </div>
 
+        {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
+
         {!!recent?.length && (
           <div>
             <Label>Recent</Label>
@@ -62,13 +79,21 @@ export function StartScreen() {
                   </button>
                   <button
                     title="Move project to trash"
-                    className="px-2 text-stone-600 opacity-0 group-hover:opacity-100 hover:text-red-400"
-                    onClick={async () => {
-                      await api.trash(r.root)
-                      void qc.invalidateQueries({ queryKey: ['app'] })
-                    }}
+                    aria-label={`Move ${r.config.name} to trash`}
+                    disabled={busy !== null}
+                    className="px-2 text-stone-500 hover:text-red-400 disabled:opacity-40"
+                    onClick={() => void updateRecent(r.root, true)}
                   >
                     <Trash2 size={15} />
+                  </button>
+                  <button
+                    title="Remove from recent (keep project files)"
+                    aria-label={`Remove ${r.config.name} from recent`}
+                    disabled={busy !== null}
+                    className="px-2 text-stone-500 hover:text-stone-200 disabled:opacity-40"
+                    onClick={() => void updateRecent(r.root, false)}
+                  >
+                    <X size={15} />
                   </button>
                 </div>
               ))}
