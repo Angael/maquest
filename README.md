@@ -11,6 +11,7 @@ A desktop app for writing stories, novels, screenplays and tabletop RPG campaign
 
 ## Canvas and editing
 
+- Focus the canvas and press **N** to create a note at its center, or **double-click empty canvas** to create one at the pointer. The new note is selected for editing; use **Add** for other node types. Double-click no longer zooms the canvas; use the wheel or zoom controls instead.
 - Drag a selection box on empty canvas to select several cards; Shift-click or Ctrl/⌘-click adds to the selection. Drag a selected card to move the group.
 - Undo persisted canvas edits with **Ctrl/⌘+Z**; redo with **Ctrl+Y** or **Ctrl/⌘+Shift+Z**. Editing text keeps the editor's own undo history.
 - Choose a view mode for everyday filtering. **Advanced** exposes individual node and connection filters and the full list of connection types.

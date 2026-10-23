@@ -59,6 +59,16 @@ export function Canvas() {
   }, [all, graph, selection, selectedNodeIds, select, selectNodes])
   const flow = useReactFlow()
   const create = useCreateNode()
+  const [createError, setCreateError] = useState<Error | null>(null)
+  const spawnNote = async (position?: { x: number; y: number }) => {
+    setCreateError(null)
+    try {
+      await create('note', { position, parent: storyScope ?? undefined })
+      useUI.setState((state) => ({ hiddenNodes: state.hiddenNodes.filter((type) => type !== 'note') }))
+    } catch (cause) {
+      setCreateError(cause instanceof Error ? cause : new Error(String(cause)))
+    }
+  }
   const addEdge = useAction(api.addEdge)
   const setLayout = useAction(api.setLayout)
   const undo = useAction(api.undo)
@@ -180,10 +190,14 @@ export function Canvas() {
     }
     return out
   }, [visible, graph, hiddenEdges, selection, focus])
-  const error = undo.error ?? redo.error ?? history.error ?? setLayout.error ?? addEdge.error
+  const error = createError ?? undo.error ?? redo.error ?? history.error ?? setLayout.error ?? addEdge.error
 
   return (
-    <div className="canvas-workspace h-full w-full outline-none" tabIndex={-1} onPointerDownCapture={(event) => {
+    <div className="canvas-workspace h-full w-full outline-none" tabIndex={0} aria-label="Story canvas" aria-keyshortcuts="N" onKeyDown={(event) => {
+      if (event.target !== event.currentTarget || event.defaultPrevented || event.repeat || event.nativeEvent.isComposing || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || event.key.toLowerCase() !== 'n') return
+      event.preventDefault()
+      void spawnNote()
+    }} onPointerDownCapture={(event) => {
       const target = event.target
       if (target instanceof Element && target.closest('.react-flow__node, .react-flow__edge, .react-flow__pane, .react-flow__edgelabel-renderer') && !target.closest('button, input, select, textarea, [contenteditable="true"]')) event.currentTarget.focus({ preventScroll: true })
     }} onDragOver={(e) => e.preventDefault()} onDrop={async (e) => {
@@ -197,6 +211,12 @@ export function Canvas() {
         onConnect={(c) => { if (c.source !== c.target) addEdge.mutate([{ source: c.source, target: c.target, type: connectType, sourceHandle: handleSide(c.sourceHandle), targetHandle: handleSide(c.targetHandle) }]) }}
         onEdgeClick={(_, edge) => { if (!edge.id.startsWith('contains:')) select({ kind: 'edge', id: edge.id }) }}
         onPaneClick={() => select(null)}
+        onDoubleClick={(event) => {
+          if (!(event.target instanceof Element) || !event.target.classList.contains('react-flow__pane')) return
+          event.preventDefault()
+          void spawnNote(flow.screenToFlowPosition({ x: event.clientX, y: event.clientY }))
+        }}
+        zoomOnDoubleClick={false}
         onNodeDragStop={(_, __, dragged) => setLayout.mutate([Object.fromEntries(dragged.map((n) => [n.id, n.position]))])}
         selectionOnDrag selectionMode={SelectionMode.Partial} multiSelectionKeyCode={['Control', 'Meta', 'Shift']}
         selectionKeyCode={null} panOnDrag={[1, 2]} deleteKeyCode={null}
@@ -210,7 +230,7 @@ export function Canvas() {
           style={{ border: '1px solid #57534e', borderRadius: 8 }} />
         <Panel position="top-left" className="canvas-toolbar"><Toolbar canUndo={!!history.data?.canUndo && !historyBusy} canRedo={!!history.data?.canRedo && !historyBusy} travel={travel} /></Panel>
         <Panel position="top-right" className="canvas-modes"><FilterPanel /></Panel>
-        <Panel position="bottom-center"><div className="rounded-md border border-stone-800 bg-stone-950/90 px-3 py-1.5 text-[11px] text-stone-400">Drag blank space to select · Shift / Ctrl / ⌘ to add · Middle / right drag to pan</div>{error && <div role="alert" className="mt-1 max-w-lg rounded bg-red-950 px-3 py-2 text-xs text-red-200">{error.message}</div>}</Panel>
+        <Panel position="bottom-center"><div className="rounded-md border border-stone-800 bg-stone-950/90 px-3 py-1.5 text-[11px] text-stone-400">N / double-click blank space to add a note · Drag blank space to select · Shift / Ctrl / ⌘ to add · Middle / right drag to pan</div>{error && <div role="alert" className="mt-1 max-w-lg rounded bg-red-950 px-3 py-2 text-xs text-red-200">{error.message}</div>}</Panel>
       </ReactFlow>
     </div>
   )
