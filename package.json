@@ -7,7 +7,7 @@
     "dev": "pnpm --filter @maquest/mcp build && pnpm --filter @maquest/desktop dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
-    "test": "tsx --test apps/desktop/src/main/history.test.ts packages/core/src/frontmatter.test.mjs",
+    "test": "tsx --test apps/desktop/src/main/history.test.ts packages/core/src/frontmatter.test.mjs apps/desktop/src/renderer/src/lib/connections.test.ts",
     "mcp:build": "pnpm --filter @maquest/mcp build",
     "install:desktop": "bash scripts/install-desktop.sh"
   },

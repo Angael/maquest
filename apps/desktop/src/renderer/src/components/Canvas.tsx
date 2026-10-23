@@ -13,16 +13,17 @@ import { importFiles, useCreateNode } from '../lib/actions'
 import { useAction, useGraph, useNodes } from '../lib/queries'
 import { useUI } from '../lib/store'
 import { EDGE_STYLE, NODE_STYLE, type EdgeKind } from '../lib/styles'
+import { inferConnectionType } from '../lib/connections'
 import { StoryCard, type CardData } from './StoryCard'
 import { FloatingEdge } from './FloatingEdge'
 
 const nodeTypes = { card: StoryCard }
 const edgeTypes = { floating: FloatingEdge }
 const NONE: StoryNode[] = []
-const MODES: { label: string; nodes: readonly NodeType[]; edges: readonly EdgeKind[]; connect: EdgeType }[] = [
-  { label: 'Everything', nodes: NODE_TYPES, edges: ['contains', ...EDGE_TYPES], connect: 'link' },
-  { label: 'Story flow', nodes: ['story', 'chapter', 'scene', 'note'], edges: ['contains', 'leads-to', 'branches-to', 'parallel', 'foreshadows'], connect: 'leads-to' },
-  { label: 'World / entities', nodes: ['character', 'location', 'faction', 'item', 'media', 'note'], edges: ['link', 'involves', 'located-at', 'member-of', 'owns', 'relationship'], connect: 'relationship' },
+const MODES: { label: string; nodes: readonly NodeType[]; edges: readonly EdgeKind[] }[] = [
+  { label: 'Everything', nodes: NODE_TYPES, edges: ['contains', ...EDGE_TYPES] },
+  { label: 'Story flow', nodes: ['story', 'chapter', 'scene', 'note'], edges: ['contains', 'leads-to', 'branches-to', 'parallel', 'foreshadows'] },
+  { label: 'World / entities', nodes: ['character', 'location', 'faction', 'item', 'media', 'note'], edges: ['link', 'involves', 'located-at', 'member-of', 'owns', 'relationship'] },
 ]
 
 function defaultPosition(n: StoryNode, index: number) {
@@ -194,7 +195,16 @@ export function Canvas() {
 
   return (
     <div className="canvas-workspace h-full w-full outline-none" tabIndex={0} aria-label="Story canvas" aria-keyshortcuts="N" onKeyDown={(event) => {
-      if (event.target !== event.currentTarget || event.defaultPrevented || event.repeat || event.nativeEvent.isComposing || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || event.key.toLowerCase() !== 'n') return
+        onConnect={(c) => {
+          if (c.source === c.target) return
+          const source = flow.getNode(c.source)?.data as CardData | undefined
+          const target = flow.getNode(c.target)?.data as CardData | undefined
+          if (!source || !target) return
+          const type = connectType === 'auto' ? inferConnectionType(source.node.type, target.node.type) : connectType
+          addEdge.mutate([{ source: c.source, target: c.target, type, sourceHandle: handleSide(c.sourceHandle), targetHandle: handleSide(c.targetHandle) }], {
+            onSuccess: () => useUI.setState((state) => ({ hiddenEdges: state.hiddenEdges.filter((kind) => kind !== type) })),
+          })
+        }}
       event.preventDefault()
       void spawnNote()
     }} onPointerDownCapture={(event) => {
@@ -286,21 +296,22 @@ function Toolbar({ canUndo, canRedo, travel }: { canUndo: boolean; canRedo: bool
   const button = 'rounded p-1.5 text-stone-400 hover:bg-stone-800 hover:text-stone-100 disabled:cursor-not-allowed disabled:opacity-30'
   return <div>
     <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-stone-700/80 bg-stone-900/95 p-1.5 text-sm shadow-xl backdrop-blur">
+  const connectionDescription = connectType === 'auto' ? 'Choose a type from the source and target cards. Ambiguous pairs use a free link; hierarchy is unchanged.' : EDGE_DESCRIPTIONS[connectType]
       <div className="relative">
         <button aria-expanded={open} className="flex items-center gap-1 rounded-md bg-amber-500 px-2.5 py-1 font-medium text-stone-950 hover:bg-amber-400" onClick={() => setOpen(!open)}><Plus size={15} /> Add</button>
         {open && <div className="absolute top-9 left-0 z-50 w-44 rounded-lg border border-stone-700 bg-stone-900 p-1 shadow-2xl" onMouseLeave={() => setOpen(false)}>
           {NODE_TYPES.filter((t) => t !== 'media').map((t) => { const S = NODE_STYLE[t]; return <button key={t} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-stone-800" onClick={() => { setOpen(false); void create(t) }}><S.icon size={14} style={{ color: S.color }} /> {S.label}</button> })}
-          <div className="px-2 py-1.5 text-[11px] text-stone-500">Drop images or videos to add media.</div>
+    useUI.setState({ hiddenNodes: NODE_TYPES.filter((t) => !preset.nodes.includes(t)), hiddenEdges: kinds.filter((t) => !preset.edges.includes(t)) })
         </div>}
       </div>
       <div className="mx-1 h-5 w-px bg-stone-700" />
       <button aria-label="Undo" aria-keyshortcuts="Control+Z Meta+Z" title="Undo (Ctrl / ⌘ Z)" disabled={!canUndo} className={button} onClick={() => travel('undo')}><Undo2 size={16} /></button>
       <button aria-label="Redo" aria-keyshortcuts="Control+Y Control+Shift+Z Meta+Shift+Z" title="Redo (Ctrl Y / Ctrl or ⌘ Shift Z)" disabled={!canRedo} className={button} onClick={() => travel('redo')}><Redo2 size={16} /></button>
-      <button aria-label="Auto-layout unpinned nodes" title="Arrange visible nodes around pinned cards" disabled={autoLayout.pending} className={button} onClick={() => { void autoLayout.run() }}><LayoutGrid size={16} /></button>
+      <div className="flex items-center justify-between text-[11px]"><span className="text-stone-400">New lines: <span className="text-amber-300">{connectType === 'auto' ? 'Auto' : connectType}</span></span><button aria-expanded={advanced} className="flex items-center gap-1 text-stone-300 hover:text-amber-300" onClick={() => setAdvanced(!advanced)}>Advanced <ChevronDown size={12} className={advanced ? 'rotate-180' : ''} /></button></div>
       <select aria-label="Story scope" className="max-w-40 rounded bg-stone-800 px-1.5 py-1 text-xs text-stone-200 outline-amber-400" value={storyScope ?? ''} onChange={(e) => setStoryScope(e.target.value || null)}><option value="">All stories</option>{all.filter((n) => n.type === 'story').map((s) => <option key={s.id} value={s.id}>{s.title}</option>)}</select>
     </div>
-    {autoLayout.error && <div role="alert" className="mt-2 max-w-sm rounded bg-red-950 p-2 text-xs text-red-200">{autoLayout.error.message}</div>}
-  </div>
+      <label className="flex items-center justify-between gap-1 text-xs text-stone-400" title={connectionDescription}>Connect as<select aria-label="New connection type" className="rounded bg-stone-800 px-1 py-1 text-stone-100" value={connectType} onChange={(e) => setConnectType(e.target.value as EdgeType | 'auto')}><option value="auto">Auto</option>{EDGE_TYPES.map((t) => <option key={t}>{t}</option>)}</select></label>
+      <p className="text-[11px] text-stone-500">{connectionDescription}</p>
 }
 
 function FilterPanel() {

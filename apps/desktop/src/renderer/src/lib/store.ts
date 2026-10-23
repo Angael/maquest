@@ -12,14 +12,14 @@ type UI = {
   hiddenEdges: (EdgeType | 'contains')[]
   hiddenNodes: NodeType[]
   storyScope: string | null
-  connectType: EdgeType
+  connectType: EdgeType | 'auto'
   setView: (v: View) => void
   select: (s: Selection) => void
   selectNodes: (ids: string[]) => void
   toggleEdge: (t: EdgeType | 'contains') => void
   toggleNode: (t: NodeType) => void
   setStoryScope: (id: string | null) => void
-  setConnectType: (t: EdgeType) => void
+  setConnectType: (t: EdgeType | 'auto') => void
 }
 
 const toggle = <T,>(list: T[], v: T) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v])
@@ -33,7 +33,7 @@ export const useUI = create<UI>()(
       hiddenEdges: [],
       hiddenNodes: [],
       storyScope: null,
-      connectType: 'link',
+      connectType: 'auto',
       setView: (view) => set({ view }),
       select: (selection) => set({ selection, selectedNodeIds: selection?.kind === 'node' ? [selection.id] : [] }),
       selectNodes: (selectedNodeIds) => set((s) => {
@@ -50,6 +50,11 @@ export const useUI = create<UI>()(
     }),
     {
       name: 'maquest-ui',
+      version: 1,
+      migrate: (state) => {
+        const saved = state as Partial<UI>
+        return { hiddenEdges: saved.hiddenEdges ?? [], hiddenNodes: saved.hiddenNodes ?? [], connectType: 'auto' as const }
+      },
       partialize: ({ hiddenEdges, hiddenNodes, connectType }) => ({ hiddenEdges, hiddenNodes, connectType }),
     },
   ),
