@@ -1,17 +1,6 @@
 import { z } from 'zod'
 
-export const NODE_TYPES = [
-  'story',
-  'chapter',
-  'scene',
-  'note',
-  'character',
-  'location',
-  'faction',
-  'item',
-  'idea',
-  'media',
-] as const
+export const NODE_TYPES = ['story', 'chapter', 'scene', 'note', 'character', 'location', 'faction', 'item', 'idea', 'media'] as const
 export const NodeType = z.enum(NODE_TYPES)
 export type NodeType = z.infer<typeof NodeType>
 
@@ -119,7 +108,6 @@ export function clueCounts(edges: readonly Edge[]): Map<string, number> {
 }
 export const EdgeHandle = z.enum(['top', 'right', 'bottom', 'left'])
 export type EdgeHandle = z.infer<typeof EdgeHandle>
-
 
 export const Edge = z.object({
   id: z.string(),

@@ -4,8 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { parseFrontmatter, stringifyFrontmatter } from './frontmatter'
 import { DEFAULT_GUIDELINES } from './guidelines/defaults'
 import { TEMPLATES } from './templates'
-import type {
-  EdgeType} from './schema';
+import type { EdgeType } from './schema'
 import {
   ALLOWED_PARENTS,
   Board,
@@ -91,7 +90,6 @@ export type BoardPatch = {
   addNodes?: string[]
   removeNodes?: string[]
 }
-
 
 export function slugify(s: string): string {
   return (
@@ -251,9 +249,7 @@ export class Project {
     const p = this.requireNode(parent)
     const allowed = ALLOWED_PARENTS[type]
     if (!allowed?.includes(p.type)) {
-      throw new MaquestError(
-        `A ${type} cannot be placed under a ${p.type}. Allowed parents: ${allowed?.join(', ') || 'none (top level only)'}`,
-      )
+      throw new MaquestError(`A ${type} cannot be placed under a ${p.type}. Allowed parents: ${allowed?.join(', ') || 'none (top level only)'}`)
     }
   }
 
@@ -417,7 +413,10 @@ export class Project {
     return edge
   }
 
-  updateEdge(id: string, patch: { type?: EdgeType; label?: string; source?: string; target?: string; sourceHandle?: EdgeHandle; targetHandle?: EdgeHandle }): Edge {
+  updateEdge(
+    id: string,
+    patch: { type?: EdgeType; label?: string; source?: string; target?: string; sourceHandle?: EdgeHandle; targetHandle?: EdgeHandle },
+  ): Edge {
     const g = this.graph()
     const e = g.edges.find((x) => x.id === id)
     if (!e) throw new MaquestError(`Edge not found: ${id}`)
@@ -524,7 +523,10 @@ export class Project {
   guidelines(opts: { includeDisabled?: boolean; applicableOnly?: boolean } = {}): Guideline[] {
     const dir = path.join(this.root, GUIDELINES_DIR)
     const overrideIds = fs.existsSync(dir)
-      ? fs.readdirSync(dir).filter((f) => f.endsWith('.md')).map((f) => f.slice(0, -3))
+      ? fs
+          .readdirSync(dir)
+          .filter((f) => f.endsWith('.md'))
+          .map((f) => f.slice(0, -3))
       : []
     const out: Guideline[] = []
     for (const d of DEFAULT_GUIDELINES) {
@@ -537,11 +539,7 @@ export class Project {
       out.push({ id, title: o.title ?? id, scope: o.scope ?? 'all', body: o.body ?? '', disabled: o.disabled, source: 'custom' })
     }
     const kind = this.config().kind
-    return out.filter(
-      (g) =>
-        (opts.includeDisabled || !g.disabled) &&
-        (!opts.applicableOnly || kind === 'mixed' || g.scope === 'all' || g.scope === kind),
-    )
+    return out.filter((g) => (opts.includeDisabled || !g.disabled) && (!opts.applicableOnly || kind === 'mixed' || g.scope === 'all' || g.scope === kind))
   }
 
   guideline(id: string): Guideline | null {
@@ -562,10 +560,7 @@ export class Project {
       disabled: patch.disabled ?? cur?.disabled ?? undefined,
     }
     const body = patch.body ?? cur?.body ?? ''
-    writeAtomic(
-      path.join(this.root, GUIDELINES_DIR, `${id}.md`),
-      stringifyFrontmatter({ ...next, disabled: next.disabled || undefined }, body.trim() + '\n'),
-    )
+    writeAtomic(path.join(this.root, GUIDELINES_DIR, `${id}.md`), stringifyFrontmatter({ ...next, disabled: next.disabled || undefined }, body.trim() + '\n'))
     return this.guideline(id)!
   }
 
@@ -592,7 +587,12 @@ export class Project {
 
   listMedia(): string[] {
     const dir = path.join(this.root, MEDIA_DIR)
-    return fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => !f.startsWith('.')).map((f) => `${MEDIA_DIR}/${f}`) : []
+    return fs.existsSync(dir)
+      ? fs
+          .readdirSync(dir)
+          .filter((f) => !f.startsWith('.'))
+          .map((f) => `${MEDIA_DIR}/${f}`)
+      : []
   }
 
   resolve(rel: string): string {
@@ -604,7 +604,9 @@ export class Project {
 
 function checkLabel(label?: string) {
   if (label && label.length > EDGE_LABEL_MAX) {
-    throw new MaquestError(`Edge label too long (${label.length} > ${EDGE_LABEL_MAX}). A label names the relationship in a few words ("betrays", "owes a debt to"); put notes and status on the nodes instead.`)
+    throw new MaquestError(
+      `Edge label too long (${label.length} > ${EDGE_LABEL_MAX}). A label names the relationship in a few words ("betrays", "owes a debt to"); put notes and status on the nodes instead.`,
+    )
   }
 }
 
@@ -644,7 +646,8 @@ This folder is a Maquest writing project (stories, chapters, scenes, entities, b
 `
 
 /** Earlier generated versions, replaced automatically when unedited. */
-const LEGACY_AGENT_DOCS = new Set([`# Maquest project
+const LEGACY_AGENT_DOCS = new Set([
+  `# Maquest project
 
 This folder is a Maquest writing project (stories, chapters, scenes, entities, backlog, node graph).
 
@@ -652,7 +655,8 @@ This folder is a Maquest writing project (stories, chapters, scenes, entities, b
 - Start with the \`overview\` tool, then read the writing guidelines (\`guidelines\` tool) before making creative changes.
 - Be proactive: when the author shares ideas, add them to the project immediately (scenes, entities, links, backlog) and report what changed.
 - The author may edit or override guidelines in \`guidelines/\`. Follow project overrides over defaults.
-`])
+`,
+])
 
 /** Writes .mcp.json (Claude Code & others), .codex/config.toml, .cursor/mcp.json and agent instructions. */
 export function writeAgentFiles(root: string, mcp: McpLaunch) {
@@ -662,7 +666,11 @@ export function writeAgentFiles(root: string, mcp: McpLaunch) {
   writeAtomic(mcpJson, JSON.stringify({ ...existing, mcpServers: { ...existing.mcpServers, maquest: server } }, null, 2) + '\n')
   writeAtomic(path.join(root, '.cursor', 'mcp.json'), JSON.stringify({ mcpServers: { maquest: server } }, null, 2) + '\n')
   const toml = `[mcp_servers.maquest]\ncommand = ${JSON.stringify(mcp.command)}\nargs = ${JSON.stringify(mcp.args)}\n${
-    mcp.env ? `env = { ${Object.entries(mcp.env).map(([k, v]) => `${k} = ${JSON.stringify(v)}`).join(', ')} }\n` : ''
+    mcp.env
+      ? `env = { ${Object.entries(mcp.env)
+          .map(([k, v]) => `${k} = ${JSON.stringify(v)}`)
+          .join(', ')} }\n`
+      : ''
   }`
   writeAtomic(path.join(root, '.codex', 'config.toml'), toml)
   const agents = path.join(root, 'AGENTS.md')

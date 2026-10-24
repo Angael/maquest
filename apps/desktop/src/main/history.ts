@@ -8,7 +8,8 @@ type BoardMeta = Omit<Board, 'layout'>
 /** Layout keys are `board\0node`. */
 type Entry = { files: Change<string>[]; edges: Change<Edge>[]; boards: Change<BoardMeta>[]; layout: Change<Position>[] }
 const boardMap = (g: Graph) => new Map(g.boards.map(({ layout: _, ...meta }) => [meta.id, meta]))
-const layoutMap = (g: Graph) => new Map<string, Position>(g.boards.flatMap((b) => Object.entries(b.layout).map(([id, at]): [string, Position] => [`${b.id}\0${id}`, at])))
+const layoutMap = (g: Graph) =>
+  new Map<string, Position>(g.boards.flatMap((b) => Object.entries(b.layout).map(([id, at]): [string, Position] => [`${b.id}\0${id}`, at])))
 const layoutNode = (key: string) => key.slice(key.indexOf('\0') + 1)
 const LIMIT = 100
 
@@ -130,7 +131,8 @@ export class ProjectHistory {
       }
     }
     for (const delta of entry.layout) {
-      if (layout.has(delta.key) && !ids.has(layoutNode(delta.key))) throw new MaquestError(`Cannot restore history: layout node ${delta.key} no longer exists. No files were changed.`)
+      if (layout.has(delta.key) && !ids.has(layoutNode(delta.key)))
+        throw new MaquestError(`Cannot restore history: layout node ${delta.key} no longer exists. No files were changed.`)
     }
     const laidOut = new Set([...layout.keys()].map(layoutNode))
     for (const id of removedIds) {

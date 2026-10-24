@@ -29,26 +29,39 @@ export function Guidelines() {
       <div className="w-72 shrink-0 overflow-y-auto border-r border-stone-800 p-3">
         <Label>Project kind (picks applicable guidelines)</Label>
         <Select value={config?.kind} onChange={(e) => updateConfig.mutate([{ kind: e.target.value as ProjectKind }])}>
-          {PROJECT_KINDS.map((k) => <option key={k}>{k}</option>)}
+          {PROJECT_KINDS.map((k) => (
+            <option key={k}>{k}</option>
+          ))}
         </Select>
         <div className="mt-4 space-y-0.5">
           {list.map((x) => {
             const applies = config?.kind === 'mixed' || x.scope === 'all' || x.scope === config?.kind
             return (
-              <button key={x.id} onClick={() => setActive(x.id)} className={clsx('flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm', g?.id === x.id ? 'bg-stone-800' : 'hover:bg-stone-900', (x.disabled || !applies) && 'opacity-40')}>
+              <button
+                key={x.id}
+                onClick={() => setActive(x.id)}
+                className={clsx(
+                  'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm',
+                  g?.id === x.id ? 'bg-stone-800' : 'hover:bg-stone-900',
+                  (x.disabled || !applies) && 'opacity-40',
+                )}
+              >
                 <span className="truncate">{x.title}</span>
                 <span className={clsx('ml-auto text-[10px] uppercase', SOURCE_BADGE[x.source])}>{x.source}</span>
               </button>
             )
           })}
         </div>
-        <form className="mt-4" onSubmit={async (e) => {
-          e.preventDefault()
-          if (!newId.trim()) return
-          const created = await setGuideline.mutateAsync([newId, { title: newId, body: '- ' }])
-          setActive(created.id)
-          setNewId('')
-        }}>
+        <form
+          className="mt-4"
+          onSubmit={async (e) => {
+            e.preventDefault()
+            if (!newId.trim()) return
+            const created = await setGuideline.mutateAsync([newId, { title: newId, body: '- ' }])
+            setActive(created.id)
+            setNewId('')
+          }}
+        >
           <Input placeholder="+ new guideline" value={newId} onChange={(e) => setNewId(e.target.value)} />
         </form>
       </div>
@@ -68,9 +81,15 @@ function GuidelineEditor({ g }: { g: Guideline }) {
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <div className="flex items-center gap-2">
-        <input className="flex-1 bg-transparent font-serif text-2xl text-stone-100 outline-none" value={title} onChange={(e) => (setTitle(e.target.value), save({ title: e.target.value }))} />
+        <input
+          className="flex-1 bg-transparent font-serif text-2xl text-stone-100 outline-none"
+          value={title}
+          onChange={(e) => (setTitle(e.target.value), save({ title: e.target.value }))}
+        />
         <Select className="w-32" value={g.scope} onChange={(e) => setGuideline.mutate([g.id, { scope: e.target.value as Guideline['scope'] }])}>
-          {(['all', 'novel', 'screenplay', 'rpg'] as const).map((s) => <option key={s}>{s}</option>)}
+          {(['all', 'novel', 'screenplay', 'rpg'] as const).map((s) => (
+            <option key={s}>{s}</option>
+          ))}
         </Select>
         <Button onClick={() => setGuideline.mutate([g.id, { disabled: !g.disabled }])}>{g.disabled ? 'Enable' : 'Disable'}</Button>
         {g.source !== 'default' && (
@@ -80,9 +99,7 @@ function GuidelineEditor({ g }: { g: Guideline }) {
         )}
       </div>
       <p className="text-xs text-stone-500">
-        {g.source === 'default'
-          ? 'Built-in default. Editing creates a project override in guidelines/' + g.id + '.md.'
-          : `Stored in guidelines/${g.id}.md`}
+        {g.source === 'default' ? 'Built-in default. Editing creates a project override in guidelines/' + g.id + '.md.' : `Stored in guidelines/${g.id}.md`}
       </p>
       <MarkdownEditor value={body} onChange={(b) => (setBody(b), save({ body: b }))} />
     </div>

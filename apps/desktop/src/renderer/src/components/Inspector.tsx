@@ -128,14 +128,20 @@ function NodeInspector({ id }: { id: string }) {
         <div>
           <Label>Type</Label>
           <Select value={node.type} onChange={(e) => update.mutate([id, { type: e.target.value as NodeType, parent: null }])}>
-            {NODE_TYPES.map((t) => <option key={t} value={t}>{NODE_STYLE[t].label}</option>)}
+            {NODE_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {NODE_STYLE[t].label}
+              </option>
+            ))}
           </Select>
         </div>
         <div>
           <Label>Status</Label>
           <Select value={node.status ?? ''} onChange={(e) => update.mutate([id, { status: (e.target.value || null) as Status | null }])}>
             <option value="">—</option>
-            {STATUSES.map((s) => <option key={s}>{s}</option>)}
+            {STATUSES.map((s) => (
+              <option key={s}>{s}</option>
+            ))}
           </Select>
         </div>
         {ALLOWED_PARENTS[node.type] && (
@@ -143,7 +149,11 @@ function NodeInspector({ id }: { id: string }) {
             <Label>In</Label>
             <Select value={node.parent ?? ''} onChange={(e) => update.mutate([id, { parent: e.target.value || null }])}>
               <option value="">—</option>
-              {parents.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
+              {parents.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.title}
+                </option>
+              ))}
             </Select>
           </div>
         )}
@@ -151,7 +161,11 @@ function NodeInspector({ id }: { id: string }) {
 
       <div>
         <Label>Summary</Label>
-        <Input value={draft.summary} placeholder={node.type === 'scene' ? 'X tries to Y, but Z, so W' : 'One line'} onChange={(e) => change({ summary: e.target.value })} />
+        <Input
+          value={draft.summary}
+          placeholder={node.type === 'scene' ? 'X tries to Y, but Z, so W' : 'One line'}
+          onChange={(e) => change({ summary: e.target.value })}
+        />
       </div>
 
       <div>
@@ -161,12 +175,25 @@ function NodeInspector({ id }: { id: string }) {
             <div key={k} className="flex items-center gap-2">
               <span className="w-20 shrink-0 truncate text-xs text-stone-400">{k}</span>
               <Input value={v} onChange={(e) => change({ fields: { ...draft.fields, [k]: e.target.value } })} />
-              <button className="text-stone-600 hover:text-red-400" onClick={() => change({ fields: Object.fromEntries(Object.entries(draft.fields).filter(([x]) => x !== k)) })} title="Remove field">
+              <button
+                className="text-stone-600 hover:text-red-400"
+                onClick={() => change({ fields: Object.fromEntries(Object.entries(draft.fields).filter(([x]) => x !== k)) })}
+                title="Remove field"
+              >
                 <X size={14} />
               </button>
             </div>
           ))}
-          <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (newField.trim()) { change({ fields: { ...draft.fields, [newField.trim()]: '' } }); setNewField('') } }}>
+          <form
+            className="flex gap-2"
+            onSubmit={(e) => {
+              e.preventDefault()
+              if (newField.trim()) {
+                change({ fields: { ...draft.fields, [newField.trim()]: '' } })
+                setNewField('')
+              }
+            }}
+          >
             <Input placeholder="+ add field" value={newField} onChange={(e) => setNewField(e.target.value)} />
           </form>
         </div>
@@ -178,7 +205,14 @@ function NodeInspector({ id }: { id: string }) {
           key={draft.tags.join(', ')}
           defaultValue={draft.tags.join(', ')}
           placeholder="comma, separated"
-          onBlur={(e) => change({ tags: e.target.value.split(',').map((t) => t.trim()).filter(Boolean) })}
+          onBlur={(e) =>
+            change({
+              tags: e.target.value
+                .split(',')
+                .map((t) => t.trim())
+                .filter(Boolean),
+            })
+          }
         />
       </div>
 
@@ -197,7 +231,11 @@ function NodeInspector({ id }: { id: string }) {
         <div>
           <Label>Contains</Label>
           {children.map((c) => (
-            <button key={c.id} onClick={() => select({ kind: 'node', id: c.id })} className="block w-full truncate rounded px-2 py-1 text-left text-sm text-stone-300 hover:bg-stone-900">
+            <button
+              key={c.id}
+              onClick={() => select({ kind: 'node', id: c.id })}
+              className="block w-full truncate rounded px-2 py-1 text-left text-sm text-stone-300 hover:bg-stone-900"
+            >
               {c.order}. {c.title}
             </button>
           ))}
@@ -215,19 +253,23 @@ function NodeInspector({ id }: { id: string }) {
               <span className="w-24 shrink-0 truncate text-xs" style={{ color: EDGE_STYLE[e.type].color }}>
                 {out ? '→' : '←'} {e.type}
               </span>
-              <button className="truncate text-stone-200 hover:underline" onClick={() => select({ kind: 'node', id: other })}>{titleOf(other)}</button>
+              <button className="truncate text-stone-200 hover:underline" onClick={() => select({ kind: 'node', id: other })}>
+                {titleOf(other)}
+              </button>
               {e.label && <span className="truncate text-xs text-stone-500">“{e.label}”</span>}
-              <button className="ml-auto hidden text-stone-500 group-hover:block hover:text-stone-200" onClick={() => select({ kind: 'edge', id: e.id })}>edit</button>
-              <button className="hidden text-stone-500 group-hover:block hover:text-red-400" onClick={() => removeEdge.mutate([e.id])}><X size={14} /></button>
+              <button className="ml-auto hidden text-stone-500 group-hover:block hover:text-stone-200" onClick={() => select({ kind: 'edge', id: e.id })}>
+                edit
+              </button>
+              <button className="hidden text-stone-500 group-hover:block hover:text-red-400" onClick={() => removeEdge.mutate([e.id])}>
+                <X size={14} />
+              </button>
             </div>
           )
         })}
       </div>
 
       <div className="flex gap-2 border-t border-stone-800 pt-3">
-        {node.type !== 'idea' && (
-          <Button onClick={() => update.mutate([id, { type: 'idea', parent: null }])}>Move to backlog</Button>
-        )}
+        {node.type !== 'idea' && <Button onClick={() => update.mutate([id, { type: 'idea', parent: null }])}>Move to backlog</Button>}
         <Button variant="danger" className="ml-auto" onClick={() => void deleteSelection({ kind: 'node', id })}>
           <Trash2 size={15} /> Delete
         </Button>
@@ -247,7 +289,11 @@ function ClockEditor({ node }: { node: StoryNode }) {
         <Label>Clock</Label>
         <div className="flex items-center gap-2 text-xs text-stone-500">
           <span>Track a front, threat or countdown:</span>
-          {[4, 6, 8].map((size) => <button key={size} className="rounded border border-stone-700 px-1.5 py-0.5 text-stone-300 hover:border-amber-400" onClick={() => set({ size })}>{size}</button>)}
+          {[4, 6, 8].map((size) => (
+            <button key={size} className="rounded border border-stone-700 px-1.5 py-0.5 text-stone-300 hover:border-amber-400" onClick={() => set({ size })}>
+              {size}
+            </button>
+          ))}
         </div>
       </div>
     )
@@ -260,19 +306,35 @@ function ClockEditor({ node }: { node: StoryNode }) {
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex items-center gap-2 text-xs text-stone-400">
             {clock.filled}/{clock.size}
-            <Select className="w-auto py-0.5" aria-label="Clock size" value={clock.size} onChange={(e) => set({ size: Number(e.target.value), filled: Math.min(clock.filled, Number(e.target.value)) })}>
-              {[2, 3, 4, 5, 6, 8, 10, 12].map((n) => <option key={n} value={n}>{n} segments</option>)}
+            <Select
+              className="w-auto py-0.5"
+              aria-label="Clock size"
+              value={clock.size}
+              onChange={(e) => set({ size: Number(e.target.value), filled: Math.min(clock.filled, Number(e.target.value)) })}
+            >
+              {[2, 3, 4, 5, 6, 8, 10, 12].map((n) => (
+                <option key={n} value={n}>
+                  {n} segments
+                </option>
+              ))}
             </Select>
-            <button className="ml-auto text-stone-500 hover:text-red-400" onClick={() => set(null)}>Remove</button>
+            <button className="ml-auto text-stone-500 hover:text-red-400" onClick={() => set(null)}>
+              Remove
+            </button>
           </div>
           {Array.from({ length: clock.size }, (_, i) => (
-            <Input key={`${i}:${clock.steps[i] ?? ''}`} aria-label={`What happens at ${i + 1}`} placeholder={`${i + 1}: what happens…`}
-              className={i < clock.filled ? 'text-amber-200' : undefined} defaultValue={clock.steps[i] ?? ''}
+            <Input
+              key={`${i}:${clock.steps[i] ?? ''}`}
+              aria-label={`What happens at ${i + 1}`}
+              placeholder={`${i + 1}: what happens…`}
+              className={i < clock.filled ? 'text-amber-200' : undefined}
+              defaultValue={clock.steps[i] ?? ''}
               onBlur={(e) => {
                 if ((clock.steps[i] ?? '') === e.target.value) return
                 const steps = Array.from({ length: clock.size }, (_, k) => (k === i ? e.target.value : (clock.steps[k] ?? '')))
                 set({ steps })
-              }} />
+              }}
+            />
           ))}
         </div>
       </div>
@@ -291,12 +353,28 @@ function BoardMembership({ id }: { id: string }) {
       <div className="flex flex-wrap gap-1">
         {curated.map((b) => {
           const on = b.nodes!.includes(id)
-          return <button key={b.id} aria-pressed={on} title={on ? `Remove from ${b.title}` : `Place on ${b.title}`}
-            className={on ? 'rounded-full bg-amber-500/20 px-2 py-0.5 text-xs text-amber-200' : 'rounded-full border border-dashed border-stone-700 px-2 py-0.5 text-xs text-stone-500 hover:text-stone-200'}
-            onClick={() => update.mutate([b.id, on ? { removeNodes: [id] } : { addNodes: [id] }])}>{b.title}</button>
+          return (
+            <button
+              key={b.id}
+              aria-pressed={on}
+              title={on ? `Remove from ${b.title}` : `Place on ${b.title}`}
+              className={
+                on
+                  ? 'rounded-full bg-amber-500/20 px-2 py-0.5 text-xs text-amber-200'
+                  : 'rounded-full border border-dashed border-stone-700 px-2 py-0.5 text-xs text-stone-500 hover:text-stone-200'
+              }
+              onClick={() => update.mutate([b.id, on ? { removeNodes: [id] } : { addNodes: [id] }])}
+            >
+              {b.title}
+            </button>
+          )
         })}
       </div>
-      {update.error && <div role="alert" className="mt-1 text-xs text-red-300">{update.error.message}</div>}
+      {update.error && (
+        <div role="alert" className="mt-1 text-xs text-red-300">
+          {update.error.message}
+        </div>
+      )}
     </div>
   )
 }
@@ -318,13 +396,19 @@ function MediaStrip({ node }: { node: StoryNode }) {
           <div key={m} className="group relative">
             {isVideo(m) ? <video src={mediaUrl(m)} className="h-20 rounded" controls /> : <img src={mediaUrl(m)} className="h-20 rounded object-cover" />}
             {m !== node.src && (
-              <button className="absolute top-1 right-1 hidden rounded bg-black/70 p-0.5 group-hover:block" onClick={() => update.mutate([node.id, { media: node.media.filter((x) => x !== m) }])}>
+              <button
+                className="absolute top-1 right-1 hidden rounded bg-black/70 p-0.5 group-hover:block"
+                onClick={() => update.mutate([node.id, { media: node.media.filter((x) => x !== m) }])}
+              >
                 <X size={12} />
               </button>
             )}
           </div>
         ))}
-        <button className="flex h-20 w-20 flex-col items-center justify-center gap-1 rounded border border-dashed border-stone-700 text-[11px] text-stone-500 hover:border-stone-500 hover:text-stone-300" onClick={() => fileInput.current?.click()}>
+        <button
+          className="flex h-20 w-20 flex-col items-center justify-center gap-1 rounded border border-dashed border-stone-700 text-[11px] text-stone-500 hover:border-stone-500 hover:text-stone-300"
+          onClick={() => fileInput.current?.click()}
+        >
           <ImagePlus size={18} /> attach
         </button>
         <input ref={fileInput} type="file" accept="image/*,video/*" multiple hidden onChange={(e) => void attach(e.target.files)} />
@@ -351,7 +435,9 @@ function EdgeInspector({ id }: { id: string }) {
       try {
         await updateEdge.mutateAsync([targetId, { label: value }])
         if (labelRevision.current === version) dirty.current = false
-      } catch { /* Retain the local label if saving fails. */ }
+      } catch {
+        /* Retain the local label if saving fails. */
+      }
     }
     labelQueue.current = labelQueue.current.then(persist)
     return labelQueue.current
@@ -379,20 +465,35 @@ function EdgeInspector({ id }: { id: string }) {
     <div className="space-y-4 px-4">
       <div className="text-[11px] font-medium tracking-wider text-stone-500 uppercase">Connection</div>
       <div className="flex items-center gap-2 font-serif text-lg">
-        <button className="hover:underline" onClick={() => select({ kind: 'node', id: edge.source })}>{title(edge.source)}</button>
+        <button className="hover:underline" onClick={() => select({ kind: 'node', id: edge.source })}>
+          {title(edge.source)}
+        </button>
         <ArrowRight size={16} style={{ color: EDGE_STYLE[edge.type].color }} />
-        <button className="hover:underline" onClick={() => select({ kind: 'node', id: edge.target })}>{title(edge.target)}</button>
+        <button className="hover:underline" onClick={() => select({ kind: 'node', id: edge.target })}>
+          {title(edge.target)}
+        </button>
       </div>
       <div>
         <Label>Type</Label>
         <Select value={edge.type} onChange={(e) => updateEdge.mutate([id, { type: e.target.value as EdgeType }])}>
-          {EDGE_TYPES.map((t) => <option key={t}>{t}</option>)}
+          {EDGE_TYPES.map((t) => (
+            <option key={t}>{t}</option>
+          ))}
         </Select>
         <div className="mt-1 text-xs text-stone-500">{EDGE_DESCRIPTIONS[edge.type]}</div>
       </div>
       <div>
         <Label>Name</Label>
-        <Input value={label} maxLength={EDGE_LABEL_MAX} placeholder="e.g. betrays, owes a debt to…" onChange={(e) => { dirty.current = true; setLabel(e.target.value); saveLabel(id, e.target.value, ++labelRevision.current) }} />
+        <Input
+          value={label}
+          maxLength={EDGE_LABEL_MAX}
+          placeholder="e.g. betrays, owes a debt to…"
+          onChange={(e) => {
+            dirty.current = true
+            setLabel(e.target.value)
+            saveLabel(id, e.target.value, ++labelRevision.current)
+          }}
+        />
       </div>
       <div className="flex gap-2">
         <Button onClick={() => updateEdge.mutate([id, { source: edge.target, target: edge.source }])}>Reverse</Button>

@@ -37,8 +37,7 @@ export function StartScreen() {
             <h1 className="font-serif text-4xl text-stone-100">Maquest</h1>
           </div>
           <p className="mt-2 text-sm text-stone-400">
-            Stories, campaigns and worlds as plain markdown. Talk to your agent in the project folder and it edits the project
-            through MCP while you watch.
+            Stories, campaigns and worlds as plain markdown. Talk to your agent in the project folder and it edits the project through MCP while you watch.
           </p>
         </div>
 
@@ -62,7 +61,11 @@ export function StartScreen() {
           </div>
         </div>
 
-        {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
+        {error && (
+          <p role="alert" className="text-sm text-red-400">
+            {error}
+          </p>
+        )}
 
         {!!recent?.length && (
           <div>
@@ -70,10 +73,7 @@ export function StartScreen() {
             <div className="space-y-1">
               {recent.map((r) => (
                 <div key={r.root} className="group flex items-center rounded-md hover:bg-stone-900">
-                  <button
-                    onClick={async () => done(await api.open(r.root))}
-                    className="flex min-w-0 flex-1 items-baseline justify-between px-3 py-2 text-left"
-                  >
+                  <button onClick={async () => done(await api.open(r.root))} className="flex min-w-0 flex-1 items-baseline justify-between px-3 py-2 text-left">
                     <span className="text-stone-200">{r.config.name}</span>
                     <span className="truncate pl-4 text-xs text-stone-500">{r.root}</span>
                   </button>

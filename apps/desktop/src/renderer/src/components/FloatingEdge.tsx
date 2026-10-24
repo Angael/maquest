@@ -1,4 +1,14 @@
-import { BaseEdge, EdgeLabelRenderer, getBezierPath, Position, useInternalNode, type ConnectionLineComponentProps, type Edge, type EdgeProps, type InternalNode } from '@xyflow/react'
+import {
+  BaseEdge,
+  EdgeLabelRenderer,
+  getBezierPath,
+  Position,
+  useInternalNode,
+  type ConnectionLineComponentProps,
+  type Edge,
+  type EdgeProps,
+  type InternalNode,
+} from '@xyflow/react'
 import { inferConnectionType } from '../lib/connections'
 import { useUI } from '../lib/store'
 import type { CardData } from './StoryCard'
@@ -44,7 +54,10 @@ export function floatingPath(from: Rect, to: Rect | { x: number; y: number }, of
     const len = Math.hypot(b.x - a.x, b.y - a.y) || 1
     const nx = (-(b.y - a.y) / len) * offset
     const ny = ((b.x - a.x) / len) * offset
-    a.x += nx; a.y += ny; b.x += nx; b.y += ny
+    a.x += nx
+    a.y += ny
+    b.x += nx
+    b.y += ny
   }
   return getBezierPath({ sourceX: a.x, sourceY: a.y, sourcePosition: a.pos, targetX: b.x, targetY: b.y, targetPosition: b.pos })
 }
@@ -64,10 +77,23 @@ export function FloatingEdge({ id, source, target, style, markerEnd, label, sele
             role="button"
             tabIndex={0}
             aria-label={`Select connection: ${String(label)}`}
-            onClick={(event) => { event.stopPropagation(); select({ kind: 'edge', id }) }}
-            onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); select({ kind: 'edge', id }) } }}
+            onClick={(event) => {
+              event.stopPropagation()
+              select({ kind: 'edge', id })
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault()
+                select({ kind: 'edge', id })
+              }
+            }}
             className="nodrag nopan pointer-events-auto absolute cursor-pointer rounded bg-stone-900 px-1.5 py-0.5 text-[11px] focus-visible:outline focus-visible:outline-amber-400"
-            style={{ transform: `translate(-50%, -50%) translate(${lx}px, ${ly}px)`, opacity: style?.opacity, color: data?.color, outline: selected ? '1px solid currentColor' : undefined }}
+            style={{
+              transform: `translate(-50%, -50%) translate(${lx}px, ${ly}px)`,
+              opacity: style?.opacity,
+              color: data?.color,
+              outline: selected ? '1px solid currentColor' : undefined,
+            }}
           >
             {label}
           </div>
@@ -83,13 +109,15 @@ export function FloatingConnectionLine({ fromNode, toNode, toX, toY, connectionS
   const over = toNode && toNode.id !== fromNode.id ? toNode : null
   const [path] = floatingPath(rect(fromNode), over ? rect(over) : { x: toX, y: toY })
   const invalid = connectionStatus === 'invalid'
-  const type = connectType !== 'auto' ? connectType
-    : over ? inferConnectionType((fromNode.data as CardData).node.type, (over.data as CardData).node.type) : null
+  const type =
+    connectType !== 'auto' ? connectType : over ? inferConnectionType((fromNode.data as CardData).node.type, (over.data as CardData).node.type) : null
   const text = invalid ? 'Already connected or same card' : (type ?? 'drop on a card')
   return (
     <g>
       <path d={path} fill="none" stroke={invalid ? '#f87171' : '#fbbf24'} strokeWidth={2} strokeDasharray="6 4" />
-      <text x={toX + 12} y={toY - 10} fontSize={11} fill={invalid ? '#fca5a5' : '#fcd34d'} paintOrder="stroke" stroke="#0c0a09" strokeWidth={3}>{text}</text>
+      <text x={toX + 12} y={toY - 10} fontSize={11} fill={invalid ? '#fca5a5' : '#fcd34d'} paintOrder="stroke" stroke="#0c0a09" strokeWidth={3}>
+        {text}
+      </text>
     </g>
   )
 }

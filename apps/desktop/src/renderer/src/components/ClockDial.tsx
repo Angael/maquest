@@ -1,5 +1,11 @@
 /** Blades-style progress clock: a circle split into `size` segments, `filled` of them shaded. */
-export function ClockDial({ size, filled, radius = 14, onSet, label }: {
+export function ClockDial({
+  size,
+  filled,
+  radius = 14,
+  onSet,
+  label,
+}: {
   size: number
   filled: number
   radius?: number
@@ -24,7 +30,13 @@ export function ClockDial({ size, filled, radius = 14, onSet, label }: {
             stroke="#0c0a09"
             strokeWidth={1.5}
             className={onSet ? 'nodrag cursor-pointer hover:opacity-80' : undefined}
-            onClick={onSet && ((event) => { event.stopPropagation(); onSet(filled === i + 1 ? i : i + 1) })}
+            onClick={
+              onSet &&
+              ((event) => {
+                event.stopPropagation()
+                onSet(filled === i + 1 ? i : i + 1)
+              })
+            }
           >
             {onSet && <title>{`Set to ${i + 1} of ${size}`}</title>}
           </path>

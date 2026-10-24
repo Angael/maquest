@@ -49,7 +49,10 @@ export function Backlog() {
             <div
               key={n.id}
               onClick={() => select({ kind: 'node', id: n.id })}
-              className={clsx('group cursor-pointer rounded-lg border bg-stone-900/60 p-3', selection?.kind === 'node' && selection.id === n.id ? 'border-pink-500/50' : 'border-stone-800 hover:border-stone-700')}
+              className={clsx(
+                'group cursor-pointer rounded-lg border bg-stone-900/60 p-3',
+                selection?.kind === 'node' && selection.id === n.id ? 'border-pink-500/50' : 'border-stone-800 hover:border-stone-700',
+              )}
             >
               <div className="flex items-start gap-2">
                 <div className="font-medium text-stone-100">{n.title}</div>
@@ -61,12 +64,28 @@ export function Backlog() {
                     onChange={(e) => update.mutate([n.id, { type: e.target.value as NodeType }])}
                   >
                     <option value="">Promote to…</option>
-                    {PROMOTE.map((t) => <option key={t} value={t}>{NODE_STYLE[t].label}</option>)}
+                    {PROMOTE.map((t) => (
+                      <option key={t} value={t}>
+                        {NODE_STYLE[t].label}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
-              {n.body.trim() && <div className="mt-1 line-clamp-4 text-sm"><MarkdownPreview source={n.body} /></div>}
-              {n.tags.length > 0 && <div className="mt-2 flex gap-1">{n.tags.map((t) => <span key={t} className="rounded bg-stone-800 px-1.5 text-[11px] text-stone-400">{t}</span>)}</div>}
+              {n.body.trim() && (
+                <div className="mt-1 line-clamp-4 text-sm">
+                  <MarkdownPreview source={n.body} />
+                </div>
+              )}
+              {n.tags.length > 0 && (
+                <div className="mt-2 flex gap-1">
+                  {n.tags.map((t) => (
+                    <span key={t} className="rounded bg-stone-800 px-1.5 text-[11px] text-stone-400">
+                      {t}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
           {!ideas.length && <div className="py-10 text-center text-sm text-stone-600">Nothing here yet.</div>}

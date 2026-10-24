@@ -50,11 +50,12 @@ export function TopBar() {
             <div className="absolute top-10 right-0 z-50 w-[420px] space-y-2 rounded-lg border border-stone-700 bg-stone-900 p-4 text-sm shadow-2xl">
               <div className="font-medium text-stone-100">Work with your AI agent</div>
               <p className="text-stone-400">
-                This folder already has MCP configs (<code>.mcp.json</code>, <code>.codex/config.toml</code>,{' '}
-                <code>.cursor/mcp.json</code>) and an <code>AGENTS.md</code>. Start your agent inside the project folder and it
-                will pick up the <b>maquest</b> tools automatically:
+                This folder already has MCP configs (<code>.mcp.json</code>, <code>.codex/config.toml</code>, <code>.cursor/mcp.json</code>) and an{' '}
+                <code>AGENTS.md</code>. Start your agent inside the project folder and it will pick up the <b>maquest</b> tools automatically:
               </p>
-              <pre className="overflow-x-auto rounded bg-stone-950 p-2 text-xs text-amber-200">cd "{current?.root}"{'\n'}claude   # or codex, cursor…</pre>
+              <pre className="overflow-x-auto rounded bg-stone-950 p-2 text-xs text-amber-200">
+                cd "{current?.root}"{'\n'}claude # or codex, cursor…
+              </pre>
               <p className="text-stone-500">Edits the agent makes show up here instantly.</p>
             </div>
           )}

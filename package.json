@@ -2,7 +2,6 @@
   "name": "maquest",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@12.3.4",
   "scripts": {
     "dev": "pnpm --filter @maquest/mcp build && pnpm --filter @maquest/desktop dev",
     "build": "pnpm -r build",
@@ -21,5 +20,6 @@
     "oxfmt": "^0.74.0",
     "oxlint": "^1.89.0",
     "tsx": "^4.23.15"
-  }
+  },
+  "packageManager": "pnpm@12.3.4"
 }

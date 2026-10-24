@@ -19,7 +19,8 @@ export function Button({ className, variant = 'ghost', ...p }: ButtonHTMLAttribu
   )
 }
 
-const field = 'w-full rounded-md border border-stone-800 bg-stone-900 px-2.5 py-1.5 text-sm text-stone-100 placeholder:text-stone-600 outline-none focus:border-amber-500/60'
+const field =
+  'w-full rounded-md border border-stone-800 bg-stone-900 px-2.5 py-1.5 text-sm text-stone-100 placeholder:text-stone-600 outline-none focus:border-amber-500/60'
 
 export const Input = ({ className, ...p }: InputHTMLAttributes<HTMLInputElement>) => <input {...p} className={cn(field, className)} />
 export const Textarea = ({ className, ...p }: TextareaHTMLAttributes<HTMLTextAreaElement>) => <textarea {...p} className={cn(field, className)} />

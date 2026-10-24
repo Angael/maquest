@@ -1,16 +1,4 @@
-import {
-  BookOpen,
-  Box,
-  Castle,
-  FileText,
-  Film,
-  Flag,
-  Lightbulb,
-  MapPin,
-  Clapperboard,
-  User,
-  type LucideIcon,
-} from 'lucide-react'
+import { BookOpen, Box, Castle, FileText, Film, Flag, Lightbulb, MapPin, Clapperboard, User, type LucideIcon } from 'lucide-react'
 import type { EdgeType, NodeType } from '@maquest/core/schema'
 
 export const NODE_STYLE: Record<NodeType, { label: string; plural: string; icon: LucideIcon; color: string }> = {

@@ -48,7 +48,11 @@ export function MarkdownPreview({ source }: { source: string }) {
   const select = useUI((s) => s.select)
   // [[node-id]] wiki links -> clickable links to nodes
   const text = useMemo(
-    () => source.replaceAll(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_, id: string, alias?: string) => `[${alias ?? nodes.find((n) => n.id === id.trim())?.title ?? id}](#node:${id.trim()})`),
+    () =>
+      source.replaceAll(
+        /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g,
+        (_, id: string, alias?: string) => `[${alias ?? nodes.find((n) => n.id === id.trim())?.title ?? id}](#node:${id.trim()})`,
+      ),
     [source, nodes],
   )
   return (
@@ -57,13 +61,16 @@ export function MarkdownPreview({ source }: { source: string }) {
         remarkPlugins={[remarkGfm]}
         urlTransform={(url) => (url.startsWith('media/') ? mediaUrl(url) : defaultUrlTransform(url))}
         components={{
-          img: ({ src, alt }) =>
-            typeof src === 'string' && isVideo(src) ? <video src={src} controls /> : <img src={src as string} alt={alt} />,
+          img: ({ src, alt }) => (typeof src === 'string' && isVideo(src) ? <video src={src} controls /> : <img src={src as string} alt={alt} />),
           a: ({ href, children }) =>
             href?.startsWith('#node:') ? (
-              <a href="#" onClick={(e) => (e.preventDefault(), select({ kind: 'node', id: href.slice(6) }))}>{children}</a>
+              <a href="#" onClick={(e) => (e.preventDefault(), select({ kind: 'node', id: href.slice(6) }))}>
+                {children}
+              </a>
             ) : (
-              <a href={href} target="_blank" rel="noreferrer">{children}</a>
+              <a href={href} target="_blank" rel="noreferrer">
+                {children}
+              </a>
             ),
         }}
       >
@@ -77,7 +84,9 @@ export function MarkdownEditor({ value, onChange }: { value: string; onChange: (
   const [mode, setMode] = useState<'write' | 'preview'>(value.trim() ? 'preview' : 'write')
   const extensions = useMemo(() => [markdown({ base: markdownLanguage, codeLanguages: languages }), EditorView.lineWrapping, mediaHandlers, editorTheme], [])
   const onChangeRef = useRef(onChange)
-  useLayoutEffect(() => { onChangeRef.current = onChange })
+  useLayoutEffect(() => {
+    onChangeRef.current = onChange
+  })
   // Keep CodeMirror's listener/configuration stable while the controlled draft
   // updates. External value changes are already annotated by react-codemirror.
   const handleChange = useCallback((next: string) => onChangeRef.current(next), [])
@@ -85,7 +94,11 @@ export function MarkdownEditor({ value, onChange }: { value: string; onChange: (
     <div className="rounded-md border border-stone-800 bg-stone-900/50">
       <div className="flex gap-1 border-b border-stone-800 px-2 py-1 text-xs">
         {(['write', 'preview'] as const).map((m) => (
-          <button key={m} onClick={() => setMode(m)} className={clsx('rounded px-2 py-0.5 capitalize', mode === m ? 'bg-stone-800 text-stone-100' : 'text-stone-500 hover:text-stone-300')}>
+          <button
+            key={m}
+            onClick={() => setMode(m)}
+            className={clsx('rounded px-2 py-0.5 capitalize', mode === m ? 'bg-stone-800 text-stone-100' : 'text-stone-500 hover:text-stone-300')}
+          >
             {m}
           </button>
         ))}

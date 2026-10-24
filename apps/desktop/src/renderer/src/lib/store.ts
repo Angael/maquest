@@ -29,7 +29,7 @@ type UI = {
   setBoard: (id: string) => void
 }
 
-const toggle = <T,>(list: T[], v: T) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v])
+const toggle = <T>(list: T[], v: T) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v])
 
 export const useUI = create<UI>()(
   persist(
@@ -46,13 +46,14 @@ export const useUI = create<UI>()(
       referenceLines: false,
       setView: (view) => set({ view }),
       select: (selection) => set({ selection, selectedNodeIds: selection?.kind === 'node' ? [selection.id] : [] }),
-      selectNodes: (selectedNodeIds) => set((s) => {
-        const primary = s.selection?.kind === 'node' && selectedNodeIds.includes(s.selection.id) ? s.selection.id : selectedNodeIds[0]
-        return {
-          selectedNodeIds,
-          selection: primary ? { kind: 'node', id: primary } : s.selection?.kind === 'edge' ? s.selection : null,
-        }
-      }),
+      selectNodes: (selectedNodeIds) =>
+        set((s) => {
+          const primary = s.selection?.kind === 'node' && selectedNodeIds.includes(s.selection.id) ? s.selection.id : selectedNodeIds[0]
+          return {
+            selectedNodeIds,
+            selection: primary ? { kind: 'node', id: primary } : s.selection?.kind === 'edge' ? s.selection : null,
+          }
+        }),
       toggleEdge: (t) => set((s) => ({ hiddenEdges: toggle(s.hiddenEdges, t) })),
       toggleNode: (t) => set((s) => ({ hiddenNodes: toggle(s.hiddenNodes, t) })),
       setStoryScope: (storyScope) => set({ storyScope }),
@@ -64,9 +65,21 @@ export const useUI = create<UI>()(
       version: 2,
       migrate: (state) => {
         const saved = state as Partial<UI>
-        return { hiddenEdges: saved.hiddenEdges ?? [], hiddenNodes: saved.hiddenNodes ?? [], connectType: 'auto' as const, edgeLabels: 'focus' as const, referenceLines: false }
+        return {
+          hiddenEdges: saved.hiddenEdges ?? [],
+          hiddenNodes: saved.hiddenNodes ?? [],
+          connectType: 'auto' as const,
+          edgeLabels: 'focus' as const,
+          referenceLines: false,
+        }
       },
-      partialize: ({ hiddenEdges, hiddenNodes, connectType, edgeLabels, referenceLines }) => ({ hiddenEdges, hiddenNodes, connectType, edgeLabels, referenceLines }),
+      partialize: ({ hiddenEdges, hiddenNodes, connectType, edgeLabels, referenceLines }) => ({
+        hiddenEdges,
+        hiddenNodes,
+        connectType,
+        edgeLabels,
+        referenceLines,
+      }),
     },
   ),
 )

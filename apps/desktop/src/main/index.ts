@@ -4,9 +4,7 @@ import { app, BrowserWindow, ipcMain, net, protocol } from 'electron'
 import { Project } from '@maquest/core'
 import { handlers, mediaPath } from './handlers'
 
-protocol.registerSchemesAsPrivileged([
-  { scheme: 'maquest-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } },
-])
+protocol.registerSchemesAsPrivileged([{ scheme: 'maquest-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } }])
 
 function createWindow() {
   const win = new BrowserWindow({

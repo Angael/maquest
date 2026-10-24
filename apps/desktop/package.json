@@ -1,8 +1,6 @@
 {
   "name": "@maquest/desktop",
   "version": "0.1.0",
-  "productName": "Maquest",
-  "desktopName": "maquest.desktop",
   "private": true,
   "type": "module",
   "main": "out/main/index.js",
@@ -43,5 +41,7 @@
     "use-debounce": "^10.1.1",
     "vite": "^8.3.5",
     "zustand": "^5.0.16"
-  }
+  },
+  "desktopName": "maquest.desktop",
+  "productName": "Maquest"
 }

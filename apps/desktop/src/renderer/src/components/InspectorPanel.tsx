@@ -10,7 +10,9 @@ export function InspectorPanel({ children }: { children: ReactNode }) {
     try {
       const saved = Number(localStorage.getItem(STORAGE_KEY))
       return Number.isFinite(saved) && saved > 0 ? saved : DEFAULT_WIDTH
-    } catch { return DEFAULT_WIDTH }
+    } catch {
+      return DEFAULT_WIDTH
+    }
   })
   const [maximum, setMaximum] = useState(DEFAULT_WIDTH)
   const minimum = Math.min(280, maximum)
@@ -32,7 +34,11 @@ export function InspectorPanel({ children }: { children: ReactNode }) {
   const resize = (next: number) => {
     const bounded = Math.round(Math.max(minimum, Math.min(next, maximum)))
     setPreferred(bounded)
-    try { localStorage.setItem(STORAGE_KEY, String(bounded)) } catch { /* Storage may be unavailable. */ }
+    try {
+      localStorage.setItem(STORAGE_KEY, String(bounded))
+    } catch {
+      /* Storage may be unavailable. */
+    }
   }
 
   return (
@@ -64,8 +70,12 @@ export function InspectorPanel({ children }: { children: ReactNode }) {
           drag.current = null
           if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
         }}
-        onPointerCancel={() => { drag.current = null }}
-        onLostPointerCapture={() => { drag.current = null }}
+        onPointerCancel={() => {
+          drag.current = null
+        }}
+        onLostPointerCapture={() => {
+          drag.current = null
+        }}
         onKeyDown={(event) => {
           const step = event.shiftKey ? 40 : 10
           if (event.key === 'ArrowLeft') resize(width + step)

@@ -54,8 +54,7 @@ function safe<A>(fn: (a: A) => string | Promise<string>) {
   }
 }
 
-const line = (n: StoryNode) =>
-  `- ${n.id} [${n.type}${n.status ? `, ${n.status}` : ''}] ${n.title}${n.summary ? ` — ${n.summary}` : ''}`
+const line = (n: StoryNode) => `- ${n.id} [${n.type}${n.status ? `, ${n.status}` : ''}] ${n.title}${n.summary ? ` — ${n.summary}` : ''}`
 
 const section = (title: string, nodes: StoryNode[]) => (nodes.length ? `## ${title}\n${nodes.map(line).join('\n')}` : '')
 const guidelineText = (g: { id: string; title: string; scope: string; source: string; disabled?: boolean; body: string }) =>
@@ -89,7 +88,8 @@ function nodeText(p: Project, n: StoryNode): string {
     n.tags.length && `tags: ${n.tags.join(', ')}`,
     n.media.length && `media: ${n.media.join(', ')}`,
     n.src && `src: ${n.src}`,
-    n.clock && `clock: ${n.clock.filled}/${n.clock.size}${n.clock.steps.some(Boolean) ? ` — ${n.clock.steps.map((s, i) => `${i + 1}${i < n.clock!.filled ? '✓' : ''}: ${s || '?'}`).join('; ')}` : ''}`,
+    n.clock &&
+      `clock: ${n.clock.filled}/${n.clock.size}${n.clock.steps.some(Boolean) ? ` — ${n.clock.steps.map((s, i) => `${i + 1}${i < n.clock!.filled ? '✓' : ''}: ${s || '?'}`).join('; ')}` : ''}`,
     boardsText(p, n.id) && `boards: ${boardsText(p, n.id)}`,
     ...Object.entries(n.fields).map(([k, v]) => `${k}: ${v || '(empty)'}`),
   ].filter(Boolean)
@@ -140,7 +140,9 @@ function boardText(p: Project, b: Board) {
     boardSummary(b),
     ...groups.map((g, i) => `## ${i + 1}. ${g.title}\n${g.ids.map(entry).join('\n') || '(empty)'}`),
     b.nodes && loose.length ? `## Outside phases\n${loose.map(entry).join('\n')}` : '',
-  ].filter(Boolean).join('\n\n')
+  ]
+    .filter(Boolean)
+    .join('\n\n')
 }
 
 const server = new McpServer(
@@ -186,12 +188,16 @@ server.registerTool(
       `## Boards (read with "board")\n${p.boards().map(boardSummary).join('\n')}`,
       (() => {
         const clocks = all.filter((n) => n.clock)
-        return clocks.length ? `## Clocks\n${clocks.map((n) => `- ${n.id}: ${n.title} ${n.clock!.filled}/${n.clock!.size}${n.clock!.steps[n.clock!.filled] ? ` — next: ${n.clock!.steps[n.clock!.filled]}` : ''}`).join('\n')}` : ''
+        return clocks.length
+          ? `## Clocks\n${clocks.map((n) => `- ${n.id}: ${n.title} ${n.clock!.filled}/${n.clock!.size}${n.clock!.steps[n.clock!.filled] ? ` — next: ${n.clock!.steps[n.clock!.filled]}` : ''}`).join('\n')}`
+          : ''
       })(),
       (() => {
         const weak = [...clueCounts(edges)].filter(([, n]) => n < 3)
         const titles = new Map(all.map((n) => [n.id, n.title]))
-        return weak.length ? `## Three-clue check\n${weak.map(([id, n]) => `- ${id} (${titles.get(id) ?? '?'}): ${n} clue${n === 1 ? '' : 's'}`).join('\n')}` : ''
+        return weak.length
+          ? `## Three-clue check\n${weak.map(([id, n]) => `- ${id} (${titles.get(id) ?? '?'}): ${n} clue${n === 1 ? '' : 's'}`).join('\n')}`
+          : ''
       })(),
       `## Guidelines (read with "guidelines")\n${p
         .guidelines({ applicableOnly: true })
@@ -241,11 +247,7 @@ const WriteItem = z.object({
   id: z.string().optional().describe('Existing node id to update. Omit to create a new node.'),
   type: NodeType.optional().describe('Required when creating. Changing it on update converts the node.'),
   title: z.string().optional().describe('Required when creating'),
-  parent: z
-    .string()
-    .nullable()
-    .optional()
-    .describe('chapter→story, scene→chapter, note→story/chapter/scene. null detaches.'),
+  parent: z.string().nullable().optional().describe('chapter→story, scene→chapter, note→story/chapter/scene. null detaches.'),
   order: z.number().optional().describe('Position among siblings'),
   status: Status.nullable().optional(),
   summary: z.string().optional().describe('One-line summary (scenes: "X tries to Y, but Z, so W")'),
@@ -256,7 +258,9 @@ const WriteItem = z.object({
   appendBody: z.string().optional().describe('Markdown appended to the body'),
   media: z.array(z.string()).optional().describe('Attached media paths (media/...)'),
   src: z.string().optional().describe('For media nodes: media path shown on the canvas'),
-  clock: Clock.nullable().optional().describe('Progress clock for fronts/threats/countdowns: {size, filled, steps[] (what happens at each segment)}. null removes it.'),
+  clock: Clock.nullable()
+    .optional()
+    .describe('Progress clock for fronts/threats/countdowns: {size, filled, steps[] (what happens at each segment)}. null removes it.'),
 })
 
 server.registerTool(

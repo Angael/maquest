@@ -165,7 +165,10 @@ test('board creation, membership and per-board layout undo and redo together', (
   assert.equal(project.board('act-i').layout[node.id].x, 560 + 40)
   history.undo(project)
   history.undo(project)
-  assert.deepEqual(project.boards().map((b) => b.id), ['main'])
+  assert.deepEqual(
+    project.boards().map((b) => b.id),
+    ['main'],
+  )
   history.redo(project)
   assert.deepEqual(project.board('act-i').nodes, [node.id])
 })

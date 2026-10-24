@@ -40,9 +40,7 @@ function pushRecent(root: string) {
 
 /** How agents launch the bundled MCP server: Electron's binary running as plain Node. */
 export function mcpLaunch() {
-  const script = app.isPackaged
-    ? path.join(process.resourcesPath, 'mcp', 'index.js')
-    : path.resolve(app.getAppPath(), '../../packages/mcp/dist/index.js')
+  const script = app.isPackaged ? path.join(process.resourcesPath, 'mcp', 'index.js') : path.resolve(app.getAppPath(), '../../packages/mcp/dist/index.js')
   return { command: process.execPath, args: [script], env: { ELECTRON_RUN_AS_NODE: '1' } }
 }
 
@@ -89,14 +87,28 @@ export const handlers = {
   },
   /** Removes only the recent entry; project files are left untouched. */
   removeRecent: (root: string) => {
-    fs.writeFileSync(recentFile(), JSON.stringify(readRecent().filter((p) => p !== root), null, 2))
+    fs.writeFileSync(
+      recentFile(),
+      JSON.stringify(
+        readRecent().filter((p) => p !== root),
+        null,
+        2,
+      ),
+    )
   },
   /** Moves a project folder to the OS trash (recoverable) and drops it from the recent list. */
   trash: async (root: string) => {
     if (!Project.isProject(root)) throw new Error(`Not a Maquest project: ${root}`)
     if (current?.root === path.resolve(root)) handlers.close()
     await shell.trashItem(root)
-    fs.writeFileSync(recentFile(), JSON.stringify(readRecent().filter((p) => p !== root), null, 2))
+    fs.writeFileSync(
+      recentFile(),
+      JSON.stringify(
+        readRecent().filter((p) => p !== root),
+        null,
+        2,
+      ),
+    )
   },
   /** Folder picker; initializes the folder as a project if needed. */
   pickFolder: async (create?: { name: string; kind: ProjectKind }) => {
@@ -128,50 +140,71 @@ export const handlers = {
   updateConfig: (patch: Partial<ProjectConfig>) => p().updateConfig(patch),
   listNodes: (filter?: NodeFilter) => p().listNodes(filter),
   getNode: (id: string) => p().getNode(id),
-  createNode: (input: CreateNodeInput, position?: Position, board?: string) => history.record(p(), () => {
-    const node = p().createNode(input)
-    if (position) p().setLayout({ [node.id]: position }, board)
-    return node
-  }),
+  createNode: (input: CreateNodeInput, position?: Position, board?: string) =>
+    history.record(p(), () => {
+      const node = p().createNode(input)
+      if (position) p().setLayout({ [node.id]: position }, board)
+      return node
+    }),
   /** Duplicates nodes (and edges among them) at an offset; one undo step. Returns the new ids. */
-  duplicateNodes: (ids: string[], offset: Position, board?: string) => history.record(p(), () => {
-    const project = p()
-    const sources = ids.map((id) => project.getNode(id)).filter((n): n is NonNullable<typeof n> => !!n)
-    const layout = project.board(board).layout
-    const copies = new Map<string, string>()
-    // Parents before children so copied children attach to copied parents.
-    const depth = (n: (typeof sources)[number]): number => (n.parent && sources.some((s) => s.id === n.parent) ? 1 + depth(sources.find((s) => s.id === n.parent)!) : 0)
-    for (const n of sources.toSorted((a, b) => depth(a) - depth(b))) {
-      const parent = n.parent && (copies.get(n.parent) ?? (project.getNode(n.parent) ? n.parent : undefined))
-      const copy = project.createNode({
-        type: n.type, title: n.title, body: n.body, parent: parent || undefined, status: n.status, summary: n.summary,
-        tags: n.tags, pinned: n.pinned, media: n.media, src: n.src, fields: n.fields, clock: n.clock, template: false,
-      })
-      copies.set(n.id, copy.id)
-      const at = layout[n.id]
-      if (at) project.setLayout({ [copy.id]: { x: at.x + offset.x, y: at.y + offset.y } }, board)
-    }
-    for (const e of project.graph().edges) {
-      const source = copies.get(e.source)
-      const target = copies.get(e.target)
-      if (source && target) project.addEdge({ source, target, type: e.type, label: e.label, sourceHandle: e.sourceHandle, targetHandle: e.targetHandle })
-    }
-    return [...copies.values()]
-  }),
+  duplicateNodes: (ids: string[], offset: Position, board?: string) =>
+    history.record(p(), () => {
+      const project = p()
+      const sources = ids.map((id) => project.getNode(id)).filter((n): n is NonNullable<typeof n> => !!n)
+      const layout = project.board(board).layout
+      const copies = new Map<string, string>()
+      // Parents before children so copied children attach to copied parents.
+      const depth = (n: (typeof sources)[number]): number =>
+        n.parent && sources.some((s) => s.id === n.parent) ? 1 + depth(sources.find((s) => s.id === n.parent)!) : 0
+      for (const n of sources.toSorted((a, b) => depth(a) - depth(b))) {
+        const parent = n.parent && (copies.get(n.parent) ?? (project.getNode(n.parent) ? n.parent : undefined))
+        const copy = project.createNode({
+          type: n.type,
+          title: n.title,
+          body: n.body,
+          parent: parent || undefined,
+          status: n.status,
+          summary: n.summary,
+          tags: n.tags,
+          pinned: n.pinned,
+          media: n.media,
+          src: n.src,
+          fields: n.fields,
+          clock: n.clock,
+          template: false,
+        })
+        copies.set(n.id, copy.id)
+        const at = layout[n.id]
+        if (at) project.setLayout({ [copy.id]: { x: at.x + offset.x, y: at.y + offset.y } }, board)
+      }
+      for (const e of project.graph().edges) {
+        const source = copies.get(e.source)
+        const target = copies.get(e.target)
+        if (source && target) project.addEdge({ source, target, type: e.type, label: e.label, sourceHandle: e.sourceHandle, targetHandle: e.targetHandle })
+      }
+      return [...copies.values()]
+    }),
   updateNode: (id: string, patch: UpdateNodeInput) => history.record(p(), () => p().updateNode(id, patch)),
-  deleteNodes: (ids: string[], recursive?: boolean) => history.record(p(), () => ids.flatMap((id) =>
-    p().getNode(id) ? p().deleteNode(id, { recursive }) : [])),
+  deleteNodes: (ids: string[], recursive?: boolean) =>
+    history.record(p(), () => ids.flatMap((id) => (p().getNode(id) ? p().deleteNode(id, { recursive }) : []))),
   reorder: (ids: string[]) => history.record(p(), () => p().reorder(ids)),
   outline: () => p().outline(),
   graph: () => p().graph(),
-  addEdge: (e: { source: string; target: string; type?: EdgeType; label?: string; sourceHandle?: EdgeHandle; targetHandle?: EdgeHandle }) => history.record(p(), () => p().addEdge(e)),
-  updateEdge: (id: string, patch: { type?: EdgeType; label?: string; source?: string; target?: string; sourceHandle?: EdgeHandle; targetHandle?: EdgeHandle }) => history.record(p(), () => p().updateEdge(id, patch)),
+  addEdge: (e: { source: string; target: string; type?: EdgeType; label?: string; sourceHandle?: EdgeHandle; targetHandle?: EdgeHandle }) =>
+    history.record(p(), () => p().addEdge(e)),
+  updateEdge: (
+    id: string,
+    patch: { type?: EdgeType; label?: string; source?: string; target?: string; sourceHandle?: EdgeHandle; targetHandle?: EdgeHandle },
+  ) => history.record(p(), () => p().updateEdge(id, patch)),
   removeEdge: (id: string) => history.record(p(), () => p().removeEdge(id)),
   setLayout: (pos: Record<string, Position>, board?: string) => history.record(p(), () => p().setLayout(pos, board)),
   createBoard: (input: { title: string; nodes?: string[]; phases?: string[] }) => history.record(p(), () => p().createBoard(input)),
   updateBoard: (id: string, patch: BoardPatch & { phase?: string }) => history.record(p(), () => p().updateBoard(id, patch)),
   deleteBoard: (id: string) => history.record(p(), () => p().deleteBoard(id)),
-  history: () => { p(); return history.status() },
+  history: () => {
+    p()
+    return history.status()
+  },
   undo: () => {
     const status = history.undo(p())
     broadcast('project:changed')
@@ -184,8 +217,7 @@ export const handlers = {
   },
   guidelines: () => p().guidelines({ includeDisabled: true }),
   defaultGuideline: (id: string) => p().defaultGuideline(id),
-  setGuideline: (id: string, patch: { title?: string; body?: string; scope?: GuidelineScope; disabled?: boolean }) =>
-    p().setGuideline(id, patch),
+  setGuideline: (id: string, patch: { title?: string; body?: string; scope?: GuidelineScope; disabled?: boolean }) => p().setGuideline(id, patch),
   resetGuideline: (id: string) => p().resetGuideline(id),
   importMedia: (absPath: string) => p().importMedia(absPath),
   writeMedia: (name: string, data: Uint8Array) => p().writeMedia(name, data),
