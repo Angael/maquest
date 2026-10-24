@@ -19,7 +19,25 @@ import {
 } from '@xyflow/react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
-import { BoxSelect, ChevronDown, Columns3, LayoutGrid, Pencil, Plus, Redo2, Trash2, Undo2, X } from 'lucide-react'
+import {
+  BoxSelect,
+  ChevronDown,
+  Columns3,
+  Eye,
+  Globe,
+  LayoutGrid,
+  MousePointer2,
+  Pencil,
+  Plus,
+  Redo2,
+  Route,
+  Tags,
+  Trash2,
+  Undo2,
+  Waypoints,
+  X,
+  type LucideIcon,
+} from 'lucide-react'
 import {
   EDGE_DESCRIPTIONS,
   EDGE_TYPES,
@@ -61,11 +79,12 @@ import { arrange } from '../lib/layout'
 const nodeTypes = { card: StoryCard, frame: GroupFrame }
 const edgeTypes = { floating: FloatingEdge }
 const NONE: StoryNode[] = []
-const MODES: { label: string; nodes: readonly NodeType[]; edges: readonly EdgeKind[] }[] = [
-  { label: 'Everything', nodes: NODE_TYPES, edges: ['contains', ...EDGE_TYPES] },
-  { label: 'Story flow', nodes: ['story', 'chapter', 'scene', 'note'], edges: ['contains', 'leads-to', 'branches-to', 'parallel', 'foreshadows'] },
+const MODES: { label: string; icon: LucideIcon; nodes: readonly NodeType[]; edges: readonly EdgeKind[] }[] = [
+  { label: 'Everything', icon: LayoutGrid, nodes: NODE_TYPES, edges: ['contains', ...EDGE_TYPES] },
+  { label: 'Story flow', icon: Route, nodes: ['story', 'chapter', 'scene', 'note'], edges: ['contains', 'leads-to', 'branches-to', 'parallel', 'foreshadows'] },
   {
     label: 'World / entities',
+    icon: Globe,
     nodes: ['character', 'location', 'faction', 'item', 'media', 'note'],
     edges: ['link', 'involves', 'located-at', 'member-of', 'owns', 'relationship'],
   },
@@ -1139,13 +1158,43 @@ function Toolbar({
   )
 }
 
+function IconSegments<T extends string | number>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string
+  value: T
+  options: { value: T; label: string; icon: LucideIcon }[]
+  onChange: (value: T) => void
+}) {
+  return (
+    <div role="group" aria-label={label} className="flex overflow-hidden rounded-md border border-stone-700">
+      {options.map(({ value: option, label: name, icon: Icon }) => (
+        <button
+          key={option}
+          type="button"
+          aria-label={name}
+          title={name}
+          aria-pressed={value === option}
+          onClick={() => onChange(option)}
+          className={clsx(
+            'flex min-w-9 flex-1 items-center justify-center border-r border-stone-700 px-2 py-1.5 last:border-r-0 focus-visible:z-10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-amber-400',
+            value === option ? 'bg-amber-500 text-stone-950' : 'bg-stone-800 text-stone-300 hover:bg-stone-700',
+          )}
+        >
+          <Icon size={16} aria-hidden="true" />
+        </button>
+      ))}
+    </div>
+  )
+}
+
 function FilterPanel() {
   const { hiddenEdges, hiddenNodes, toggleEdge, toggleNode, connectType, setConnectType, edgeLabels, referenceLines } = useUI()
   const [advanced, setAdvanced] = useState(false)
-  const connectionDescription =
-    connectType === 'auto'
-      ? 'Choose a type from the source and target cards. Ambiguous pairs use a free link; hierarchy is unchanged.'
-      : EDGE_DESCRIPTIONS[connectType]
+  const connectionDescription = connectType === 'auto' ? 'Automatically choose the connection type' : EDGE_DESCRIPTIONS[connectType]
   const kinds: EdgeKind[] = ['contains', ...EDGE_TYPES]
   const current = MODES.findIndex(
     (mode) =>
@@ -1160,51 +1209,34 @@ function FilterPanel() {
       <div className="space-y-2 p-2.5">
         <div className="space-y-1.5">
           <span className="text-xs text-stone-400">View</span>
-          <div role="group" aria-label="Graph view mode" className="flex overflow-hidden rounded-md border border-stone-700">
-            {MODES.map((m, i) => (
-              <button
-                key={m.label}
-                aria-pressed={current === i}
-                onClick={() => mode(i)}
-                className={clsx(
-                  'flex-1 border-r border-stone-700 px-2 py-1.5 text-xs last:border-r-0 focus-visible:z-10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-amber-400',
-                  current === i ? 'bg-amber-500 text-stone-950' : 'bg-stone-800 text-stone-300 hover:bg-stone-700',
-                )}
-              >
-                {m.label}
-              </button>
-            ))}
+          <IconSegments label="Graph view mode" value={current} options={MODES.map((m, i) => ({ value: i, label: m.label, icon: m.icon }))} onChange={mode} />
+        </div>
+        <div className="space-y-1.5 text-xs text-stone-300">
+          <div className="flex items-center justify-between gap-2">
+            <span>Line names</span>
+            <IconSegments
+              label="When to show line names"
+              value={edgeLabels}
+              options={[
+                { value: 'focus', label: 'On hover / focus', icon: MousePointer2 },
+                { value: 'always', label: 'Always', icon: Eye },
+              ]}
+              onChange={(edgeLabels) => useUI.setState({ edgeLabels })}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <span>References</span>
+            <IconSegments
+              label="How to show references"
+              value={referenceLines ? 'lines' : 'chips'}
+              options={[
+                { value: 'chips', label: 'Chips on cards', icon: Tags },
+                { value: 'lines', label: 'Lines', icon: Waypoints },
+              ]}
+              onChange={(value) => useUI.setState({ referenceLines: value === 'lines' })}
+            />
           </div>
         </div>
-        <div className="space-y-1 text-xs text-stone-300">
-          <label className="flex items-center justify-between gap-2" title="Names of lines appear when you hover or select a card or line">
-            Line names
-            <select
-              aria-label="When to show line names"
-              className="rounded bg-stone-800 px-1 py-0.5"
-              value={edgeLabels}
-              onChange={(e) => useUI.setState({ edgeLabels: e.target.value as 'focus' | 'always' })}
-            >
-              <option value="focus">On hover / focus</option>
-              <option value="always">Always</option>
-            </select>
-          </label>
-          <label className="flex items-center justify-between gap-2" title="involves, located-at, member-of and owns: as chips on the card, or as lines">
-            References
-            <select
-              aria-label="How to show references"
-              className="rounded bg-stone-800 px-1 py-0.5"
-              value={referenceLines ? 'lines' : 'chips'}
-              onChange={(e) => useUI.setState({ referenceLines: e.target.value === 'lines' })}
-            >
-              <option value="chips">Chips on cards</option>
-              <option value="lines">Lines</option>
-            </select>
-          </label>
-        </div>
-        <p className="text-[11px] leading-relaxed text-stone-500">
-          Drag from a card's edge dot and drop anywhere on another card to connect. Pin cards to keep their place when arranging.
-        </p>
         <div className="flex items-center justify-between text-[11px]">
           <span className="text-stone-400">
             New lines: <span className="text-amber-300">{connectType === 'auto' ? 'Auto' : connectType}</span>
@@ -1230,7 +1262,7 @@ function FilterPanel() {
               ))}
             </select>
           </label>
-          <p className="text-[11px] text-stone-500">{connectionDescription}</p>
+          {connectType !== 'auto' && <p className="text-[11px] text-stone-500">{connectionDescription}</p>}
           <div>
             <div className="pb-1 text-[10px] tracking-wider text-stone-500 uppercase">Connections / legend</div>
             {kinds.map((k) => {

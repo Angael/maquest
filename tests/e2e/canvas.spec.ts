@@ -47,3 +47,22 @@ test('external file edits appear on the canvas', async ({ desktop }) => {
   project.updateNode(ids[0], { title: 'Renamed externally' })
   await expect(page.locator(`.react-flow__node[data-id="${ids[0]}"]`)).toContainText('Renamed externally')
 })
+
+test('canvas display controls switch modes and retain display preferences', async ({ desktop }) => {
+  const { page } = desktop
+  const view = page.getByRole('group', { name: 'Graph view mode' })
+  const labels = page.getByRole('group', { name: 'When to show line names' })
+  const references = page.getByRole('group', { name: 'How to show references' })
+  await view.getByRole('button', { name: 'World / entities', exact: true }).click()
+  await expect(view.getByRole('button', { name: 'World / entities', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await view.getByRole('button', { name: 'Everything', exact: true }).click()
+  await labels.getByRole('button', { name: 'Always', exact: true }).click()
+  await references.getByRole('button', { name: 'Lines', exact: true }).click()
+  await page.reload()
+  await expect(labels.getByRole('button', { name: 'Always', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(references.getByRole('button', { name: 'Lines', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await labels.getByRole('button', { name: 'On hover / focus', exact: true }).click()
+  await references.getByRole('button', { name: 'Chips on cards', exact: true }).click()
+  await expect(labels.getByRole('button', { name: 'On hover / focus', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(references.getByRole('button', { name: 'Chips on cards', exact: true })).toHaveAttribute('aria-pressed', 'true')
+})
