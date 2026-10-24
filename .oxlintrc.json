@@ -1,0 +1,24 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc", "react", "react-hooks", "import"],
+  "categories": {
+    "correctness": "error"
+  },
+  "env": { "browser": true, "node": true, "es2024": true },
+  "rules": {
+    "react/react-in-jsx-scope": "off",
+    "no-unused-vars": ["error", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_", "destructuredArrayIgnorePattern": "^_", "ignoreRestSiblings": true }],
+    "unicorn/no-array-sort": "error",
+    "unicorn/prefer-string-replace-all": "error",
+    "unicorn/prefer-set-has": "error",
+    "unicorn/consistent-function-scoping": "error",
+    "react/no-unstable-nested-components": ["error", { "allowAsProps": true }],
+    "require-await": "error",
+    "eqeqeq": ["error", "smart"],
+    "no-var": "error",
+    "prefer-const": "error",
+    "typescript/no-explicit-any": "warn",
+    "typescript/consistent-type-imports": "error"
+  },
+  "ignorePatterns": ["**/dist/**", "**/out/**", "**/node_modules/**"]
+}

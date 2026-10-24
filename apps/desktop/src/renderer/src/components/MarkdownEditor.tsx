@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import CodeMirror, { EditorView } from '@uiw/react-codemirror'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
@@ -48,14 +48,14 @@ export function MarkdownPreview({ source }: { source: string }) {
   const select = useUI((s) => s.select)
   // [[node-id]] wiki links -> clickable links to nodes
   const text = useMemo(
-    () => source.replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_, id: string, alias?: string) => `[${alias ?? nodes.find((n) => n.id === id.trim())?.title ?? id}](#node:${id.trim()})`),
+    () => source.replaceAll(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_, id: string, alias?: string) => `[${alias ?? nodes.find((n) => n.id === id.trim())?.title ?? id}](#node:${id.trim()})`),
     [source, nodes],
   )
   return (
     <div className="prose-md">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        urlTransform={(url) => (/^media\//.test(url) ? mediaUrl(url) : defaultUrlTransform(url))}
+        urlTransform={(url) => (url.startsWith('media/') ? mediaUrl(url) : defaultUrlTransform(url))}
         components={{
           img: ({ src, alt }) =>
             typeof src === 'string' && isVideo(src) ? <video src={src} controls /> : <img src={src as string} alt={alt} />,
@@ -77,7 +77,7 @@ export function MarkdownEditor({ value, onChange }: { value: string; onChange: (
   const [mode, setMode] = useState<'write' | 'preview'>(value.trim() ? 'preview' : 'write')
   const extensions = useMemo(() => [markdown({ base: markdownLanguage, codeLanguages: languages }), EditorView.lineWrapping, mediaHandlers, editorTheme], [])
   const onChangeRef = useRef(onChange)
-  onChangeRef.current = onChange
+  useLayoutEffect(() => { onChangeRef.current = onChange })
   // Keep CodeMirror's listener/configuration stable while the controlled draft
   // updates. External value changes are already annotated by react-codemirror.
   const handleChange = useCallback((next: string) => onChangeRef.current(next), [])

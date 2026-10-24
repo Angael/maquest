@@ -17,7 +17,7 @@ export function Backlog() {
   const create = useAction(api.createNode)
   const update = useAction(api.updateNode)
   const [text, setText] = useState('')
-  const ideas = all.filter((n) => n.type === 'idea').sort((a, b) => (b.created ?? '').localeCompare(a.created ?? ''))
+  const ideas = all.filter((n) => n.type === 'idea').toSorted((a, b) => (b.created ?? '').localeCompare(a.created ?? ''))
 
   const add = () => {
     const raw = text.trim()

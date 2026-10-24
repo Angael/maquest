@@ -57,7 +57,7 @@ function NodeInspector({ id }: { id: string }) {
   const pending = useRef<Partial<Draft>>({})
   const saveQueue = useRef(Promise.resolve())
   const deleting = useRef(false)
-  const save = useDebouncedCallback(async (targetId: string, patch: Partial<Draft>, version: number) => {
+  const save = useDebouncedCallback((targetId: string, patch: Partial<Draft>, version: number) => {
     const persist = async () => {
       if (deleting.current) return
       try {

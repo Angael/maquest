@@ -41,7 +41,7 @@ export function useDeleteSelection() {
         }
         return false
       }
-      const ordered = [...targets].sort((a, b) => Number(hasSelectedAncestor(b.id)) - Number(hasSelectedAncestor(a.id)))
+      const ordered = targets.toSorted((a, b) => Number(hasSelectedAncestor(b.id)) - Number(hasSelectedAncestor(a.id)))
       await removeNodes.mutateAsync([ordered.map((node) => node.id), false])
     } catch (error) {
       useUI.getState().select(selection)

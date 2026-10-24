@@ -64,6 +64,8 @@ function useAddEdge() {
 /** In-app node clipboard; paste duplicates from disk so edits after copy are included. */
 let clipboard: { ids: string[]; pastes: number } | null = null
 
+const cardSize = (n: FlowNode<CardData>) => ({ width: n.measured?.width ?? (n.data.node.type === 'media' ? 256 : 224), height: n.measured?.height ?? 160 })
+
 export function Canvas() {
   const { data: all = NONE } = useNodes()
   const { data: graph } = useGraph()
@@ -109,6 +111,7 @@ export function Canvas() {
   const history = useQuery({ queryKey: ['history'], queryFn: () => api.history() })
   const historyBusy = undo.isPending || redo.isPending
   const historyQueue = useRef(Promise.resolve())
+  const visibleRef = useRef(NONE)
   const travel = useCallback((direction: 'undo' | 'redo') => {
     // Queue rapid shortcuts; query refetches must not drop the next keystroke.
     historyQueue.current = historyQueue.current
@@ -158,8 +161,7 @@ export function Canvas() {
     }
     return list
   }, [all, graph, board, hiddenNodes, storyScope])
-  const visibleRef = useRef(visible)
-  visibleRef.current = visible
+  useLayoutEffect(() => { visibleRef.current = visible })
 
   const connections = useMemo(() => [
     ...visible.filter((n) => n.parent && !hiddenEdges.includes('contains')).map((n) => ({ id: `contains:${n.id}`, source: n.parent!, target: n.id })),
@@ -205,7 +207,11 @@ export function Canvas() {
   // Disk (via queries) owns positions and the zustand store owns selection; React Flow only reports
   // measurements and in-flight drags, kept here until the saved layout catches up.
   const [local, setLocal] = useState<Record<string, LocalNode>>({})
-  useEffect(() => setLocal((previous) => {
+  // Drop settled drag positions once a new saved layout arrives (adjusting state during render, not in an effect).
+  const [seenBoard, setSeenBoard] = useState(board)
+  if (seenBoard !== board) {
+    setSeenBoard(board)
+    setLocal((previous) => {
     let changed = false
     const next: Record<string, LocalNode> = {}
     for (const [id, entry] of Object.entries(previous)) {
@@ -214,7 +220,8 @@ export function Canvas() {
       if (settled) { changed = true; next[id] = { measured: entry.measured } } else next[id] = entry
     }
     return changed ? next : previous
-  }), [board])
+    })
+  }
   const nodes = useMemo(() => flowNodes.map((node) => {
     const entry = local[node.id]
     return entry ? { ...node, position: entry.position ?? node.position, measured: entry.measured, dragging: entry.dragging } : node
@@ -277,11 +284,11 @@ export function Canvas() {
     // Spread every line between the same two cards so A→B and B→A (or two types) stay readable.
     const pairs = new Map<string, string[]>()
     for (const e of shown) {
-      const key = [e.source, e.target].sort().join('\0')
+      const key = [e.source, e.target].toSorted().join('\0')
       pairs.set(key, [...(pairs.get(key) ?? []), e.id])
     }
     for (const e of shown) {
-      const group = pairs.get([e.source, e.target].sort().join('\0'))!
+      const group = pairs.get([e.source, e.target].toSorted().join('\0'))!
       const lane = (group.indexOf(e.id) - (group.length - 1) / 2) * 14
       // The offset is perpendicular to source→target, so flip it for reversed edges to keep lanes apart.
       const offset = e.source < e.target ? lane : -lane
@@ -450,19 +457,18 @@ function useAutoLayout() {
     try {
     const nodes = flow.getNodes()
     const g = new dagre.graphlib.Graph().setGraph({ rankdir: 'LR', nodesep: 48, ranksep: 120 }).setDefaultEdgeLabel(() => ({}))
-    const size = (n: FlowNode<CardData>) => ({ width: n.measured?.width ?? (n.data.node.type === 'media' ? 256 : 224), height: n.measured?.height ?? 160 })
-    for (const n of nodes) g.setNode(n.id, size(n))
+    for (const n of nodes) g.setNode(n.id, cardSize(n))
     for (const e of flow.getEdges()) g.setEdge(e.source, e.target)
     dagre.layout(g)
-    const occupied = nodes.filter((n) => n.data.node.pinned).map((n) => ({ ...n.position, ...size(n) }))
+    const occupied = nodes.filter((n) => n.data.node.pinned).map((n) => ({ ...n.position, ...cardSize(n) }))
     const positions: Record<string, { x: number; y: number }> = {}
-    const movable = nodes.filter((n) => !n.data.node.pinned).sort((a, b) => {
+    const movable = nodes.filter((n) => !n.data.node.pinned).toSorted((a, b) => {
       const left = g.node(a.id); const right = g.node(b.id)
       return left.x - right.x || left.y - right.y || a.id.localeCompare(b.id)
     })
     for (const n of movable) {
       const layout = g.node(n.id)
-      const rect = { x: layout.x - layout.width / 2, y: layout.y - layout.height / 2, ...size(n) }
+      const rect = { x: layout.x - layout.width / 2, y: layout.y - layout.height / 2, ...cardSize(n) }
       for (;;) {
         const collisions = occupied.filter((o) => rect.x < o.x + o.width + 40 && rect.x + rect.width + 40 > o.x && rect.y < o.y + o.height + 40 && rect.y + rect.height + 40 > o.y)
         if (!collisions.length) break

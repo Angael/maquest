@@ -4,6 +4,8 @@ import { randomUUID } from 'node:crypto'
 import { parseFrontmatter, stringifyFrontmatter } from './frontmatter'
 import { DEFAULT_GUIDELINES } from './guidelines/defaults'
 import { TEMPLATES } from './templates'
+import type {
+  EdgeType} from './schema';
 import {
   ALLOWED_PARENTS,
   Board,
@@ -11,7 +13,6 @@ import {
   EDGE_LABEL_MAX,
   MAIN_BOARD,
   Edge,
-  EdgeType,
   EdgeHandle,
   Graph,
   GuidelineScope,
@@ -96,10 +97,10 @@ export function slugify(s: string): string {
   return (
     s
       .normalize('NFKD')
-      .replace(/[̀-ͯ]/g, '')
+      .replaceAll(/[̀-ͯ]/g, '')
       .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '')
+      .replaceAll(/[^a-z0-9]+/g, '-')
+      .replaceAll(/^-+|-+$/g, '')
       .slice(0, 60) || 'untitled'
   )
 }
@@ -218,7 +219,7 @@ export class Project {
         out.push(n)
       }
     }
-    return out.sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity) || a.title.localeCompare(b.title))
+    return out.toSorted((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity) || a.title.localeCompare(b.title))
   }
 
   getNode(id: string): StoryNode | null {
@@ -643,7 +644,7 @@ This folder is a Maquest writing project (stories, chapters, scenes, entities, b
 `
 
 /** Earlier generated versions, replaced automatically when unedited. */
-const LEGACY_AGENT_DOCS = [`# Maquest project
+const LEGACY_AGENT_DOCS = new Set([`# Maquest project
 
 This folder is a Maquest writing project (stories, chapters, scenes, entities, backlog, node graph).
 
@@ -651,7 +652,7 @@ This folder is a Maquest writing project (stories, chapters, scenes, entities, b
 - Start with the \`overview\` tool, then read the writing guidelines (\`guidelines\` tool) before making creative changes.
 - Be proactive: when the author shares ideas, add them to the project immediately (scenes, entities, links, backlog) and report what changed.
 - The author may edit or override guidelines in \`guidelines/\`. Follow project overrides over defaults.
-`]
+`])
 
 /** Writes .mcp.json (Claude Code & others), .codex/config.toml, .cursor/mcp.json and agent instructions. */
 export function writeAgentFiles(root: string, mcp: McpLaunch) {
@@ -665,6 +666,6 @@ export function writeAgentFiles(root: string, mcp: McpLaunch) {
   }`
   writeAtomic(path.join(root, '.codex', 'config.toml'), toml)
   const agents = path.join(root, 'AGENTS.md')
-  if (!fs.existsSync(agents) || LEGACY_AGENT_DOCS.includes(fs.readFileSync(agents, 'utf8'))) writeAtomic(agents, AGENT_DOC)
+  if (!fs.existsSync(agents) || LEGACY_AGENT_DOCS.has(fs.readFileSync(agents, 'utf8'))) writeAtomic(agents, AGENT_DOC)
   if (!fs.existsSync(path.join(root, 'CLAUDE.md'))) writeAtomic(path.join(root, 'CLAUDE.md'), '@AGENTS.md\n')
 }

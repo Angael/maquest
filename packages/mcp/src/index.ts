@@ -57,6 +57,10 @@ function safe<A>(fn: (a: A) => string | Promise<string>) {
 const line = (n: StoryNode) =>
   `- ${n.id} [${n.type}${n.status ? `, ${n.status}` : ''}] ${n.title}${n.summary ? ` — ${n.summary}` : ''}`
 
+const section = (title: string, nodes: StoryNode[]) => (nodes.length ? `## ${title}\n${nodes.map(line).join('\n')}` : '')
+const guidelineText = (g: { id: string; title: string; scope: string; source: string; disabled?: boolean; body: string }) =>
+  `## ${g.title} (${g.id}; ${g.scope}; ${g.source}${g.disabled ? '; disabled' : ''})\n${g.body}`
+
 function outlineText(nodes: OutlineNode[], depth = 0): string {
   return nodes
     .map((n) => {
@@ -167,7 +171,6 @@ server.registerTool(
     const all = p.listNodes()
     const edges = p.graph().edges
     const byType = (t: string) => all.filter((n) => n.type === t)
-    const section = (title: string, nodes: StoryNode[]) => (nodes.length ? `## ${title}\n${nodes.map(line).join('\n')}` : '')
     const edgeStats = EDGE_TYPES.map((t) => [t, edges.filter((e) => e.type === t).length] as const)
       .filter(([, n]) => n)
       .map(([t, n]) => `${t}: ${n}`)
@@ -409,8 +412,6 @@ server.registerTool(
   },
   safe(({ action, id, title, body, scope }) => {
     const p = project()
-    const fmt = (g: { id: string; title: string; scope: string; source: string; disabled?: boolean; body: string }) =>
-      `## ${g.title} (${g.id}; ${g.scope}; ${g.source}${g.disabled ? '; disabled' : ''})\n${g.body}`
     switch (action) {
       case 'list':
         return p
@@ -418,11 +419,11 @@ server.registerTool(
           .map((g) => `- ${g.id}: ${g.title} [${g.scope}, ${g.source}${g.disabled ? ', disabled' : ''}]`)
           .join('\n')
       case 'read': {
-        if (!id) return p.guidelines({ applicableOnly: true }).map(fmt).join('\n\n')
+        if (!id) return p.guidelines({ applicableOnly: true }).map(guidelineText).join('\n\n')
         const g = p.guideline(id)
         if (!g) throw new Error(`Unknown guideline: ${id}`)
         const d = g.source === 'override' ? p.defaultGuideline(id) : null
-        return fmt(g) + (d ? `\n\n### Built-in default (overridden)\n${d.body}` : '')
+        return guidelineText(g) + (d ? `\n\n### Built-in default (overridden)\n${d.body}` : '')
       }
       case 'write':
         if (!id) throw new Error('write requires id')

@@ -108,7 +108,7 @@ export const handlers = {
     if (r.canceled || !dir) return null
     if (create || !Project.isProject(dir)) {
       // An empty folder (or one already named after the project) becomes the project itself; otherwise make a subfolder.
-      const folder = create?.name.replace(/[/\\:]/g, '-')
+      const folder = create?.name.replaceAll(/[/\\:]/g, '-')
       const useDir = !create || fs.readdirSync(dir).length === 0 || path.basename(dir) === folder
       const root = useDir ? dir : path.join(dir, folder!)
       if (create && !useDir && Project.isProject(root)) throw new Error(`A project already exists at ${root}`)
@@ -141,7 +141,7 @@ export const handlers = {
     const copies = new Map<string, string>()
     // Parents before children so copied children attach to copied parents.
     const depth = (n: (typeof sources)[number]): number => (n.parent && sources.some((s) => s.id === n.parent) ? 1 + depth(sources.find((s) => s.id === n.parent)!) : 0)
-    for (const n of [...sources].sort((a, b) => depth(a) - depth(b))) {
+    for (const n of sources.toSorted((a, b) => depth(a) - depth(b))) {
       const parent = n.parent && (copies.get(n.parent) ?? (project.getNode(n.parent) ? n.parent : undefined))
       const copy = project.createNode({
         type: n.type, title: n.title, body: n.body, parent: parent || undefined, status: n.status, summary: n.summary,
