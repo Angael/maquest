@@ -11,6 +11,8 @@ import {
   type NodeType,
   type Status,
   type StoryNode,
+  onBoard,
+  refsOf,
 } from '@maquest/core/schema'
 import { api, isVideo, mediaUrl } from '../lib/api'
 import { importFiles } from '../lib/actions'
@@ -359,7 +361,7 @@ function BoardMembership({ id }: { id: string }) {
       <Label>Boards</Label>
       <div className="flex flex-wrap gap-1">
         {boards.map((b) => {
-          const on = !!b.nodes?.includes(id)
+          const on = onBoard(b, id)
           return (
             <button
               key={b.id}
@@ -370,7 +372,7 @@ function BoardMembership({ id }: { id: string }) {
                   ? 'rounded-full bg-amber-500/20 px-2 py-0.5 text-xs text-amber-200'
                   : 'rounded-full border border-dashed border-stone-700 px-2 py-0.5 text-xs text-stone-500 hover:text-stone-200'
               }
-              onClick={() => update.mutate([b.id, on ? { removeNodes: [id] } : { addNodes: [id] }])}
+              onClick={() => update.mutate([b.id, on ? { removeNodes: refsOf(b, id) } : { addNodes: [id] }])}
             >
               {b.title}
             </button>

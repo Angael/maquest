@@ -185,7 +185,23 @@ export const Graph = z
   })
 export type Graph = z.output<typeof Graph>
 
-export const onBoard = (board: Board, id: string) => !!board.nodes?.includes(id)
+/**
+ * Board cards are keyed by node id; further references to the same node on one board get `id~n` keys.
+ * Layout, groups and `nodes` all use these keys.
+ */
+export const REF_SEP = '~'
+export const entityOf = (key: string) => key.split(REF_SEP)[0]
+/** Every card on the board that shows node `id`. */
+export const refsOf = (board: Board, id: string) => (board.nodes ?? []).filter((key) => entityOf(key) === id)
+export const onBoard = (board: Board, id: string) => !!board.nodes?.some((key) => entityOf(key) === id)
+/** A key for one more card of node `id` on the board: the id itself when it has none yet. */
+export function freeRefKey(board: Board, id: string, taken: ReadonlySet<string> = new Set()) {
+  const used = new Set([...(board.nodes ?? []), ...taken])
+  if (!used.has(id)) return id
+  let i = 2
+  while (used.has(`${id}${REF_SEP}${i}`)) i++
+  return `${id}${REF_SEP}${i}`
+}
 
 /** Index of the phase column containing x, or -1 outside the columns. */
 export function phaseIndex(board: Board, x: number) {

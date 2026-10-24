@@ -5,6 +5,9 @@ import chokidar, { type FSWatcher } from 'chokidar'
 import {
   Project,
   writeAgentFiles,
+  entityOf,
+  freeRefKey,
+  onBoard,
   type CreateNodeInput,
   type EdgeType,
   type EdgeHandle,
@@ -151,11 +154,14 @@ export const handlers = {
       else p().updateBoard(p().board(board).id, { addNodes: [node.id] })
       return node
     }),
-  /** Duplicates nodes (and edges among them) at an offset; one undo step. Returns the new ids. */
+  /** Duplicates nodes (and edges among them) at an offset; one undo step. `ids` may be card keys. Returns the new ids. */
   duplicateNodes: (ids: string[], offset: Position, board?: string) =>
     history.record(p(), () => {
       const project = p()
-      const sources = ids.map((id) => project.getNode(id)).filter((n): n is NonNullable<typeof n> => !!n)
+      // The first selected card of each node decides where its copy lands.
+      const cards = new Map<string, string>()
+      for (const key of ids) if (!cards.has(entityOf(key))) cards.set(entityOf(key), key)
+      const sources = [...cards.keys()].map((id) => project.getNode(id)).filter((n): n is NonNullable<typeof n> => !!n)
       const layout = project.board(board).layout
       const copies = new Map<string, string>()
       // Parents before children so copied children attach to copied parents.
@@ -179,8 +185,8 @@ export const handlers = {
           template: false,
         })
         copies.set(n.id, copy.id)
-        const at = layout[n.id]
-        const group = project.board(board).groups.find((g) => g.nodes.includes(n.id))
+        const at = layout[cards.get(n.id)!]
+        const group = project.board(board).groups.find((g) => g.nodes.includes(cards.get(n.id)!))
         if (at) project.setLayout({ [copy.id]: { x: at.x + offset.x, y: at.y + offset.y } }, board, group ? { assign: { [copy.id]: group.id } } : {})
         else project.updateBoard(project.board(board).id, { addNodes: [copy.id] })
       }
@@ -191,22 +197,30 @@ export const handlers = {
       }
       return [...copies.values()]
     }),
-  /** Places existing nodes on a board at an offset from where they sit on `from`; nodes already there stay put. One undo step. */
-  placeNodes: (ids: string[], offset: Position, board?: string, from?: string) =>
+  /**
+   * Adds one more card per key (a reference to the same node) to a board, at an offset from where the key sits on
+   * `from`. Never copies nodes. One undo step; returns the new card keys.
+   */
+  placeNodes: (keys: string[], offset: Position, board?: string, from?: string) =>
     history.record(p(), () => {
       const project = p()
       const target = project.board(board)
       const source = from ? project.board(from) : target
-      const missing = ids.filter((id) => project.getNode(id) && !target.nodes?.includes(id))
       const positions: Record<string, Position> = {}
-      for (const id of missing) {
-        const at = source.layout[id]
-        if (at) positions[id] = { x: at.x + offset.x, y: at.y + offset.y }
+      const unplaced: string[] = []
+      for (const key of keys) {
+        const id = entityOf(key)
+        if (!project.getNode(id)) continue
+        const at = source.layout[key]
+        if (!at) {
+          if (!onBoard(target, id)) unplaced.push(id)
+          continue
+        }
+        positions[freeRefKey(target, id, new Set(Object.keys(positions)))] = { x: at.x + offset.x, y: at.y + offset.y }
       }
       if (Object.keys(positions).length) project.setLayout(positions, target.id)
-      const unplaced = missing.filter((id) => !positions[id])
       if (unplaced.length) project.updateBoard(target.id, { addNodes: unplaced })
-      return missing
+      return [...Object.keys(positions), ...unplaced]
     }),
   updateNode: (id: string, patch: UpdateNodeInput) => history.record(p(), () => p().updateNode(id, patch)),
   deleteNodes: (ids: string[], recursive?: boolean) =>

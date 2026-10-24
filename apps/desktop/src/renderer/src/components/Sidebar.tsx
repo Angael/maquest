@@ -169,7 +169,7 @@ export function Sidebar() {
   const of = (t: NodeType) => nodes?.filter((n) => n.type === t) ?? []
 
   return (
-    <aside className="w-64 max-w-[30vw] shrink-0 overflow-y-auto border-r border-stone-800 bg-stone-950 p-2">
+    <aside data-sidebar className="w-64 max-w-[30vw] shrink-0 overflow-y-auto border-r border-stone-800 bg-stone-950 p-2">
       <Section title="Stories" type="story">
         {outline?.map((s) => (
           <Tree key={s.id} node={s} depth={0} />

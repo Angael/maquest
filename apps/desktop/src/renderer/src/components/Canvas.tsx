@@ -58,6 +58,7 @@ import {
   groupSubtree,
   isReferenceEdge,
   onBoard,
+  entityOf,
   type Board,
   type EdgeType,
   type Graph,
@@ -141,6 +142,8 @@ function useAddEdge() {
 
 /** In-app node clipboard of references: pasting places the same entities on the shown board, never copies them. */
 let clipboard: { ids: string[]; board: string; pastes: number } | null = null
+/** Separates an edge id from the card keys of its extra copies (when a node has several cards). */
+const EDGE_REF = '@'
 
 const cardSize = (n: CardFlowNode) => ({ width: n.measured?.width ?? (n.data.node.type === 'media' ? 256 : 224), height: n.measured?.height ?? 160 })
 
@@ -153,7 +156,7 @@ export function Canvas() {
   useEffect(() => {
     if (all === NONE) return
     const existing = new Set(all.map((node) => node.id))
-    const remaining = selectedNodeIds.filter((id) => existing.has(id))
+    const remaining = selectedNodeIds.filter((id) => existing.has(entityOf(id)))
     if (remaining.length !== selectedNodeIds.length) selectNodes(remaining)
     if (selection?.kind === 'edge' && graph && !graph.edges.some((edge) => edge.id === selection.id)) select(null)
   }, [all, graph, selection, selectedNodeIds, select, selectNodes])
@@ -208,7 +211,10 @@ export function Canvas() {
       }
       place
         .mutateAsync([ids, offset, board, clipboard.board])
-        .then(() => selectNodes(ids))
+        .then(async (keys) => {
+          await queryClient.refetchQueries({ queryKey: ['graph'] })
+          selectNodes(keys)
+        })
         .catch(() => {
           /* Rendered below. */
         })
@@ -248,7 +254,7 @@ export function Canvas() {
   const history = useQuery({ queryKey: ['history'], queryFn: () => api.history() })
   const historyBusy = undo.isPending || redo.isPending
   const historyQueue = useRef(Promise.resolve())
-  const visibleRef = useRef(NONE)
+  const visibleRef = useRef<{ key: string; node: StoryNode }[]>([])
   const travel = useCallback(
     (direction: 'undo' | 'redo') => {
       // Queue rapid shortcuts; query refetches must not drop the next keystroke.
@@ -273,7 +279,7 @@ export function Canvas() {
       const key = event.key.toLowerCase()
       if (key === 'a' && !event.shiftKey) {
         event.preventDefault()
-        selectNodes(visibleRef.current.map((n) => n.id))
+        selectNodes(visibleRef.current.map((c) => c.key))
       } else if (key === 'c' && !event.shiftKey) {
         if (window.getSelection()?.toString()) return // Let native text copy win.
         const ids = useUI.getState().selectedNodeIds
@@ -311,8 +317,23 @@ export function Canvas() {
     }
     return list
   }, [all, graph, board, hiddenNodes, storyScope])
+  /** One card per board key; a node may be shown by several cards (references) on the same board. */
+  const cards = useMemo(() => {
+    if (!board) return visible.map((node) => ({ key: node.id, node }))
+    const byId = new Map(visible.map((n) => [n.id, n]))
+    return (board.nodes ?? []).flatMap((key) => {
+      const node = byId.get(entityOf(key))
+      return node ? [{ key, node }] : []
+    })
+  }, [visible, board])
+  /** Card keys per node id. */
+  const keysOf = useMemo(() => {
+    const out = new Map<string, string[]>()
+    for (const c of cards) out.set(c.node.id, [...(out.get(c.node.id) ?? []), c.key])
+    return out
+  }, [cards])
   useLayoutEffect(() => {
-    visibleRef.current = visible
+    visibleRef.current = cards
   })
 
   const connections = useMemo(
@@ -323,7 +344,7 @@ export function Canvas() {
     [visible, graph, hiddenEdges],
   )
   const focus = useMemo(() => {
-    const roots = new Set(selectedNodeIds)
+    const roots = new Set(selectedNodeIds.map(entityOf))
     if (selection?.kind === 'edge') {
       const edge = connections.find((e) => e.id === selection.id)
       if (edge) {
@@ -363,19 +384,19 @@ export function Canvas() {
         refs.set(e.source, [...(refs.get(e.source) ?? []), { edge: e.id, type: e.type, id: target.id, title: target.title, nodeType: target.type }])
       }
     const clues = clueCounts(graph?.edges ?? [])
-    return visible.map((n) => ({
-      id: n.id,
+    return cards.map(({ key, node: n }) => ({
+      id: key,
       type: 'card',
-      position: board?.layout[n.id] ?? defaults.get(n.id)!,
+      position: board?.layout[key] ?? defaults.get(n.id)!,
       data: {
         node: n,
-        emphasis: !focus.active || selectedNodeIds.includes(n.id) ? undefined : focus.neighbors.has(n.id) ? 'neighbor' : 'dimmed',
+        emphasis: !focus.active || selectedNodeIds.includes(key) ? undefined : focus.neighbors.has(n.id) ? 'neighbor' : 'dimmed',
         refs: refs.get(n.id),
         clues: clues.get(n.id),
       },
-      selected: selectedNodeIds.includes(n.id),
+      selected: selectedNodeIds.includes(key),
     }))
-  }, [all, visible, graph, board, selectedNodeIds, focus, referenceLines, hiddenEdges])
+  }, [all, cards, graph, board, selectedNodeIds, focus, referenceLines, hiddenEdges])
   // Disk (via queries) owns positions and the zustand store owns selection; React Flow only reports
   // measurements and in-flight drags, kept here until the saved layout catches up.
   const [local, setLocal] = useState<Record<string, LocalNode>>({})
@@ -595,20 +616,26 @@ export function Canvas() {
             : { type: MarkerType.ArrowClosed, color: selected ? '#fbbf24' : s.color },
       }
     }
+    // A line joins every card of its source to every card of its target; extra copies get suffixed ids.
+    const pairsOf = (id: string, source: string, target: string) =>
+      (keysOf.get(source) ?? []).flatMap((s) =>
+        (keysOf.get(target) ?? []).map((t) => ({ id: s === source && t === target ? id : `${id}${EDGE_REF}${s}${EDGE_REF}${t}`, s, t })),
+      )
     const out: FloatingFlowEdge[] = []
     if (!hiddenEdges.includes('contains'))
       for (const n of visible) {
         if (n.parent && ids.has(n.parent))
-          out.push({
-            id: `contains:${n.id}`,
-            type: 'floating',
-            source: n.parent,
-            target: n.id,
-            selectable: false,
-            focusable: false,
-            data: { color: EDGE_STYLE.contains.color },
-            ...style('contains', `contains:${n.id}`),
-          })
+          for (const pair of pairsOf(`contains:${n.id}`, n.parent, n.id))
+            out.push({
+              id: pair.id,
+              type: 'floating',
+              source: pair.s,
+              target: pair.t,
+              selectable: false,
+              focusable: false,
+              data: { color: EDGE_STYLE.contains.color },
+              ...style('contains', `contains:${n.id}`),
+            })
       }
     // Reference edges are chips on the card; they only become lines for focused cards (or when switched on).
     const shown = (graph?.edges ?? []).filter(
@@ -618,8 +645,8 @@ export function Canvas() {
         ids.has(e.target) &&
         (referenceLines || !isReferenceEdge(e.type) || focus.roots.has(e.source) || focus.roots.has(e.target)),
     )
-    const labelShown = (id: string, source: string, target: string) =>
-      edgeLabels === 'always' || (focus.active && focus.lines.has(id)) || hovered.edge === id || hovered.node === source || hovered.node === target
+    const labelShown = (id: string, flowId: string, source: string, target: string) =>
+      edgeLabels === 'always' || (focus.active && focus.lines.has(id)) || hovered.edge === flowId || hovered.node === source || hovered.node === target
     // Spread every line between the same two cards so A→B and B→A (or two types) stay readable.
     const pairs = new Map<string, string[]>()
     for (const e of shown) {
@@ -631,18 +658,19 @@ export function Canvas() {
       const lane = (group.indexOf(e.id) - (group.length - 1) / 2) * 14
       // The offset is perpendicular to source→target, so flip it for reversed edges to keep lanes apart.
       const offset = e.source < e.target ? lane : -lane
-      out.push({
-        id: e.id,
-        type: 'floating',
-        source: e.source,
-        target: e.target,
-        label: e.label ?? (e.type === 'link' ? undefined : e.type),
-        data: { color: EDGE_STYLE[e.type].color, offset, hideLabel: !labelShown(e.id, e.source, e.target) },
-        ...style(e.type, e.id),
-      })
+      for (const pair of pairsOf(e.id, e.source, e.target))
+        out.push({
+          id: pair.id,
+          type: 'floating',
+          source: pair.s,
+          target: pair.t,
+          label: e.label ?? (e.type === 'link' ? undefined : e.type),
+          data: { color: EDGE_STYLE[e.type].color, offset, hideLabel: !labelShown(e.id, pair.id, pair.s, pair.t) },
+          ...style(e.type, e.id),
+        })
     }
     return out
-  }, [visible, graph, hiddenEdges, selection, focus, referenceLines, edgeLabels, hovered])
+  }, [visible, keysOf, graph, hiddenEdges, selection, focus, referenceLines, edgeLabels, hovered])
   const connectionType = useCallback(
     (c: Connection | FlowEdge) => {
       const source = flow.getNode(c.source)?.data as CardData | undefined
@@ -654,9 +682,11 @@ export function Canvas() {
   )
   const isValidConnection = useCallback<IsValidConnection>(
     (c) => {
-      if (c.source === c.target) return false
+      const source = entityOf(c.source)
+      const target = entityOf(c.target)
+      if (source === target) return false
       const type = connectionType(c)
-      return !!type && !graph?.edges.some((e) => e.source === c.source && e.target === c.target && e.type === type)
+      return !!type && !graph?.edges.some((e) => e.source === source && e.target === target && e.type === type)
     },
     [connectionType, graph],
   )
@@ -664,14 +694,14 @@ export function Canvas() {
     (c: Connection) => {
       const type = connectionType(c)
       if (!type) return
-      addEdge.mutate({ source: c.source, target: c.target, type })
+      addEdge.mutate({ source: entityOf(c.source), target: entityOf(c.target), type })
       useUI.setState((state) => ({ hiddenEdges: state.hiddenEdges.filter((kind) => kind !== type) }))
     },
     [connectionType, addEdge],
   )
   const onEdgeClick = useCallback(
     (_: unknown, edge: FlowEdge) => {
-      if (edge.selectable !== false) select({ kind: 'edge', id: edge.id })
+      if (edge.selectable !== false) select({ kind: 'edge', id: edge.id.split(EDGE_REF)[0] })
     },
     [select],
   )

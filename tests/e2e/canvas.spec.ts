@@ -102,4 +102,26 @@ test('boards are independent: remove keeps the entity, paste places a reference,
   await page.getByRole('menuitem', { name: /Duplicate/ }).click()
   await expect.poll(() => project.listNodes().length).toBe(4)
   expect(project.board('arc').nodes).toHaveLength(2)
+  // Copy and paste on the same board adds a second card for the same entity.
+  await card(created).click()
+  await page.keyboard.press('ControlOrMeta+c')
+  await page.keyboard.press('ControlOrMeta+v')
+  await expect(card(`${created}~2`)).toBeVisible()
+  expect(project.listNodes()).toHaveLength(4)
+  // Delete on the canvas removes only that card.
+  await page.keyboard.press('Delete')
+  await expect(card(`${created}~2`)).toHaveCount(0)
+  await expect(card(created)).toBeVisible()
+  expect(project.getNode(created)).not.toBeNull()
+  // Delete in the sidebar deletes the entity.
+  const copy = project.listNodes().find((n) => n.type === 'character' && n.id !== created)!.id
+  await page
+    .locator('[data-sidebar]')
+    .getByRole('button', { name: project.getNode(copy)!.title, exact: true })
+    .last()
+    .click()
+  await expect(page.locator('[data-sidebar]').getByRole('button', { pressed: true })).toHaveCount(1)
+  await page.keyboard.press('Delete')
+  await expect.poll(() => project.listNodes().length).toBe(3)
+  expect(project.listNodes().filter((n) => n.type === 'character')).toHaveLength(1)
 })

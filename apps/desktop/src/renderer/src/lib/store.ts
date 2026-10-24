@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { EdgeType, NodeType } from '@maquest/core/schema'
+import { entityOf } from '@maquest/core/schema'
 
 export type View = 'canvas' | 'backlog' | 'guidelines'
 export type Selection = { kind: 'node'; id: string } | { kind: 'edge'; id: string } | null
@@ -8,6 +9,7 @@ export type Selection = { kind: 'node'; id: string } | { kind: 'edge'; id: strin
 type UI = {
   view: View
   selection: Selection
+  /** Selected nodes; on the canvas these are card keys (see entityOf). */
   selectedNodeIds: string[]
   hiddenEdges: (EdgeType | 'contains')[]
   hiddenNodes: NodeType[]
@@ -48,7 +50,9 @@ export const useUI = create<UI>()(
       select: (selection) => set({ selection, selectedNodeIds: selection?.kind === 'node' ? [selection.id] : [] }),
       selectNodes: (selectedNodeIds) =>
         set((s) => {
-          const primary = s.selection?.kind === 'node' && selectedNodeIds.includes(s.selection.id) ? s.selection.id : selectedNodeIds[0]
+          // Canvas selections hold card keys; the primary selection is always the node itself.
+          const entities = selectedNodeIds.map(entityOf)
+          const primary = s.selection?.kind === 'node' && entities.includes(s.selection.id) ? s.selection.id : entities[0]
           return {
             selectedNodeIds,
             selection: primary ? { kind: 'node', id: primary } : s.selection?.kind === 'edge' ? s.selection : null,

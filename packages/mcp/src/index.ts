@@ -9,6 +9,8 @@ import {
   REFERENCE_EDGE_TYPES,
   clueCounts,
   onBoard,
+  entityOf,
+  refsOf,
   phaseIndex,
   slugify,
   GroupColor,
@@ -127,7 +129,7 @@ function groupsText(b: Board, titles: Map<string, { title: string }>) {
     b.groups
       .filter((g) => g.parent === parent)
       .flatMap((g) => [
-        `${'  '.repeat(depth)}- ${g.id}: ${g.title} (${g.nodes.length} cards${g.nodes.length ? `: ${g.nodes.map((n) => titles.get(n)?.title ?? n).join(', ')}` : ''})`,
+        `${'  '.repeat(depth)}- ${g.id}: ${g.title} (${g.nodes.length} cards${g.nodes.length ? `: ${g.nodes.map((n) => titles.get(entityOf(n))?.title ?? n).join(', ')}` : ''})`,
         ...walk(g.id, depth + 1),
       ])
   return b.groups.length ? `## Groups\n${walk(undefined, 0).join('\n')}` : ''
@@ -137,7 +139,7 @@ function boardText(p: Project, b: Board) {
   const titles = new Map(p.listNodes().map((n) => [n.id, n]))
   const ids = b.nodes ?? []
   const entry = (id: string) => {
-    const n = titles.get(id)
+    const n = titles.get(entityOf(id))
     return n ? line(n) : `- ${id} (missing)`
   }
   const groups = groupsText(b, titles)
@@ -407,7 +409,7 @@ server.registerTool(
       case 'update': {
         const cur = p.board(id)
         const next = phases?.map((t, i) => cur.phases.find((x) => x.title === t) ?? { id: `${slugify(t)}-${i + 1}`, title: t })
-        const b = p.updateBoard(cur.id, { title, phases: next, removeNodes })
+        const b = p.updateBoard(cur.id, { title, phases: next, removeNodes: removeNodes?.flatMap((n) => [n, ...refsOf(cur, n)]) })
         return `updated board ${b.id}`
       }
       case 'place': {

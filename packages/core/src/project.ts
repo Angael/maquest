@@ -14,6 +14,9 @@ import {
   GROUP_PAD,
   Group,
   assignGroup,
+  entityOf,
+  onBoard,
+  refsOf,
   bounds,
   fitGroups,
   groupContent,
@@ -406,9 +409,10 @@ export class Project {
     const g = this.graph()
     g.edges = g.edges.filter((e) => e.source !== id && e.target !== id)
     for (const b of g.boards) {
+      for (const key of refsOf(b, id)) delete b.layout[key]
       delete b.layout[id]
-      b.nodes = b.nodes?.filter((n) => n !== id)
-      for (const group of b.groups) group.nodes = group.nodes.filter((n) => n !== id)
+      b.nodes = b.nodes?.filter((n) => entityOf(n) !== id)
+      for (const group of b.groups) group.nodes = group.nodes.filter((n) => entityOf(n) !== id)
     }
     this.saveGraph(g)
     return deleted
@@ -601,7 +605,7 @@ export class Project {
   private editGroup(g: Graph, b: Board, group: Group, patch: Pick<GroupPatch, 'parent' | 'addNodes' | 'removeNodes'> & { keepPositions?: boolean }) {
     if (patch.parent !== undefined) this.groupAction(() => assignGroup(b, group.id, patch.parent ?? null, true))
     for (const n of patch.addNodes ?? []) {
-      this.requireNode(n)
+      this.requireNode(entityOf(n))
       b.nodes ??= []
       if (!b.nodes.includes(n)) b.nodes.push(n)
       const placed = b.layout[n] ?? g.boards.find((x) => x.layout[n])?.layout[n]
@@ -641,7 +645,8 @@ export class Project {
     for (const n of patch.addNodes ?? []) {
       this.requireNode(n)
       b.nodes ??= []
-      if (!b.nodes.includes(n)) b.nodes.push(n)
+      if (!onBoard(b, n)) b.nodes.push(n)
+      else if (!b.nodes.includes(n)) continue
       if (column >= 0 || !b.layout[n]) b.layout[n] = freeSpot(b, column, g.boards.find((x) => x.layout[n])?.layout[n])
     }
     if (patch.removeNodes?.length) {

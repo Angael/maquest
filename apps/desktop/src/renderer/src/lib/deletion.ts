@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { Selection } from './store'
+import { entityOf } from '@maquest/core/schema'
 import { useUI } from './store'
 import { api } from './api'
 import { currentBoardId, useAction, useNodes } from './queries'
@@ -70,7 +71,8 @@ export function useRemoveFromBoard() {
 /** Confirms, then deletes nodes from the project and every board. */
 export function useDeleteEverywhere() {
   const remove = useDeleteSelection()
-  return (ids: string[]) => {
+  return (keys: string[]) => {
+    const ids = [...new Set(keys.map(entityOf))]
     if (
       !ids.length ||
       !confirm(ids.length === 1 ? 'Delete this node from the project and every board?' : `Delete ${ids.length} nodes from the project and every board?`)
@@ -80,7 +82,7 @@ export function useDeleteEverywhere() {
   }
 }
 
-/** Delete on the canvas removes cards from the board; Shift+Delete (or Delete elsewhere) deletes the entity. */
+/** Delete on the canvas removes the selected cards from the board; Shift+Delete, or Delete in the sidebar or other views, deletes the nodes. */
 export function useDeleteShortcut() {
   const remove = useDeleteSelection()
   const unplace = useRemoveFromBoard()
@@ -91,11 +93,14 @@ export function useDeleteShortcut() {
       const { selection, selectedNodeIds, view } = useUI.getState()
       if (!selection) return
       event.preventDefault()
-      const ids = selectedNodeIds.length ? selectedNodeIds : [selection.id]
-      if (selection.kind === 'node' && view === 'canvas') {
-        if (event.shiftKey) destroy(ids)
-        else void unplace(ids)
-      } else void remove(selection, selectedNodeIds)
+      const keys = selectedNodeIds.length ? selectedNodeIds : [selection.id]
+      const entities = [...new Set(keys.map(entityOf))]
+      // The canvas works on cards (references); the outline in the sidebar and other views work on the nodes.
+      const onCanvas = view === 'canvas' && !(event.target instanceof Element && event.target.closest('[data-sidebar]'))
+      if (selection.kind === 'node' && onCanvas) {
+        if (event.shiftKey) destroy(entities)
+        else void unplace(keys)
+      } else void remove(selection, selection.kind === 'node' ? entities : [])
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
