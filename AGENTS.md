@@ -18,8 +18,11 @@ Layout:
 
 Workflow:
 
-- Commit as you go in small logical commits. Don't push or rewrite history unless asked.
+- Agents own the complete delivery workflow: Git, changesets, pull requests, versioning, and releases. Do not hand routine delivery steps back to the user or ask for confirmation for them.
+- Commit as you go in small logical commits. After required checks pass, automatically push completed changes to the appropriate remote branch. Create, update, and merge PRs when needed by the repository workflow; resolve routine conflicts and check failures yourself. Do not rewrite shared history or discard unrelated work.
 - Before committing, run `pnpm check:fix` and fix lint errors rather than disabling rules.
 - The installed desktop launcher runs this checkout, so run `pnpm build` after app changes.
 - `pnpm check` and `pnpm check:fix` include Playwright tests against the built Electron app. Run the full check after changes; keep common user flows covered in `tests/e2e`. Tests use temporary projects and profiles. On Linux the runner always uses an isolated Xvfb display, which must be installed, so checks never interrupt the desktop. Use `MAQUEST_E2E_HEADED=1` only when visible debugging is explicitly requested.
-- Add changesets (`pnpm changeset`) for releasable changes. Merging changes to `main` updates an automated Version Packages PR; it does not publish a release. Merge that PR when ready to release: its version bump triggers packaging and publication. Do not push or publish manually unless asked.
+- Automatically add changesets (`pnpm changeset`) for releasable changes, choosing the appropriate version bump and writing the release notes yourself. Workflow-only and documentation-only changes do not need a changeset.
+- Keep development delivery separate from release publication. Changes merged to `main` accumulate in an automated Version Packages PR. Do not merge that PR merely because a commit was pushed.
+- Agents also manage Version Packages PRs and releases: decide when a coherent set of changes is ready for a new version, review and merge the version PR, and verify publication and downloads. An explicit request to release should trigger this process immediately. Routine development pushes must not automatically create new versions. Do not require the user to run Git or changeset commands, manage PRs, or publish/retry releases.
