@@ -13,8 +13,8 @@
     "lint:fix": "oxlint --fix",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
-    "check": "oxlint && oxfmt --check && pnpm typecheck",
-    "check:fix": "oxlint --fix && oxfmt && pnpm typecheck"
+    "check": "oxlint && oxfmt --check && pnpm typecheck && pnpm test",
+    "check:fix": "oxlint --fix; oxfmt && oxlint && pnpm typecheck && pnpm test"
   },
   "devDependencies": {
     "oxfmt": "^0.74.0",

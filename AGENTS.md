@@ -86,6 +86,9 @@ apps/desktop      Electron app (electron-vite): main = IPC handlers + chokidar w
 ```
 
 Commands: `pnpm install`, `pnpm dev` (builds MCP, then runs the app), `pnpm build`, `pnpm typecheck`.
+**Before committing, run `pnpm check:fix`.** It applies oxlint autofixes and oxfmt formatting, then runs lint, typecheck,
+and tests (`pnpm check` does the same without changing files). Fix any remaining lint errors instead of disabling rules;
+config lives in `.oxlintrc.json` / `.oxfmtrc.json` (no semicolons, single quotes, width 160).
 **Installed app = this repo.** `pnpm install:desktop` (scripts/install-desktop.sh) builds and registers a
 `~/.local/share/applications/maquest.desktop` launcher + icon that runs Electron against `apps/desktop` in this
 checkout. It's a single-PC install, so there is no packaging step. **After any change to the app, run `pnpm build`**
