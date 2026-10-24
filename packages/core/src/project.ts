@@ -6,11 +6,17 @@ import { DEFAULT_GUIDELINES } from './guidelines/defaults'
 import { TEMPLATES } from './templates'
 import {
   ALLOWED_PARENTS,
+  Board,
+  Clock,
+  EDGE_LABEL_MAX,
+  MAIN_BOARD,
   Edge,
   EdgeType,
   EdgeHandle,
   Graph,
   GuidelineScope,
+  PHASE_WIDTH,
+  Phase,
   NODE_TYPES,
   NodeMeta,
   ProjectConfig,
@@ -21,6 +27,7 @@ import {
   type Status,
   type StoryNode,
   type OutlineNode,
+  type Position,
 } from './schema'
 
 export const CONFIG_FILE = 'maquest.json'
@@ -51,6 +58,7 @@ export type CreateNodeInput = {
   media?: string[]
   src?: string
   fields?: Record<string, string>
+  clock?: Clock
   /** Use the type's starter template when body/fields are not given. Default true. */
   template?: boolean
 }
@@ -69,8 +77,18 @@ export type UpdateNodeInput = {
   src?: string
   /** Merged into existing fields; empty string removes a field. */
   fields?: Record<string, string>
+  /** null removes the clock */
+  clock?: Clock | null
   body?: string
   appendBody?: string
+}
+
+export type BoardPatch = {
+  title?: string
+  phases?: Phase[]
+  /** Adds nodes to a curated board (placed in `phase` if given, else near the board's other cards). */
+  addNodes?: string[]
+  removeNodes?: string[]
 }
 
 
@@ -147,7 +165,7 @@ export class Project {
       fs.mkdirSync(path.join(root, dir), { recursive: true })
     }
     if (!fs.existsSync(path.join(root, GRAPH_FILE))) {
-      writeAtomic(path.join(root, GRAPH_FILE), JSON.stringify({ edges: [], layout: {} }, null, 2) + '\n')
+      writeAtomic(path.join(root, GRAPH_FILE), JSON.stringify({ edges: [], boards: [] }, null, 2) + '\n')
     }
     if (opts.mcp) writeAgentFiles(root, opts.mcp)
     return new Project(root)
@@ -267,6 +285,7 @@ export class Project {
         media: input.media,
         src: input.src,
         fields: { ...tpl?.fields, ...input.fields },
+        clock: input.clock && checkClock(input.clock),
         created: now,
         updated: now,
       }),
@@ -303,6 +322,7 @@ export class Project {
       media: patch.media ?? cur.media,
       src: patch.src ?? cur.src,
       fields,
+      clock: patch.clock === null ? undefined : patch.clock ? checkClock(patch.clock) : cur.clock,
       body,
       updated: new Date().toISOString(),
     }
@@ -330,7 +350,10 @@ export class Project {
     deleted.push(id)
     const g = this.graph()
     g.edges = g.edges.filter((e) => e.source !== id && e.target !== id)
-    delete g.layout[id]
+    for (const b of g.boards) {
+      delete b.layout[id]
+      if (b.nodes) b.nodes = b.nodes.filter((n) => n !== id)
+    }
     this.saveGraph(g)
     return deleted
   }
@@ -374,6 +397,7 @@ export class Project {
   }
 
   addEdge(input: { source: string; target: string; type?: EdgeType; label?: string; sourceHandle?: EdgeHandle; targetHandle?: EdgeHandle }): Edge {
+    checkLabel(input.label)
     this.requireNode(input.source)
     this.requireNode(input.target)
     const g = this.graph()
@@ -396,6 +420,7 @@ export class Project {
     const g = this.graph()
     const e = g.edges.find((x) => x.id === id)
     if (!e) throw new MaquestError(`Edge not found: ${id}`)
+    checkLabel(patch.label)
     if (patch.type) e.type = patch.type
     if (patch.label !== undefined) e.label = patch.label || undefined
     if (patch.source) e.source = this.requireNode(patch.source).id
@@ -414,9 +439,69 @@ export class Project {
     this.saveGraph(g)
   }
 
-  setLayout(positions: Record<string, { x: number; y: number }>) {
+  // ---------- boards ----------
+
+  boards(): Board[] {
+    return this.graph().boards
+  }
+
+  board(id: string = MAIN_BOARD): Board {
+    const b = this.graph().boards.find((x) => x.id === id)
+    if (!b) throw new MaquestError(`Board not found: ${id}`)
+    return b
+  }
+
+  /** Saves card positions on a board; on a curated board this also adds the cards to it. */
+  setLayout(positions: Record<string, Position>, boardId: string = MAIN_BOARD) {
     const g = this.graph()
-    Object.assign(g.layout, positions)
+    const b = g.boards.find((x) => x.id === boardId)
+    if (!b) throw new MaquestError(`Board not found: ${boardId}`)
+    Object.assign(b.layout, positions)
+    if (b.nodes) for (const id of Object.keys(positions)) if (!b.nodes.includes(id)) b.nodes.push(id)
+    this.saveGraph(g)
+  }
+
+  createBoard(input: { title: string; nodes?: string[]; phases?: string[] }): Board {
+    const g = this.graph()
+    const base = slugify(input.title)
+    let id = base
+    for (let i = 2; g.boards.some((b) => b.id === id); i++) id = `${base}-${i}`
+    for (const n of input.nodes ?? []) this.requireNode(n)
+    const board = Board.parse({ id, title: input.title, nodes: [], phases: (input.phases ?? []).map(phase) })
+    g.boards.push(board)
+    this.saveGraph(g)
+    if (input.nodes?.length) return this.updateBoard(id, { addNodes: input.nodes })
+    return board
+  }
+
+  updateBoard(id: string, patch: BoardPatch & { phase?: string }): Board {
+    const g = this.graph()
+    const b = g.boards.find((x) => x.id === id)
+    if (!b) throw new MaquestError(`Board not found: ${id}`)
+    if (patch.title !== undefined) b.title = patch.title
+    if (patch.phases) b.phases = patch.phases.map((p) => Phase.parse(p))
+    const column = patch.phase === undefined ? -1 : b.phases.findIndex((p) => p.id === patch.phase || p.title === patch.phase)
+    if (patch.phase !== undefined && column < 0) throw new MaquestError(`Phase not found on ${id}: ${patch.phase}`)
+    for (const n of patch.addNodes ?? []) {
+      this.requireNode(n)
+      if (b.nodes && !b.nodes.includes(n)) b.nodes.push(n)
+      if (column >= 0 || !b.layout[n]) b.layout[n] = freeSpot(b, column, g.boards.find((x) => x.id === MAIN_BOARD)?.layout[n])
+    }
+    if (patch.removeNodes?.length) {
+      if (!b.nodes) throw new MaquestError('The main board shows every node; remove nodes from curated boards only')
+      b.nodes = b.nodes.filter((n) => !patch.removeNodes!.includes(n))
+      for (const n of patch.removeNodes) delete b.layout[n]
+    }
+    this.saveGraph(g)
+    return b
+  }
+
+  deleteBoard(id: string) {
+    if (id === MAIN_BOARD) throw new MaquestError('The main board cannot be deleted')
+    const g = this.graph()
+    const before = g.boards.length
+    g.boards = g.boards.filter((b) => b.id !== id)
+    if (g.boards.length === before) throw new MaquestError(`Board not found: ${id}`)
     this.saveGraph(g)
   }
 
@@ -514,6 +599,32 @@ export class Project {
     if (!abs.startsWith(this.root + path.sep)) throw new MaquestError(`Path escapes project: ${rel}`)
     return abs
   }
+}
+
+function checkLabel(label?: string) {
+  if (label && label.length > EDGE_LABEL_MAX) {
+    throw new MaquestError(`Edge label too long (${label.length} > ${EDGE_LABEL_MAX}). A label names the relationship in a few words ("betrays", "owes a debt to"); put notes and status on the nodes instead.`)
+  }
+}
+
+function checkClock(clock: Clock): Clock {
+  const c = Clock.parse(clock)
+  return { ...c, filled: Math.min(c.filled, c.size), steps: c.steps.slice(0, c.size) }
+}
+
+function phase(title: string, i: number): Phase {
+  return { id: `${slugify(title)}-${i + 1}`, title }
+}
+
+/**
+ * Where a newly placed card goes: below the cards already in its phase column; without a phase, in the
+ * unsorted strip left of the columns (phase boards) or at its main-board spot.
+ */
+function freeSpot(b: Board, column: number, fallback?: Position): Position {
+  if (column < 0 && fallback && !b.phases.length) return fallback
+  const x = column >= 0 ? column * PHASE_WIDTH + 40 : b.phases.length ? -PHASE_WIDTH / 2 : 0
+  const below = Object.values(b.layout).filter((p) => Math.floor(p.x / PHASE_WIDTH) === Math.floor(x / PHASE_WIDTH))
+  return { x, y: below.length ? Math.max(...below.map((p) => p.y)) + 200 : 0 }
 }
 
 function strip<T extends object>(o: T): Partial<T> {

@@ -4,7 +4,7 @@ import { useReactFlow } from '@xyflow/react'
 import { ChevronRight, Plus } from 'lucide-react'
 import type { NodeType, OutlineNode } from '@maquest/core/schema'
 import { useCreateNode } from '../lib/actions'
-import { useGraph, useNodes, useOutline } from '../lib/queries'
+import { useBoard, useNodes, useOutline } from '../lib/queries'
 import { useUI } from '../lib/store'
 import { NODE_STYLE } from '../lib/styles'
 
@@ -12,11 +12,11 @@ const CHILD: Partial<Record<NodeType, NodeType>> = { story: 'chapter', chapter: 
 
 function useFocus() {
   const flow = useReactFlow()
-  const { data: graph } = useGraph()
+  const board = useBoard()
   const { select, view } = useUI()
   return (id: string) => {
     select({ kind: 'node', id })
-    const pos = graph?.layout[id]
+    const pos = board?.layout[id]
     if (pos && view === 'canvas') void flow.setCenter(pos.x + 110, pos.y + 40, { zoom: 1.1, duration: 400 })
   }
 }

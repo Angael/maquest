@@ -21,9 +21,9 @@ test('undo and redo restore an entire multi-node position change', (t) => {
   project.setLayout(before)
   history.record(project, () => project.setLayout(after))
   assert.deepEqual(history.undo(project), { canUndo: false, canRedo: true })
-  assert.deepEqual(new Project(project.root).graph().layout, before)
+  assert.deepEqual(new Project(project.root).board().layout, before)
   assert.deepEqual(history.redo(project), { canUndo: true, canRedo: false })
-  assert.deepEqual(new Project(project.root).graph().layout, after)
+  assert.deepEqual(new Project(project.root).board().layout, after)
 })
 
 test('deletion undo restores node bytes, detached children, incident handles and layout', (t) => {
@@ -48,7 +48,7 @@ test('deletion undo restores node bytes, detached children, incident handles and
   history.redo(project)
   assert.equal(project.getNode(story.id), null)
   assert.equal(project.requireNode(child.id).parent, undefined)
-  assert.deepEqual(project.graph(), { edges: [], layout: {} })
+  assert.deepEqual(project.graph(), { edges: [], boards: [{ id: 'main', title: 'Main', phases: [], layout: {} }] })
 })
 
 test('a new mutation after undo clears the redo branch', (t) => {
@@ -86,12 +86,12 @@ test('unrelated external nodes, edges and layout survive both undo and redo', (t
   const edges = external.graph().edges
   external.setLayout({ [b.id]: { x: 300, y: 400 } })
   history.undo(project)
-  assert.deepEqual(project.graph().layout, { [b.id]: { x: 300, y: 400 } })
+  assert.deepEqual(project.board().layout, { [b.id]: { x: 300, y: 400 } })
   assert.deepEqual(project.graph().edges, edges)
   assert.equal(project.requireNode(b.id).body, 'MCP body')
   assert.equal(project.requireNode(c.id).pinned, true)
   history.redo(project)
-  assert.deepEqual(project.graph().layout, { [a.id]: { x: 100, y: 200 }, [b.id]: { x: 300, y: 400 } })
+  assert.deepEqual(project.board().layout, { [a.id]: { x: 100, y: 200 }, [b.id]: { x: 300, y: 400 } })
   assert.deepEqual(project.graph().edges, edges)
   assert.equal(project.requireNode(b.id).body, 'MCP body')
 })
@@ -103,7 +103,7 @@ test('redo rejects a conflicting external graph position edit', (t) => {
   history.undo(project)
   new Project(project.root).setLayout({ [node.id]: { x: 50, y: 60 } })
   assert.throws(() => history.redo(project), /changed outside this history/)
-  assert.deepEqual(project.graph().layout[node.id], { x: 50, y: 60 })
+  assert.deepEqual(project.board().layout[node.id], { x: 50, y: 60 })
 })
 
 test('undoing creation rejects new external incident edges or children', (t) => {
@@ -143,7 +143,7 @@ test('history retains only the latest 100 mutations', (t) => {
   }
   for (let i = 0; i < 100; i++) history.undo(project)
   assert.deepEqual(history.status(), { canUndo: false, canRedo: true })
-  assert.deepEqual(project.graph().layout[node.id], { x: 1, y: 0 })
+  assert.deepEqual(project.board().layout[node.id], { x: 1, y: 0 })
 })
 
 test('undoing deletion detects an externally recreated id in another type folder', (t) => {
@@ -154,4 +154,18 @@ test('undoing deletion detects an externally recreated id in another type folder
   assert.equal(external.id, original.id)
   assert.throws(() => history.undo(project), /already used in another folder/)
   assert.equal(project.requireNode(original.id).type, 'character')
+})
+
+test('board creation, membership and per-board layout undo and redo together', (t) => {
+  const { project, history } = fixture(t)
+  const node = project.createNode({ type: 'note', title: 'Crypt' })
+  history.record(project, () => project.createBoard({ title: 'Act I', phases: ['Arrival', 'Crypt'], nodes: [node.id] }))
+  assert.deepEqual(project.board('act-i').nodes, [node.id])
+  history.record(project, () => project.updateBoard('act-i', { addNodes: [node.id], phase: 'Crypt' }))
+  assert.equal(project.board('act-i').layout[node.id].x, 560 + 40)
+  history.undo(project)
+  history.undo(project)
+  assert.deepEqual(project.boards().map((b) => b.id), ['main'])
+  history.redo(project)
+  assert.deepEqual(project.board('act-i').nodes, [node.id])
 })

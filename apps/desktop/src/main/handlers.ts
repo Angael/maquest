@@ -13,6 +13,8 @@ import {
   type ProjectConfig,
   type ProjectKind,
   type UpdateNodeInput,
+  type BoardPatch,
+  type Position,
 } from '@maquest/core'
 import { ProjectHistory } from './history'
 
@@ -126,10 +128,35 @@ export const handlers = {
   updateConfig: (patch: Partial<ProjectConfig>) => p().updateConfig(patch),
   listNodes: (filter?: NodeFilter) => p().listNodes(filter),
   getNode: (id: string) => p().getNode(id),
-  createNode: (input: CreateNodeInput, position?: { x: number; y: number }) => history.record(p(), () => {
+  createNode: (input: CreateNodeInput, position?: Position, board?: string) => history.record(p(), () => {
     const node = p().createNode(input)
-    if (position) p().setLayout({ [node.id]: position })
+    if (position) p().setLayout({ [node.id]: position }, board)
     return node
+  }),
+  /** Duplicates nodes (and edges among them) at an offset; one undo step. Returns the new ids. */
+  duplicateNodes: (ids: string[], offset: Position, board?: string) => history.record(p(), () => {
+    const project = p()
+    const sources = ids.map((id) => project.getNode(id)).filter((n): n is NonNullable<typeof n> => !!n)
+    const layout = project.board(board).layout
+    const copies = new Map<string, string>()
+    // Parents before children so copied children attach to copied parents.
+    const depth = (n: (typeof sources)[number]): number => (n.parent && sources.some((s) => s.id === n.parent) ? 1 + depth(sources.find((s) => s.id === n.parent)!) : 0)
+    for (const n of [...sources].sort((a, b) => depth(a) - depth(b))) {
+      const parent = n.parent && (copies.get(n.parent) ?? (project.getNode(n.parent) ? n.parent : undefined))
+      const copy = project.createNode({
+        type: n.type, title: n.title, body: n.body, parent: parent || undefined, status: n.status, summary: n.summary,
+        tags: n.tags, pinned: n.pinned, media: n.media, src: n.src, fields: n.fields, clock: n.clock, template: false,
+      })
+      copies.set(n.id, copy.id)
+      const at = layout[n.id]
+      if (at) project.setLayout({ [copy.id]: { x: at.x + offset.x, y: at.y + offset.y } }, board)
+    }
+    for (const e of project.graph().edges) {
+      const source = copies.get(e.source)
+      const target = copies.get(e.target)
+      if (source && target) project.addEdge({ source, target, type: e.type, label: e.label, sourceHandle: e.sourceHandle, targetHandle: e.targetHandle })
+    }
+    return [...copies.values()]
   }),
   updateNode: (id: string, patch: UpdateNodeInput) => history.record(p(), () => p().updateNode(id, patch)),
   deleteNodes: (ids: string[], recursive?: boolean) => history.record(p(), () => ids.flatMap((id) =>
@@ -140,7 +167,10 @@ export const handlers = {
   addEdge: (e: { source: string; target: string; type?: EdgeType; label?: string; sourceHandle?: EdgeHandle; targetHandle?: EdgeHandle }) => history.record(p(), () => p().addEdge(e)),
   updateEdge: (id: string, patch: { type?: EdgeType; label?: string; source?: string; target?: string; sourceHandle?: EdgeHandle; targetHandle?: EdgeHandle }) => history.record(p(), () => p().updateEdge(id, patch)),
   removeEdge: (id: string) => history.record(p(), () => p().removeEdge(id)),
-  setLayout: (pos: Record<string, { x: number; y: number }>) => history.record(p(), () => p().setLayout(pos)),
+  setLayout: (pos: Record<string, Position>, board?: string) => history.record(p(), () => p().setLayout(pos, board)),
+  createBoard: (input: { title: string; nodes?: string[]; phases?: string[] }) => history.record(p(), () => p().createBoard(input)),
+  updateBoard: (id: string, patch: BoardPatch & { phase?: string }) => history.record(p(), () => p().updateBoard(id, patch)),
+  deleteBoard: (id: string) => history.record(p(), () => p().deleteBoard(id)),
   history: () => { p(); return history.status() },
   undo: () => {
     const status = history.undo(p())

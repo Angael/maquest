@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#292524"/>
+      <stop offset="1" stop-color="#0c0a09"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fcd34d"/>
+      <stop offset="1" stop-color="#d97706"/>
+    </linearGradient>
+  </defs>
+  <rect x="16" y="16" width="480" height="480" rx="104" fill="url(#bg)"/>
+  <rect x="16" y="16" width="480" height="480" rx="104" fill="none" stroke="#44403c" stroke-width="6"/>
+  <!-- an "M" drawn as a story graph: nodes linked by edges -->
+  <path d="M136 360 L136 152 L256 280 L376 152 L376 360" fill="none" stroke="url(#gold)" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M136 152 L376 152" fill="none" stroke="#fbbf24" stroke-opacity="0.35" stroke-width="10" stroke-dasharray="4 22" stroke-linecap="round"/>
+  <g fill="#0c0a09" stroke="url(#gold)" stroke-width="16">
+    <circle cx="136" cy="360" r="30"/>
+    <circle cx="136" cy="152" r="30"/>
+    <circle cx="256" cy="280" r="34"/>
+    <circle cx="376" cy="152" r="30"/>
+    <circle cx="376" cy="360" r="30"/>
+  </g>
+  <circle cx="256" cy="280" r="12" fill="#fcd34d"/>
+</svg>

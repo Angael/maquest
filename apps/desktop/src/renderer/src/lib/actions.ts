@@ -1,7 +1,7 @@
 import { useReactFlow } from '@xyflow/react'
 import type { NodeType } from '@maquest/core/schema'
 import { api } from './api'
-import { queryClient } from './queries'
+import { currentBoardId, queryClient } from './queries'
 import { useUI } from './store'
 
 const refresh = () => queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] !== 'app' })
@@ -15,7 +15,7 @@ export function useCreateNode() {
     const pos =
       opts.position ??
       (el ? flow.screenToFlowPosition({ x: el.x + el.width / 2 - 110 + Math.random() * 60, y: el.y + el.height / 2 - 40 + Math.random() * 60 }) : undefined)
-    const node = await api.createNode({ type, title: opts.title ?? `New ${type}`, parent: opts.parent, src: opts.src }, pos)
+    const node = await api.createNode({ type, title: opts.title ?? `New ${type}`, parent: opts.parent, src: opts.src }, pos, currentBoardId())
     await refresh()
     select({ kind: 'node', id: node.id })
     return node

@@ -13,6 +13,12 @@ type UI = {
   hiddenNodes: NodeType[]
   storyScope: string | null
   connectType: EdgeType | 'auto'
+  /** Current canvas (board id). */
+  board: string
+  /** 'focus' shows edge names only for hovered / selected / focused lines. */
+  edgeLabels: 'focus' | 'always'
+  /** Draw involves/located-at/member-of/owns as lines instead of chips on the card. */
+  referenceLines: boolean
   setView: (v: View) => void
   select: (s: Selection) => void
   selectNodes: (ids: string[]) => void
@@ -20,6 +26,7 @@ type UI = {
   toggleNode: (t: NodeType) => void
   setStoryScope: (id: string | null) => void
   setConnectType: (t: EdgeType | 'auto') => void
+  setBoard: (id: string) => void
 }
 
 const toggle = <T,>(list: T[], v: T) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v])
@@ -34,6 +41,9 @@ export const useUI = create<UI>()(
       hiddenNodes: [],
       storyScope: null,
       connectType: 'auto',
+      board: 'main',
+      edgeLabels: 'focus',
+      referenceLines: false,
       setView: (view) => set({ view }),
       select: (selection) => set({ selection, selectedNodeIds: selection?.kind === 'node' ? [selection.id] : [] }),
       selectNodes: (selectedNodeIds) => set((s) => {
@@ -47,15 +57,16 @@ export const useUI = create<UI>()(
       toggleNode: (t) => set((s) => ({ hiddenNodes: toggle(s.hiddenNodes, t) })),
       setStoryScope: (storyScope) => set({ storyScope }),
       setConnectType: (connectType) => set({ connectType }),
+      setBoard: (board) => set({ board, selection: null, selectedNodeIds: [] }),
     }),
     {
       name: 'maquest-ui',
-      version: 1,
+      version: 2,
       migrate: (state) => {
         const saved = state as Partial<UI>
-        return { hiddenEdges: saved.hiddenEdges ?? [], hiddenNodes: saved.hiddenNodes ?? [], connectType: 'auto' as const }
+        return { hiddenEdges: saved.hiddenEdges ?? [], hiddenNodes: saved.hiddenNodes ?? [], connectType: 'auto' as const, edgeLabels: 'focus' as const, referenceLines: false }
       },
-      partialize: ({ hiddenEdges, hiddenNodes, connectType }) => ({ hiddenEdges, hiddenNodes, connectType }),
+      partialize: ({ hiddenEdges, hiddenNodes, connectType, edgeLabels, referenceLines }) => ({ hiddenEdges, hiddenNodes, connectType, edgeLabels, referenceLines }),
     },
   ),
 )

@@ -3,7 +3,15 @@ import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mc
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import {
+  Clock,
   EDGE_DESCRIPTIONS,
+  EDGE_LABEL_MAX,
+  REFERENCE_EDGE_TYPES,
+  clueCounts,
+  onBoard,
+  phaseIndex,
+  slugify,
+  type Board,
   EDGE_TYPES,
   ENTITY_TYPES,
   EdgeType,
@@ -77,6 +85,8 @@ function nodeText(p: Project, n: StoryNode): string {
     n.tags.length && `tags: ${n.tags.join(', ')}`,
     n.media.length && `media: ${n.media.join(', ')}`,
     n.src && `src: ${n.src}`,
+    n.clock && `clock: ${n.clock.filled}/${n.clock.size}${n.clock.steps.some(Boolean) ? ` — ${n.clock.steps.map((s, i) => `${i + 1}${i < n.clock!.filled ? '✓' : ''}: ${s || '?'}`).join('; ')}` : ''}`,
+    boardsText(p, n.id) && `boards: ${boardsText(p, n.id)}`,
     ...Object.entries(n.fields).map(([k, v]) => `${k}: ${v || '(empty)'}`),
   ].filter(Boolean)
   return [
@@ -90,12 +100,54 @@ function nodeText(p: Project, n: StoryNode): string {
     .join('\n\n')
 }
 
+function boardsText(p: Project, id: string) {
+  return p
+    .boards()
+    .filter((b) => b.nodes?.includes(id) || (b.phases.length && onBoard(b, id)))
+    .map((b) => {
+      const at = b.layout[id]
+      const i = at ? phaseIndex(b, at.x) : -1
+      return `${b.id}${i >= 0 ? ` (phase ${b.phases[i].title})` : ''}`
+    })
+    .join(', ')
+}
+
+function boardSummary(b: Board) {
+  return `- ${b.id}: ${b.title} (${b.nodes ? `${b.nodes.length} cards` : 'all nodes'})${b.phases.length ? ` — phases: ${b.phases.map((x) => x.title).join(' → ')}` : ''}`
+}
+
+function boardText(p: Project, b: Board) {
+  const titles = new Map(p.listNodes().map((n) => [n.id, n]))
+  const ids = b.nodes ?? [...titles.keys()]
+  const entry = (id: string) => {
+    const n = titles.get(id)
+    return n ? line(n) : `- ${id} (missing)`
+  }
+  if (!b.phases.length) return `${boardSummary(b)}\n${ids.map(entry).join('\n')}`
+  const groups = b.phases.map((ph) => ({ title: ph.title, ids: [] as string[] }))
+  const loose: string[] = []
+  for (const id of ids) {
+    const at = b.layout[id]
+    const i = at ? phaseIndex(b, at.x) : -1
+    if (i >= 0) groups[i].ids.push(id)
+    else loose.push(id)
+  }
+  return [
+    boardSummary(b),
+    ...groups.map((g, i) => `## ${i + 1}. ${g.title}\n${g.ids.map(entry).join('\n') || '(empty)'}`),
+    b.nodes && loose.length ? `## Outside phases\n${loose.map(entry).join('\n')}` : '',
+  ].filter(Boolean).join('\n\n')
+}
+
 const server = new McpServer(
   { name: 'maquest', version: '0.1.0' },
   {
     instructions: `Maquest is a writing project: stories → chapters → scenes, plus entities (characters, locations, factions, items), free notes, a backlog of ideas, media, and a node graph of typed, labeled connections.
 Workflow: call "overview" first. Read "guidelines" before creative work and follow them. Project overrides beat defaults.
 Be proactive. Turn what the author says into project changes right away (write/connect), then briefly report what changed. Put loose ideas in the backlog (type "idea"). Keep connections in sync (involves, located-at, foreshadows, leads-to...).
+Connection labels are short names for the relationship (max ${EDGE_LABEL_MAX} chars). Never put status or TODOs in labels; use the node's status, tags or body.
+RPG: plan situations, not plots. Use "clue-for" edges for clues (aim for 3+ per important conclusion; overview flags gaps), clocks on factions/threats for fronts, and boards with phase columns for loose acts.
+Boards are separate canvases (e.g. one per arc or investigation). The main board shows everything.
 Edits apply immediately to markdown files on disk, and the Maquest app updates live.`,
   },
 )
@@ -128,6 +180,16 @@ server.registerTool(
       section('Backlog', byType('idea')),
       section('Media nodes', byType('media')),
       `## Connections\n${edges.length} total${edgeStats ? ` (${edgeStats})` : ''}`,
+      `## Boards (read with "board")\n${p.boards().map(boardSummary).join('\n')}`,
+      (() => {
+        const clocks = all.filter((n) => n.clock)
+        return clocks.length ? `## Clocks\n${clocks.map((n) => `- ${n.id}: ${n.title} ${n.clock!.filled}/${n.clock!.size}${n.clock!.steps[n.clock!.filled] ? ` — next: ${n.clock!.steps[n.clock!.filled]}` : ''}`).join('\n')}` : ''
+      })(),
+      (() => {
+        const weak = [...clueCounts(edges)].filter(([, n]) => n < 3)
+        const titles = new Map(all.map((n) => [n.id, n.title]))
+        return weak.length ? `## Three-clue check\n${weak.map(([id, n]) => `- ${id} (${titles.get(id) ?? '?'}): ${n} clue${n === 1 ? '' : 's'}`).join('\n')}` : ''
+      })(),
       `## Guidelines (read with "guidelines")\n${p
         .guidelines({ applicableOnly: true })
         .map((g) => `- ${g.id}: ${g.title}${g.source !== 'default' ? ` [${g.source}]` : ''}`)
@@ -191,6 +253,7 @@ const WriteItem = z.object({
   appendBody: z.string().optional().describe('Markdown appended to the body'),
   media: z.array(z.string()).optional().describe('Attached media paths (media/...)'),
   src: z.string().optional().describe('For media nodes: media path shown on the canvas'),
+  clock: Clock.nullable().optional().describe('Progress clock for fronts/threats/countdowns: {size, filled, steps[] (what happens at each segment)}. null removes it.'),
 })
 
 server.registerTool(
@@ -216,6 +279,7 @@ server.registerTool(
           title: n.title,
           parent: n.parent ?? undefined,
           status: n.status ?? undefined,
+          clock: n.clock ?? undefined,
           body: n.appendBody ? `${n.body ?? ''}${n.appendBody}` : n.body,
         })
         return `created ${r.id} (${r.type}) ${r.title}`
@@ -243,7 +307,7 @@ server.registerTool(
   'connect',
   {
     title: 'Manage connections',
-    description: `Add, update or remove graph connections between nodes. Edge types:\n${EDGE_TYPES.map((t) => `- ${t}: ${EDGE_DESCRIPTIONS[t]}`).join('\n')}\nLabels name the connection (e.g. "betrays", "rivals since childhood").`,
+    description: `Add, update or remove graph connections between nodes. Edge types:\n${EDGE_TYPES.map((t) => `- ${t}: ${EDGE_DESCRIPTIONS[t]}`).join('\n')}\nLabels name the connection in a few words (e.g. "betrays", "rivals since childhood"; max ${EDGE_LABEL_MAX} chars). Don't put status, TODOs or notes in labels. ${REFERENCE_EDGE_TYPES.join('/')} are shown as chips on the source card, so point them from the scene/idea/character to the entity.`,
     inputSchema: {
       ops: z
         .array(
@@ -279,6 +343,53 @@ server.registerTool(
         return `updated edge ${e.id}: ${e.source} -${e.type}${e.label ? ` "${e.label}"` : ''}-> ${e.target}`
       })
       .join('\n')
+  }),
+)
+
+server.registerTool(
+  'board',
+  {
+    title: 'Boards (canvases)',
+    description:
+      'Boards are separate canvases over the same nodes. "main" shows every node; other boards show only the nodes placed on them. A board may have phase columns (acts, left to right) — a node\'s phase is the column it sits in. Actions: list, read (nodes grouped by phase), create (title, phases?, nodes?), update (title?, phases? as ordered titles, removeNodes?), place (nodes onto the board, optionally into a phase), delete.',
+    inputSchema: {
+      action: z.enum(['list', 'read', 'create', 'update', 'place', 'delete']),
+      id: z.string().optional().describe('Board id (default "main")'),
+      title: z.string().optional(),
+      phases: z.array(z.string()).optional().describe('Phase titles in order; replaces the columns'),
+      nodes: z.array(z.string()).optional().describe('Node ids (create, place)'),
+      phase: z.string().optional().describe('Phase title or id to place the nodes in'),
+      removeNodes: z.array(z.string()).optional(),
+    },
+  },
+  safe(({ action, id, title, phases, nodes, phase, removeNodes }) => {
+    const p = project()
+    switch (action) {
+      case 'list':
+        return p.boards().map(boardSummary).join('\n')
+      case 'read':
+        return boardText(p, p.board(id))
+      case 'create': {
+        if (!title) throw new Error('create requires title')
+        const b = p.createBoard({ title, phases, nodes })
+        return `created board ${b.id}`
+      }
+      case 'update': {
+        const cur = p.board(id)
+        const next = phases?.map((t, i) => cur.phases.find((x) => x.title === t) ?? { id: `${slugify(t)}-${i + 1}`, title: t })
+        const b = p.updateBoard(cur.id, { title, phases: next, removeNodes })
+        return `updated board ${b.id}`
+      }
+      case 'place': {
+        if (!nodes?.length) throw new Error('place requires nodes')
+        const b = p.updateBoard(id ?? 'main', { addNodes: nodes, phase })
+        return `placed ${nodes.length} node(s) on ${b.id}${phase ? ` in ${phase}` : ''}`
+      }
+      case 'delete':
+        if (!id) throw new Error('delete requires id')
+        p.deleteBoard(id)
+        return `deleted board ${id}`
+    }
   }),
 )
 

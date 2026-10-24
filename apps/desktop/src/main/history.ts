@@ -1,10 +1,15 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { GRAPH_FILE, TYPE_DIRS, MaquestError, parseFrontmatter, type Edge, type Graph, type Project } from '@maquest/core'
+import { GRAPH_FILE, TYPE_DIRS, Graph, MaquestError, parseFrontmatter, type Board, type Edge, type Position, type Project } from '@maquest/core'
 
 type Snapshot = { files: Map<string, string>; graph: Graph }
 type Change<T> = { key: string; before: T | undefined; after: T | undefined }
-type Entry = { files: Change<string>[]; edges: Change<Edge>[]; layout: Change<{ x: number; y: number }>[] }
+type BoardMeta = Omit<Board, 'layout'>
+/** Layout keys are `board\0node`. */
+type Entry = { files: Change<string>[]; edges: Change<Edge>[]; boards: Change<BoardMeta>[]; layout: Change<Position>[] }
+const boardMap = (g: Graph) => new Map(g.boards.map(({ layout: _, ...meta }) => [meta.id, meta]))
+const layoutMap = (g: Graph) => new Map<string, Position>(g.boards.flatMap((b) => Object.entries(b.layout).map(([id, at]): [string, Position] => [`${b.id}\0${id}`, at])))
+const layoutNode = (key: string) => key.slice(key.indexOf('\0') + 1)
 const LIMIT = 100
 
 function snapshot(project: Project): Snapshot {
@@ -17,9 +22,9 @@ function snapshot(project: Project): Snapshot {
     }
   }
   // A malformed graph must never be silently replaced by history restoration.
-  const graph = JSON.parse(fs.readFileSync(path.join(project.root, GRAPH_FILE), 'utf8')) as Graph
-  if (!Array.isArray(graph.edges) || !graph.layout) throw new MaquestError('Cannot record history: invalid graph.json')
-  return { files, graph }
+  const parsed = Graph.safeParse(JSON.parse(fs.readFileSync(path.join(project.root, GRAPH_FILE), 'utf8')))
+  if (!parsed.success) throw new MaquestError('Cannot record history: invalid graph.json')
+  return { files, graph: parsed.data }
 }
 
 function equal(a: unknown, b: unknown): boolean {
@@ -61,9 +66,10 @@ export class ProjectHistory {
       const entry: Entry = {
         files: changes(before.files, after.files),
         edges: changes(new Map(before.graph.edges.map((e) => [e.id, e])), new Map(after.graph.edges.map((e) => [e.id, e]))),
-        layout: changes(new Map(Object.entries(before.graph.layout)), new Map(Object.entries(after.graph.layout))),
+        boards: changes(boardMap(before.graph), boardMap(after.graph)),
+        layout: changes(layoutMap(before.graph), layoutMap(after.graph)),
       }
-      if (entry.files.length || entry.edges.length || entry.layout.length) {
+      if (entry.files.length || entry.edges.length || entry.boards.length || entry.layout.length) {
         this.past.push(entry)
         if (this.past.length > LIMIT) this.past.shift()
         this.future = []
@@ -88,7 +94,8 @@ export class ProjectHistory {
     const current = snapshot(project)
     const files = new Map(current.files)
     const edges = new Map(current.graph.edges.map((e) => [e.id, e]))
-    const layout = new Map(Object.entries(current.graph.layout))
+    const boards = boardMap(current.graph)
+    const layout = layoutMap(current.graph)
     const apply = <T>(map: Map<string, T>, deltas: Change<T>[]) => {
       for (const delta of deltas) {
         const expected = forward ? delta.before : delta.after
@@ -102,6 +109,7 @@ export class ProjectHistory {
     }
     apply(files, entry.files)
     apply(edges, entry.edges)
+    apply(boards, entry.boards)
     apply(layout, entry.layout)
 
     // Check relationships against the merged result, including new external links/children.
@@ -122,12 +130,13 @@ export class ProjectHistory {
       }
     }
     for (const delta of entry.layout) {
-      if (layout.has(delta.key) && !ids.has(delta.key)) throw new MaquestError(`Cannot restore history: layout node ${delta.key} no longer exists. No files were changed.`)
+      if (layout.has(delta.key) && !ids.has(layoutNode(delta.key))) throw new MaquestError(`Cannot restore history: layout node ${delta.key} no longer exists. No files were changed.`)
     }
+    const laidOut = new Set([...layout.keys()].map(layoutNode))
     for (const id of removedIds) {
-      if (layout.has(id)) throw new MaquestError(`Cannot restore history: externally added layout still refers to ${id}. No files were changed.`)
+      if (laidOut.has(id)) throw new MaquestError(`Cannot restore history: externally added layout still refers to ${id}. No files were changed.`)
     }
-    const graphChanged = entry.edges.length > 0 || entry.layout.length > 0
+    const graphChanged = entry.edges.length > 0 || entry.boards.length > 0 || entry.layout.length > 0
     // Recheck raw bytes immediately before writing, catching non-cooperating disk editors.
     for (const delta of entry.files) {
       const file = path.join(project.root, delta.key)
@@ -135,7 +144,7 @@ export class ProjectHistory {
       if (actual !== current.files.get(delta.key)) throw new MaquestError(`Cannot restore history: ${delta.key} changed concurrently. No files were changed.`)
     }
     const graphFile = path.join(project.root, GRAPH_FILE)
-    if (graphChanged && !equal(JSON.parse(fs.readFileSync(graphFile, 'utf8')), current.graph)) {
+    if (graphChanged && !equal(Graph.parse(JSON.parse(fs.readFileSync(graphFile, 'utf8'))), current.graph)) {
       throw new MaquestError('Cannot restore history: graph.json changed concurrently. No files were changed.')
     }
     try {
@@ -145,7 +154,13 @@ export class ProjectHistory {
         if (content === undefined) fs.rmSync(file, { force: true })
         else writeAtomic(file, content)
       }
-      if (graphChanged) writeAtomic(graphFile, JSON.stringify({ ...current.graph, edges: [...edges.values()], layout: Object.fromEntries(layout) }, null, 2) + '\n')
+      if (graphChanged) {
+        const restored = [...boards.values()].map((meta) => ({
+          ...meta,
+          layout: Object.fromEntries([...layout].filter(([key]) => key.startsWith(`${meta.id}\0`)).map(([key, at]) => [layoutNode(key), at])),
+        }))
+        writeAtomic(graphFile, JSON.stringify({ edges: [...edges.values()], boards: restored }, null, 2) + '\n')
+      }
     } catch (error) {
       // Keep a failed filesystem write from leaving a half-restored history entry.
       for (const delta of entry.files) {

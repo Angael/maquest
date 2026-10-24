@@ -4,6 +4,7 @@ import { ArrowRight, ImagePlus, Trash2, X } from 'lucide-react'
 import {
   ALLOWED_PARENTS,
   EDGE_DESCRIPTIONS,
+  EDGE_LABEL_MAX,
   EDGE_TYPES,
   NODE_TYPES,
   type EdgeType,
@@ -18,6 +19,7 @@ import { useUI } from '../lib/store'
 import { BEFORE_DELETE, useDeleteSelection } from '../lib/deletion'
 import { EDGE_STYLE, NODE_STYLE } from '../lib/styles'
 import { MarkdownEditor } from './MarkdownEditor'
+import { ClockDial } from './ClockDial'
 import { Button, Input, Label, Select } from './ui'
 
 const STATUSES: Status[] = ['idea', 'draft', 'revised', 'done']
@@ -180,6 +182,10 @@ function NodeInspector({ id }: { id: string }) {
         />
       </div>
 
+      <ClockEditor node={node} />
+
+      <BoardMembership id={id} />
+
       <MediaStrip node={node} />
 
       <div>
@@ -226,6 +232,71 @@ function NodeInspector({ id }: { id: string }) {
           <Trash2 size={15} /> Delete
         </Button>
       </div>
+    </div>
+  )
+}
+
+function ClockEditor({ node }: { node: StoryNode }) {
+  const update = useAction(api.updateNode)
+  const clock = node.clock
+  const set = (patch: Partial<NonNullable<StoryNode['clock']>> | null) =>
+    update.mutate([node.id, { clock: patch && { size: 6, filled: 0, steps: [], ...clock, ...patch } }])
+  if (!clock) {
+    return (
+      <div>
+        <Label>Clock</Label>
+        <div className="flex items-center gap-2 text-xs text-stone-500">
+          <span>Track a front, threat or countdown:</span>
+          {[4, 6, 8].map((size) => <button key={size} className="rounded border border-stone-700 px-1.5 py-0.5 text-stone-300 hover:border-amber-400" onClick={() => set({ size })}>{size}</button>)}
+        </div>
+      </div>
+    )
+  }
+  return (
+    <div>
+      <Label>Clock</Label>
+      <div className="flex items-start gap-3">
+        <ClockDial size={clock.size} filled={clock.filled} radius={28} onSet={(filled) => set({ filled })} />
+        <div className="min-w-0 flex-1 space-y-1">
+          <div className="flex items-center gap-2 text-xs text-stone-400">
+            {clock.filled}/{clock.size}
+            <Select className="w-auto py-0.5" aria-label="Clock size" value={clock.size} onChange={(e) => set({ size: Number(e.target.value), filled: Math.min(clock.filled, Number(e.target.value)) })}>
+              {[2, 3, 4, 5, 6, 8, 10, 12].map((n) => <option key={n} value={n}>{n} segments</option>)}
+            </Select>
+            <button className="ml-auto text-stone-500 hover:text-red-400" onClick={() => set(null)}>Remove</button>
+          </div>
+          {Array.from({ length: clock.size }, (_, i) => (
+            <Input key={`${i}:${clock.steps[i] ?? ''}`} aria-label={`What happens at ${i + 1}`} placeholder={`${i + 1}: what happens…`}
+              className={i < clock.filled ? 'text-amber-200' : undefined} defaultValue={clock.steps[i] ?? ''}
+              onBlur={(e) => {
+                if ((clock.steps[i] ?? '') === e.target.value) return
+                const steps = Array.from({ length: clock.size }, (_, k) => (k === i ? e.target.value : (clock.steps[k] ?? '')))
+                set({ steps })
+              }} />
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function BoardMembership({ id }: { id: string }) {
+  const { data: graph } = useGraph()
+  const update = useAction(api.updateBoard)
+  const curated = graph?.boards.filter((b) => b.nodes) ?? []
+  if (!curated.length) return null
+  return (
+    <div>
+      <Label>Boards</Label>
+      <div className="flex flex-wrap gap-1">
+        {curated.map((b) => {
+          const on = b.nodes!.includes(id)
+          return <button key={b.id} aria-pressed={on} title={on ? `Remove from ${b.title}` : `Place on ${b.title}`}
+            className={on ? 'rounded-full bg-amber-500/20 px-2 py-0.5 text-xs text-amber-200' : 'rounded-full border border-dashed border-stone-700 px-2 py-0.5 text-xs text-stone-500 hover:text-stone-200'}
+            onClick={() => update.mutate([b.id, on ? { removeNodes: [id] } : { addNodes: [id] }])}>{b.title}</button>
+        })}
+      </div>
+      {update.error && <div role="alert" className="mt-1 text-xs text-red-300">{update.error.message}</div>}
     </div>
   )
 }
@@ -321,7 +392,7 @@ function EdgeInspector({ id }: { id: string }) {
       </div>
       <div>
         <Label>Name</Label>
-        <Input value={label} placeholder="e.g. betrays, owes a debt to…" onChange={(e) => { dirty.current = true; setLabel(e.target.value); saveLabel(id, e.target.value, ++labelRevision.current) }} />
+        <Input value={label} maxLength={EDGE_LABEL_MAX} placeholder="e.g. betrays, owes a debt to…" onChange={(e) => { dirty.current = true; setLabel(e.target.value); saveLabel(id, e.target.value, ++labelRevision.current) }} />
       </div>
       <div className="flex gap-2">
         <Button onClick={() => updateEdge.mutate([id, { source: edge.target, target: edge.source }])}>Reverse</Button>

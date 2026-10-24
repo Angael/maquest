@@ -11,17 +11,17 @@ A desktop app for writing stories, novels, screenplays and tabletop RPG campaign
 
 ## Canvas and editing
 
-- Focus the canvas and press **N** to create a note at its center, or **double-click empty canvas** to create one at the pointer. The new note is selected for editing; use **Add** for other node types. Double-click no longer zooms the canvas; use the wheel or zoom controls instead.
+- **Right-click empty canvas**, or focus the canvas and press **A**, to open the Add menu at the pointer. Choose a node type to place it there; arrow keys and Enter also work, and Escape or clicking outside dismisses the menu. The toolbar **Add** button opens the same menu but places nodes at the canvas center. Middle-drag pans; double-click zooms. Creation shortcuts do not run while typing in editors.
 - Drag a selection box on empty canvas to select several cards; Shift-click or Ctrl/⌘-click adds to the selection. Drag a selected card to move the group.
 - Undo persisted canvas edits with **Ctrl/⌘+Z**; redo with **Ctrl+Y** or **Ctrl/⌘+Shift+Z**. Editing text keeps the editor's own undo history.
+- Choose a view mode for everyday filtering. **Advanced** exposes individual node and connection filters and the full list of connection types.
 - New lines default to **Auto**, using drag direction and card types: character/location/item → location uses `located-at`; character → faction uses `member-of`; character/faction → item uses `owns`; same-kind characters or factions use `relationship`; scene/chapter → character/faction/item uses `involves`; scene → scene uses `leads-to`. Scene/chapter → location also uses `located-at`; ambiguous pairs use `link`. Hierarchy is never inferred.
 - Choose an explicit **Connect as** type in **Advanced** to override Auto; view presets do not change that choice. Switch back to **Auto** to resume inference. Newly drawn connection types are made visible; select a line to edit it. Existing saved connection defaults reset to Auto once on upgrade, preserving filters.
-- Choose a view mode for everyday filtering. **Advanced** exposes individual node and connection filters and the full list of connection types.
 - Pin a card to keep its position during auto-layout. Movable cards are placed around pinned cards; pins are saved in the node's markdown frontmatter.
 - Connections drawn from a card's top, right, bottom, or left connector keep those attachment sides. Older connections without saved sides still attach automatically.
 - Select a card or connection to emphasize its immediate neighborhood. Unrelated cards stay at 65% opacity and connections at 50%, keeping connection targets visible.
 - Press **Delete** outside a text editor to immediately delete the current selection, including selections made in the sidebar, without confirmation. Unselected children survive and are detached from deleted parents. Use undo to restore deleted nodes or connections.
-- The trash button in Recent moves a project to the system trash immediately, without confirmation; restore it through your system trash if needed.
+- In Recent, **×** removes an entry from the list without touching project files. The trash button moves the project to the system trash immediately, without confirmation; restore it through your system trash if needed. Trash failures are shown inline (some Linux mounts, including `/tmp`, cannot be trashed); use **×** to dismiss those entries.
 - Drag the inspector's left divider to resize it, or focus the divider and use the arrow keys. Its width is remembered.
 - Click a sidebar section heading (Stories, Characters, Locations, Factions, Items, or Notes) to collapse or expand it independently; focused headings also support Enter and Space. The **+** button stays available when collapsed and expands the section when adding a node.
 
@@ -33,8 +33,10 @@ Undo/redo history belongs to the open desktop session, not the project files or 
 pnpm install
 pnpm dev
 ```
+
 Checks: `pnpm test` covers history restoration/conflicts, lossless markdown roundtrips, and directional connection defaults; `pnpm typecheck` checks all packages. Run `pnpm build` after app changes so the installed desktop launcher uses the updated build.
-Checks: `pnpm test` covers history restoration/conflicts and lossless markdown roundtrips; `pnpm typecheck` checks all packages. Run `pnpm build` after app changes so the installed desktop launcher uses the updated build.
+
+Desktop smoke runs must use an isolated profile: `pnpm --filter @maquest/desktop exec electron . --user-data-dir=/tmp/maquest-check-profile /path/to/test-project`. Use a fresh temporary profile per run and remove it afterward, so test projects never enter the installed app's Recent list.
 
 ## Using it with an agent
 

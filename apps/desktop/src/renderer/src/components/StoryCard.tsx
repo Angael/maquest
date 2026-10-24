@@ -1,14 +1,19 @@
 import { memo } from 'react'
-import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
+import { Handle, Position, useConnection, type Node, type NodeProps } from '@xyflow/react'
 import clsx from 'clsx'
-import { Pin, PinOff } from 'lucide-react'
+import { Pin, PinOff, Search } from 'lucide-react'
 import { useAction } from '../lib/queries'
-import type { StoryNode } from '@maquest/core/schema'
+import type { EdgeType, NodeType, StoryNode } from '@maquest/core/schema'
+import { useUI } from '../lib/store'
+import { ClockDial } from './ClockDial'
 import { api, isVideo, mediaUrl } from '../lib/api'
-import { NODE_STYLE } from '../lib/styles'
+import { EDGE_STYLE, NODE_STYLE } from '../lib/styles'
 
-export type CardData = { node: StoryNode; emphasis?: 'neighbor' | 'dimmed' }
+/** A reference edge (involves, located-at, …) drawn as a chip on its source card. */
+export type CardRef = { edge: string; type: EdgeType; id: string; title: string; nodeType: NodeType }
+export type CardData = { node: StoryNode; emphasis?: 'neighbor' | 'dimmed'; refs?: CardRef[]; clues?: number }
 
+/** Grab points only; the stored edge has no handle ids because edges float. */
 const sides = [Position.Top, Position.Right, Position.Bottom, Position.Left]
 
 export const StoryCard = memo(function StoryCard({ data, selected }: NodeProps<Node<CardData>>) {
@@ -17,6 +22,9 @@ export const StoryCard = memo(function StoryCard({ data, selected }: NodeProps<N
   const cover = n.src ?? n.media[0]
   const isMedia = n.type === 'media'
   const update = useAction(api.updateNode)
+  const connecting = useConnection((c) => c.inProgress && c.fromNode.id !== n.id)
+  const select = useUI((s) => s.select)
+  const clock = n.clock
 
   return (
     <div
@@ -30,8 +38,10 @@ export const StoryCard = memo(function StoryCard({ data, selected }: NodeProps<N
       style={{ borderColor: selected ? undefined : `${S.color}55` }}
     >
       {sides.map((p) => (
-        <Handle key={p} id={p} type="source" position={p} className="!size-2.5 opacity-0 transition-opacity group-hover:opacity-100" />
+        <Handle key={p} type="source" position={p} className="card-grip" />
       ))}
+      {/* Easy-connect: while a line is dragged the whole card is the drop target; edges float to the facing borders. */}
+      <Handle type="target" position={Position.Top} isConnectableStart={false} className={clsx('card-drop', connecting && 'card-drop--active')} />
       <button
         type="button"
         className={clsx('nodrag nopan absolute top-1 right-1 z-10 rounded bg-stone-950/90 p-1.5 text-stone-400 hover:text-amber-300 focus-visible:opacity-100 focus-visible:outline-amber-400', n.pinned ? 'text-amber-400' : 'opacity-0 group-hover:opacity-100')}
@@ -58,6 +68,32 @@ export const StoryCard = memo(function StoryCard({ data, selected }: NodeProps<N
           </div>
           <div className="mt-0.5 font-serif text-[15px] leading-snug text-stone-100">{n.title}</div>
           {(n.summary || n.fields.role) && <div className="mt-1 line-clamp-2 text-xs text-stone-400">{n.summary || n.fields.role}</div>}
+          {(clock || data.clues !== undefined) && (
+            <div className="mt-1.5 flex items-center gap-2 text-[11px]">
+              {clock && <span className="flex items-center gap-1 text-stone-400" title={clock.steps[clock.filled - 1] ?? undefined}><ClockDial size={clock.size} filled={clock.filled} radius={9} />{clock.filled}/{clock.size}</span>}
+              {data.clues !== undefined && (
+                <span className={clsx('flex items-center gap-1 rounded px-1', data.clues >= 3 ? 'bg-teal-950 text-teal-300' : 'bg-amber-950 text-amber-300')}
+                  title={data.clues >= 3 ? 'Three-clue rule satisfied' : `Three-clue rule: only ${data.clues} clue${data.clues === 1 ? '' : 's'} point here`}>
+                  <Search size={11} /> {data.clues}/3 clues
+                </span>
+              )}
+            </div>
+          )}
+          {!!data.refs?.length && (
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {data.refs.map((r) => {
+                const T = NODE_STYLE[r.nodeType]
+                return (
+                  <button key={r.edge} type="button" title={`${r.type} → ${r.title}`}
+                    className="nodrag flex max-w-full items-center gap-1 truncate rounded-full border bg-stone-950 px-1.5 py-px text-[10px] text-stone-300 hover:text-stone-50"
+                    style={{ borderColor: `${EDGE_STYLE[r.type].color}66` }}
+                    onClick={(event) => { event.stopPropagation(); select({ kind: 'node', id: r.id }) }}>
+                    <T.icon size={10} style={{ color: T.color }} className="shrink-0" /><span className="truncate">{r.title}</span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
         </div>
       )}
       {isMedia && cover && <div className="truncate px-2 py-1 text-[11px] text-stone-400">{n.title}</div>}
