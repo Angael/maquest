@@ -53,6 +53,7 @@ export const GroupFrame = memo(function GroupFrame({ data, selected }: NodeProps
         isVisible={selected}
         position={Position.Top}
         align="end"
+        style={{ zIndex: 10 }}
         className="flex items-center gap-1 rounded-md border border-stone-700 bg-stone-900 p-1 shadow-xl"
       >
         {GROUP_COLORS.map((c) => (

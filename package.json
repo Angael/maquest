@@ -13,10 +13,12 @@
     "lint:fix": "oxlint --fix",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
-    "check": "oxlint && oxfmt --check && pnpm typecheck && pnpm test",
-    "check:fix": "oxlint --fix; oxfmt && oxlint && pnpm typecheck && pnpm test"
+    "check": "oxlint && oxfmt --check && pnpm typecheck && pnpm test && pnpm test:e2e",
+    "check:fix": "oxlint --fix; oxfmt && oxlint && pnpm typecheck && pnpm test && pnpm test:e2e",
+    "test:e2e": "pnpm build && node scripts/test-e2e.mjs"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "oxfmt": "^0.74.0",
     "oxlint": "^1.89.0",
     "tsx": "^4.23.15"

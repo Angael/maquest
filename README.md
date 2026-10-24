@@ -50,3 +50,11 @@ claude    # or codex / cursor
 The agent starts the `maquest` MCP server only for that folder. Edits apply to the files right away, and the app updates live (it doesn't need to be open).
 
 See [AGENTS.md](AGENTS.md) for the architecture, file format and guidelines.
+
+### Desktop end-to-end tests
+
+`pnpm test:e2e` builds the app and runs Playwright against the real Electron executable. On Linux without a display, the runner automatically uses Xvfb (install the `xvfb` package first). No separate Playwright browser download is needed: Electron supplies Chromium.
+
+Each test creates a temporary project and isolated user profile, closes Electron, and removes both afterward. The suite covers grouping selected cards, dragging a group with its contents, renaming, recoloring, ungrouping without losing cards, and watching external file edits. Persistence assertions read the project's files through core rather than mocking IPC. Failed tests save a screenshot and trace under `test-results/`; open a trace with `pnpm exec playwright show-trace <path-to-trace.zip>`.
+
+`pnpm check` and `pnpm check:fix` run both the fast tests and this desktop suite. Keep fast domain tests in `pnpm test`; add desktop tests for behavior that depends on real pointer events, keyboard shortcuts, IPC, or file watching. Extend `tests/e2e/fixtures.ts` for shared setup. After an existing build, run `pnpm exec playwright test` directly for a quicker iteration.

@@ -21,3 +21,4 @@ Workflow:
 - Commit as you go in small logical commits. Don't push or rewrite history unless asked.
 - Before committing, run `pnpm check:fix` and fix lint errors rather than disabling rules.
 - The installed desktop launcher runs this checkout, so run `pnpm build` after app changes.
+- `pnpm check` and `pnpm check:fix` include Playwright tests against the built Electron app. Run the full check after changes; keep common user flows covered in `tests/e2e`. Tests use temporary projects and profiles. On Linux without a display the runner uses Xvfb, which must be installed.
