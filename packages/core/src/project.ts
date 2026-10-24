@@ -8,7 +8,19 @@ import type { EdgeType } from './schema'
 import {
   ALLOWED_PARENTS,
   Board,
+  CARD_SIZE,
   Clock,
+  GROUP_HEADER,
+  GROUP_PAD,
+  Group,
+  assignGroup,
+  bounds,
+  fitGroups,
+  groupContent,
+  removeGroup,
+  type GroupColor,
+  type Rect,
+  type Size,
   EDGE_LABEL_MAX,
   MAIN_BOARD,
   Edge,
@@ -89,6 +101,47 @@ export type BoardPatch = {
   /** Adds nodes to a curated board (placed in `phase` if given, else near the board's other cards). */
   addNodes?: string[]
   removeNodes?: string[]
+}
+
+/** Rendered card sizes from the canvas; cards without one are assumed to be CARD_SIZE. */
+export type CardSizes = Record<string, Size>
+const sizeOf = (sizes?: CardSizes) => (id: string) => sizes?.[id] ?? CARD_SIZE
+
+export type GroupInput = {
+  sizes?: CardSizes
+  title: string
+  color?: GroupColor
+  /** Group to nest the new group in. */
+  parent?: string
+  /** Cards to move into the group (placed on the board first if needed). */
+  nodes?: string[]
+  /** Existing groups to nest inside the new group. */
+  groups?: string[]
+  rect?: Rect
+}
+
+export type GroupPatch = {
+  sizes?: CardSizes
+  title?: string
+  color?: GroupColor
+  /** null moves the group to the top level. */
+  parent?: string | null
+  /** Cards to move into the group; cards placed elsewhere are moved to a free spot inside it. */
+  addNodes?: string[]
+  /** Cards to take out of the group (they stay on the board, outside it). */
+  removeNodes?: string[]
+  rect?: Rect
+}
+
+/** Layout extras from the canvas, which knows real card sizes. */
+export type LayoutExtras = {
+  /** Group rectangles (still grown to fit their content). */
+  groups?: Record<string, Rect>
+  sizes?: CardSizes
+  /** Card id → group id (null = top level). */
+  assign?: Record<string, string | null>
+  /** Group id → parent group id (null = top level). */
+  nest?: Record<string, string | null>
 }
 
 export function slugify(s: string): string {
@@ -356,6 +409,7 @@ export class Project {
     for (const b of g.boards) {
       delete b.layout[id]
       if (b.nodes) b.nodes = b.nodes.filter((n) => n !== id)
+      for (const group of b.groups) group.nodes = group.nodes.filter((n) => n !== id)
     }
     this.saveGraph(g)
     return deleted
@@ -458,13 +512,100 @@ export class Project {
   }
 
   /** Saves card positions on a board; on a curated board this also adds the cards to it. */
-  setLayout(positions: Record<string, Position>, boardId: string = MAIN_BOARD) {
+  setLayout(positions: Record<string, Position>, boardId: string = MAIN_BOARD, extras: LayoutExtras = {}) {
     const g = this.graph()
     const b = g.boards.find((x) => x.id === boardId)
     if (!b) throw new MaquestError(`Board not found: ${boardId}`)
     Object.assign(b.layout, positions)
     if (b.nodes) for (const id of Object.keys(positions)) if (!b.nodes.includes(id)) b.nodes.push(id)
+    try {
+      for (const [id, target] of Object.entries(extras.nest ?? {})) assignGroup(b, id, target, true)
+      for (const [id, target] of Object.entries(extras.assign ?? {})) assignGroup(b, id, target)
+    } catch (cause) {
+      throw new MaquestError(cause instanceof Error ? cause.message : String(cause))
+    }
+    for (const [id, rect] of Object.entries(extras.groups ?? {})) {
+      const group = b.groups.find((x) => x.id === id)
+      if (group) Object.assign(group, rect)
+    }
+    fitGroups(b, sizeOf(extras.sizes))
     this.saveGraph(g)
+  }
+
+  // ---------- groups ----------
+
+  createGroup(boardId: string, input: GroupInput): Group {
+    const g = this.graph()
+    const b = this.findBoard(g, boardId)
+    let id = `g-${randomUUID().slice(0, 6)}`
+    while (b.groups.some((x) => x.id === id)) id = `g-${randomUUID().slice(0, 6)}`
+    const rect = input.rect ?? emptyGroupSpot(b)
+    const group = Group.parse({ id, title: input.title, color: input.color, ...rect })
+    b.groups.push(group)
+    this.editGroup(g, b, group, { parent: input.parent, addNodes: input.nodes, keepPositions: true })
+    for (const child of input.groups ?? []) this.groupAction(() => assignGroup(b, child, id, true))
+    if (!input.rect && (input.nodes?.length || input.groups?.length)) {
+      // Wrap the content tightly instead of keeping the placeholder rectangle.
+      const content = groupContent(b, id, sizeOf(input.sizes))
+      if (content) Object.assign(group, content)
+    }
+    fitGroups(b, sizeOf(input.sizes))
+    this.saveGraph(g)
+    return group
+  }
+
+  updateGroup(boardId: string, id: string, patch: GroupPatch): Group {
+    const g = this.graph()
+    const b = this.findBoard(g, boardId)
+    const group = b.groups.find((x) => x.id === id || x.title === id)
+    if (!group) throw new MaquestError(`Group not found on ${b.id}: ${id}`)
+    if (patch.title !== undefined) group.title = patch.title
+    if (patch.color !== undefined) group.color = patch.color
+    if (patch.rect) Object.assign(group, patch.rect)
+    this.editGroup(g, b, group, patch)
+    fitGroups(b, sizeOf(patch.sizes))
+    this.saveGraph(g)
+    return group
+  }
+
+  /** Removes a group frame; its cards and subgroups stay where they are. */
+  deleteGroup(boardId: string, id: string) {
+    const g = this.graph()
+    const b = this.findBoard(g, boardId)
+    this.groupAction(() => removeGroup(b, b.groups.find((x) => x.title === id)?.id ?? id))
+    this.saveGraph(g)
+  }
+
+  private findBoard(g: Graph, id: string) {
+    const b = g.boards.find((x) => x.id === id)
+    if (!b) throw new MaquestError(`Board not found: ${id}`)
+    return b
+  }
+
+  private groupAction(fn: () => void) {
+    try {
+      fn()
+    } catch (cause) {
+      throw new MaquestError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+
+  private editGroup(g: Graph, b: Board, group: Group, patch: Pick<GroupPatch, 'parent' | 'addNodes' | 'removeNodes'> & { keepPositions?: boolean }) {
+    if (patch.parent !== undefined) this.groupAction(() => assignGroup(b, group.id, patch.parent ?? null, true))
+    for (const n of patch.addNodes ?? []) {
+      this.requireNode(n)
+      if (b.nodes && !b.nodes.includes(n)) b.nodes.push(n)
+      const placed = b.layout[n] ?? g.boards.find((x) => x.id === MAIN_BOARD)?.layout[n]
+      // Cards already in place keep their spot when the group is being built around them.
+      b.layout[n] = patch.keepPositions && placed ? placed : spotInGroup(b, group)
+      assignGroup(b, n, group.id)
+    }
+    for (const n of patch.removeNodes ?? []) {
+      if (!group.nodes.includes(n)) continue
+      assignGroup(b, n, group.parent ?? null)
+      const at = b.layout[n]
+      if (at && !group.parent) b.layout[n] = { x: group.x + group.width + 40, y: at.y }
+    }
   }
 
   createBoard(input: { title: string; nodes?: string[]; phases?: string[] }): Board {
@@ -497,6 +638,7 @@ export class Project {
       if (!b.nodes) throw new MaquestError('The main board shows every node; remove nodes from curated boards only')
       b.nodes = b.nodes.filter((n) => !patch.removeNodes!.includes(n))
       for (const n of patch.removeNodes) delete b.layout[n]
+      for (const group of b.groups) group.nodes = group.nodes.filter((n) => !patch.removeNodes!.includes(n))
     }
     this.saveGraph(g)
     return b
@@ -634,6 +776,24 @@ function freeSpot(b: Board, column: number, fallback?: Position): Position {
   const x = column >= 0 ? column * PHASE_WIDTH + 40 : b.phases.length ? -PHASE_WIDTH / 2 : 0
   const below = Object.values(b.layout).filter((p) => Math.floor(p.x / PHASE_WIDTH) === Math.floor(x / PHASE_WIDTH))
   return { x, y: below.length ? Math.max(...below.map((p) => p.y)) + 200 : 0 }
+}
+
+/** A free spot inside a group: below its current content, growing the group as needed. */
+function spotInGroup(b: Board, group: Group): Position {
+  const content = groupContent(b, group.id)
+  if (!content) return { x: group.x + GROUP_PAD, y: group.y + GROUP_HEADER + GROUP_PAD }
+  return { x: group.x + GROUP_PAD, y: content.y + content.height - GROUP_PAD + 40 }
+}
+
+/** Where a new empty group goes: right of everything on the board. */
+function emptyGroupSpot(b: Board): Rect {
+  const all = bounds([...Object.values(b.layout).map((p) => ({ ...p, ...CARD_SIZE })), ...b.groups])
+  return {
+    x: all ? all.x + all.width + 80 : 0,
+    y: all ? all.y : 0,
+    width: 2 * CARD_SIZE.width + 3 * GROUP_PAD,
+    height: CARD_SIZE.height + 2 * GROUP_PAD + GROUP_HEADER,
+  }
 }
 
 function strip<T extends object>(o: T): Partial<T> {

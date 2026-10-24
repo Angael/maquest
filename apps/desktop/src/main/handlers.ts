@@ -14,6 +14,9 @@ import {
   type ProjectKind,
   type UpdateNodeInput,
   type BoardPatch,
+  type GroupInput,
+  type GroupPatch,
+  type LayoutExtras,
   type Position,
 } from '@maquest/core'
 import { ProjectHistory } from './history'
@@ -140,10 +143,10 @@ export const handlers = {
   updateConfig: (patch: Partial<ProjectConfig>) => p().updateConfig(patch),
   listNodes: (filter?: NodeFilter) => p().listNodes(filter),
   getNode: (id: string) => p().getNode(id),
-  createNode: (input: CreateNodeInput, position?: Position, board?: string) =>
+  createNode: (input: CreateNodeInput, position?: Position, board?: string, group?: string) =>
     history.record(p(), () => {
       const node = p().createNode(input)
-      if (position) p().setLayout({ [node.id]: position }, board)
+      if (position) p().setLayout({ [node.id]: position }, board, group ? { assign: { [node.id]: group } } : {})
       return node
     }),
   /** Duplicates nodes (and edges among them) at an offset; one undo step. Returns the new ids. */
@@ -175,7 +178,8 @@ export const handlers = {
         })
         copies.set(n.id, copy.id)
         const at = layout[n.id]
-        if (at) project.setLayout({ [copy.id]: { x: at.x + offset.x, y: at.y + offset.y } }, board)
+        const group = project.board(board).groups.find((g) => g.nodes.includes(n.id))
+        if (at) project.setLayout({ [copy.id]: { x: at.x + offset.x, y: at.y + offset.y } }, board, group ? { assign: { [copy.id]: group.id } } : {})
       }
       for (const e of project.graph().edges) {
         const source = copies.get(e.source)
@@ -197,7 +201,10 @@ export const handlers = {
     patch: { type?: EdgeType; label?: string; source?: string; target?: string; sourceHandle?: EdgeHandle; targetHandle?: EdgeHandle },
   ) => history.record(p(), () => p().updateEdge(id, patch)),
   removeEdge: (id: string) => history.record(p(), () => p().removeEdge(id)),
-  setLayout: (pos: Record<string, Position>, board?: string) => history.record(p(), () => p().setLayout(pos, board)),
+  setLayout: (pos: Record<string, Position>, board?: string, extras?: LayoutExtras) => history.record(p(), () => p().setLayout(pos, board, extras)),
+  createGroup: (board: string, input: GroupInput) => history.record(p(), () => p().createGroup(board, input)),
+  updateGroup: (board: string, id: string, patch: GroupPatch) => history.record(p(), () => p().updateGroup(board, id, patch)),
+  deleteGroup: (board: string, id: string) => history.record(p(), () => p().deleteGroup(board, id)),
   createBoard: (input: { title: string; nodes?: string[]; phases?: string[] }) => history.record(p(), () => p().createBoard(input)),
   updateBoard: (id: string, patch: BoardPatch & { phase?: string }) => history.record(p(), () => p().updateBoard(id, patch)),
   deleteBoard: (id: string) => history.record(p(), () => p().deleteBoard(id)),

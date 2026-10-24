@@ -11,6 +11,7 @@ import {
   onBoard,
   phaseIndex,
   slugify,
+  GroupColor,
   type Board,
   EDGE_TYPES,
   ENTITY_TYPES,
@@ -120,6 +121,18 @@ function boardSummary(b: Board) {
   return `- ${b.id}: ${b.title} (${b.nodes ? `${b.nodes.length} cards` : 'all nodes'})${b.phases.length ? ` — phases: ${b.phases.map((x) => x.title).join(' → ')}` : ''}`
 }
 
+/** Group tree with member titles, e.g. "- g-1a2b3c: Tavern (2 cards: Bartender, Cellar)". */
+function groupsText(b: Board, titles: Map<string, { title: string }>) {
+  const walk = (parent: string | undefined, depth: number): string[] =>
+    b.groups
+      .filter((g) => g.parent === parent)
+      .flatMap((g) => [
+        `${'  '.repeat(depth)}- ${g.id}: ${g.title} (${g.nodes.length} cards${g.nodes.length ? `: ${g.nodes.map((n) => titles.get(n)?.title ?? n).join(', ')}` : ''})`,
+        ...walk(g.id, depth + 1),
+      ])
+  return b.groups.length ? `## Groups\n${walk(undefined, 0).join('\n')}` : ''
+}
+
 function boardText(p: Project, b: Board) {
   const titles = new Map(p.listNodes().map((n) => [n.id, n]))
   const ids = b.nodes ?? [...titles.keys()]
@@ -127,19 +140,21 @@ function boardText(p: Project, b: Board) {
     const n = titles.get(id)
     return n ? line(n) : `- ${id} (missing)`
   }
-  if (!b.phases.length) return `${boardSummary(b)}\n${ids.map(entry).join('\n')}`
-  const groups = b.phases.map((ph) => ({ title: ph.title, ids: [] as string[] }))
+  const groups = groupsText(b, titles)
+  if (!b.phases.length) return [`${boardSummary(b)}\n${ids.map(entry).join('\n')}`, groups].filter(Boolean).join('\n\n')
+  const columns = b.phases.map((ph) => ({ title: ph.title, ids: [] as string[] }))
   const loose: string[] = []
   for (const id of ids) {
     const at = b.layout[id]
     const i = at ? phaseIndex(b, at.x) : -1
-    if (i >= 0) groups[i].ids.push(id)
+    if (i >= 0) columns[i].ids.push(id)
     else loose.push(id)
   }
   return [
     boardSummary(b),
-    ...groups.map((g, i) => `## ${i + 1}. ${g.title}\n${g.ids.map(entry).join('\n') || '(empty)'}`),
+    ...columns.map((g, i) => `## ${i + 1}. ${g.title}\n${g.ids.map(entry).join('\n') || '(empty)'}`),
     b.nodes && loose.length ? `## Outside phases\n${loose.map(entry).join('\n')}` : '',
+    groups,
   ]
     .filter(Boolean)
     .join('\n\n')
@@ -359,18 +374,21 @@ server.registerTool(
   {
     title: 'Boards (canvases)',
     description:
-      'Boards are separate canvases over the same nodes. "main" shows every node; other boards show only the nodes placed on them. A board may have phase columns (acts, left to right) — a node\'s phase is the column it sits in. Actions: list, read (nodes grouped by phase), create (title, phases?, nodes?), update (title?, phases? as ordered titles, removeNodes?), place (nodes onto the board, optionally into a phase), delete.',
+      'Boards are separate canvases over the same nodes. "main" shows every node; other boards show only the nodes placed on them. A board may have phase columns (acts, left to right) — a node\'s phase is the column it sits in. Groups are bordered areas on a board (rooms, cities, chapters), may nest, and always contain their cards. Actions: list, read (nodes by phase, plus groups), create (title, phases?, nodes?), update (title?, phases? as ordered titles, removeNodes?), place (nodes onto the board, optionally into a phase or group), group (create a group: title, nodes?, parent?, color?; or edit one given group: title?, nodes? to add, removeNodes?, parent?, color?), ungroup (remove the group frame, keep its cards), delete.',
     inputSchema: {
-      action: z.enum(['list', 'read', 'create', 'update', 'place', 'delete']),
+      action: z.enum(['list', 'read', 'create', 'update', 'place', 'group', 'ungroup', 'delete']),
       id: z.string().optional().describe('Board id (default "main")'),
       title: z.string().optional(),
       phases: z.array(z.string()).optional().describe('Phase titles in order; replaces the columns'),
       nodes: z.array(z.string()).optional().describe('Node ids (create, place)'),
       phase: z.string().optional().describe('Phase title or id to place the nodes in'),
       removeNodes: z.array(z.string()).optional(),
+      group: z.string().optional().describe('Group id or title (place, group, ungroup)'),
+      parent: z.string().nullable().optional().describe('Parent group id to nest in; null = top level (group)'),
+      color: GroupColor.optional(),
     },
   },
-  safe(({ action, id, title, phases, nodes, phase, removeNodes }) => {
+  safe(({ action, id, title, phases, nodes, phase, removeNodes, group, parent, color }) => {
     const p = project()
     switch (action) {
       case 'list':
@@ -391,8 +409,23 @@ server.registerTool(
       case 'place': {
         if (!nodes?.length) throw new Error('place requires nodes')
         const b = p.updateBoard(id ?? 'main', { addNodes: nodes, phase })
-        return `placed ${nodes.length} node(s) on ${b.id}${phase ? ` in ${phase}` : ''}`
+        if (group) p.updateGroup(b.id, group, { addNodes: nodes })
+        return `placed ${nodes.length} node(s) on ${b.id}${phase ? ` in ${phase}` : ''}${group ? ` in group ${group}` : ''}`
       }
+      case 'group': {
+        const board = id ?? 'main'
+        if (group) {
+          const g = p.updateGroup(board, group, { title, color, parent, addNodes: nodes, removeNodes })
+          return `updated group ${g.id}: ${g.title}`
+        }
+        if (!title) throw new Error('group requires title (new group) or group (existing)')
+        const g = p.createGroup(board, { title, color, parent: parent ?? undefined, nodes })
+        return `created group ${g.id}: ${g.title}`
+      }
+      case 'ungroup':
+        if (!group) throw new Error('ungroup requires group')
+        p.deleteGroup(id ?? 'main', group)
+        return `removed group ${group}`
       case 'delete':
         if (!id) throw new Error('delete requires id')
         p.deleteBoard(id)
