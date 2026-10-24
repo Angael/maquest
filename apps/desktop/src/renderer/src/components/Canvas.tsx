@@ -346,6 +346,8 @@ export function Canvas() {
           position: { x: g.x, y: g.y },
           width: g.width,
           height: g.height,
+          // The resizer starts from measured dimensions, even for explicitly sized nodes.
+          measured: { width: g.width, height: g.height },
           dragHandle: '.group-handle',
           className: 'group-node',
           // Below every card, even when selected (selection adds 1000).
@@ -401,7 +403,13 @@ export function Canvas() {
       ...groupNodes.map((node) => {
         const entry = local[node.id]
         return entry
-          ? { ...node, position: entry.position ?? node.position, width: entry.size?.width ?? node.width, height: entry.size?.height ?? node.height }
+          ? {
+              ...node,
+              position: entry.position ?? node.position,
+              width: entry.size?.width ?? node.width,
+              height: entry.size?.height ?? node.height,
+              measured: entry.size ?? entry.measured ?? node.measured,
+            }
           : node
       }),
       ...flowNodes.map((node) => {
@@ -428,6 +436,7 @@ export function Canvas() {
             const saved = b.groups.find((g) => g.id === id)
             if (!saved) continue
             if (change.type === 'dimensions') {
+              if (change.dimensions) entry.measured = change.dimensions
               if (change.resizing !== undefined && change.dimensions) {
                 entry.size = change.dimensions
                 entry.dragging = change.resizing
