@@ -172,3 +172,12 @@ test('board creation, membership and per-board layout undo and redo together', (
   history.redo(project)
   assert.deepEqual(project.board('act-i').nodes, [node.id])
 })
+
+test('filling one template field keeps the other empty fields', (t) => {
+  const { project, history } = fixture(t)
+  const c = project.createNode({ type: 'character', title: 'Bob' })
+  history.record(project, () => project.updateNode(c.id, { fields: { role: 'hero' } }))
+  assert.deepEqual(new Project(project.root).requireNode(c.id).fields, { role: 'hero', want: '', need: '', flaw: '' })
+  history.record(project, () => project.updateNode(c.id, { fields: { role: '', want: null } }))
+  assert.deepEqual(new Project(project.root).requireNode(c.id).fields, { role: '', need: '', flaw: '' })
+})
