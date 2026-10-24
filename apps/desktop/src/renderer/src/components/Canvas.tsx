@@ -19,34 +19,46 @@ import {
 } from '@xyflow/react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
-import dagre from '@dagrejs/dagre'
-import { ChevronDown, Columns3, LayoutGrid, Pencil, Plus, Redo2, Trash2, Undo2, X } from 'lucide-react'
+import { BoxSelect, ChevronDown, Columns3, LayoutGrid, Pencil, Plus, Redo2, Trash2, Undo2, X } from 'lucide-react'
 import {
   EDGE_DESCRIPTIONS,
   EDGE_TYPES,
+  GROUP_HEADER,
+  GROUP_PAD,
   MAIN_BOARD,
   NODE_TYPES,
   PHASE_WIDTH,
+  bounds,
   clueCounts,
+  groupAt,
+  groupContent,
+  groupDepth,
+  groupOf,
+  groupSubtree,
   isReferenceEdge,
   onBoard,
-  phaseIndex,
   type Board,
   type EdgeType,
   type Graph,
   type NodeType,
+  type Position,
+  type Rect,
+  type Size,
   type StoryNode,
 } from '@maquest/core/schema'
 import { api } from '../lib/api'
 import { importFiles, useCreateNode } from '../lib/actions'
 import { currentBoardId, queryClient, useAction, useBoard, useGraph, useNodes } from '../lib/queries'
 import { useUI } from '../lib/store'
+import { isEditingTarget as isEditing } from '../lib/deletion'
 import { EDGE_STYLE, NODE_STYLE, type EdgeKind } from '../lib/styles'
 import { inferConnectionType } from '../lib/connections'
 import { StoryCard, type CardData, type CardRef } from './StoryCard'
 import { FloatingConnectionLine, FloatingEdge, type FloatingFlowEdge } from './FloatingEdge'
+import { GROUP_STYLE, GroupFrame, type GroupFlowNode } from './GroupFrame'
+import { arrange } from '../lib/layout'
 
-const nodeTypes = { card: StoryCard }
+const nodeTypes = { card: StoryCard, frame: GroupFrame }
 const edgeTypes = { floating: FloatingEdge }
 const NONE: StoryNode[] = []
 const MODES: { label: string; nodes: readonly NodeType[]; edges: readonly EdgeKind[] }[] = [
@@ -77,7 +89,15 @@ function descendants(nodes: StoryNode[], root: string) {
   return ids
 }
 
-type LocalNode = { position?: { x: number; y: number }; measured?: { width: number; height: number }; dragging?: boolean }
+type LocalNode = { position?: { x: number; y: number }; measured?: { width: number; height: number }; dragging?: boolean; size?: Size }
+type CardFlowNode = FlowNode<CardData, 'card'>
+type AnyFlowNode = CardFlowNode | GroupFlowNode
+
+/** Flow id of a group frame; card ids are node ids. */
+const GROUP_PREFIX = 'group:'
+const groupKey = (id: string) => GROUP_PREFIX + id
+const groupIdOf = (flowId: string) => (flowId.startsWith(GROUP_PREFIX) ? flowId.slice(GROUP_PREFIX.length) : null)
+const isCard = (n: FlowNode): n is CardFlowNode => n.type === 'card'
 type NewEdge = { source: string; target: string; type: EdgeType }
 
 /** Adds an edge optimistically so the line stays on screen while the write round-trips through disk. */
@@ -100,7 +120,7 @@ function useAddEdge() {
 /** In-app node clipboard; paste duplicates from disk so edits after copy are included. */
 let clipboard: { ids: string[]; pastes: number } | null = null
 
-const cardSize = (n: FlowNode<CardData>) => ({ width: n.measured?.width ?? (n.data.node.type === 'media' ? 256 : 224), height: n.measured?.height ?? 160 })
+const cardSize = (n: CardFlowNode) => ({ width: n.measured?.width ?? (n.data.node.type === 'media' ? 256 : 224), height: n.measured?.height ?? 160 })
 
 export function Canvas() {
   const { data: all = NONE } = useNodes()
@@ -133,7 +153,7 @@ export function Canvas() {
     closeAddMenu()
     setCreateError(null)
     try {
-      await create(type, { position })
+      await create(type, { position, group: board && position ? groupAt(board, position)?.id : undefined })
       useUI.setState((state) => ({ hiddenNodes: state.hiddenNodes.filter((kind) => kind !== type), storyScope: null }))
     } catch (cause) {
       setCreateError(cause instanceof Error ? cause : new Error(String(cause)))
@@ -250,7 +270,11 @@ export function Canvas() {
     return { roots, neighbors, lines, active: roots.size > 0 }
   }, [selectedNodeIds, selection, connections])
 
-  const flowNodes = useMemo<FlowNode<CardData>[]>(() => {
+  const [selectedGroup, setSelectedGroup] = useState<string | null>(null)
+  const updateGroup = useAction(api.updateGroup)
+  const deleteGroup = useAction(api.deleteGroup)
+  const createGroup = useAction(api.createGroup)
+  const flowNodes = useMemo<CardFlowNode[]>(() => {
     const counters: Record<string, number> = {}
     const defaults = new Map<string, { x: number; y: number }>()
     for (const n of all) defaults.set(n.id, defaultPosition(n, (counters[n.type] = (counters[n.type] ?? -1) + 1)))
@@ -279,6 +303,77 @@ export function Canvas() {
   // Disk (via queries) owns positions and the zustand store owns selection; React Flow only reports
   // measurements and in-flight drags, kept here until the saved layout catches up.
   const [local, setLocal] = useState<Record<string, LocalNode>>({})
+  const localRef = useRef(local)
+  const boardRef = useRef(board)
+  useLayoutEffect(() => {
+    localRef.current = local
+    boardRef.current = board
+  })
+  /** Rendered card sizes, so the main process fits groups around what is actually on screen. */
+  const measuredSizes = useCallback(() => {
+    const out: Record<string, Size> = {}
+    for (const [id, entry] of Object.entries(localRef.current)) if (entry.measured && !groupIdOf(id)) out[id] = entry.measured
+    return out
+  }, [])
+  /** Group rectangles are refitted on save, so in-flight ones are dropped once the save lands instead of compared. */
+  const releaseGroups = useCallback(() => {
+    setLocal((previous) => {
+      const next = { ...previous }
+      for (const id of Object.keys(next)) if (groupIdOf(id) && !next[id].dragging) delete next[id]
+      return next
+    })
+  }, [])
+  const saveLayout = useCallback(
+    async (...args: Parameters<typeof api.setLayout>) => {
+      try {
+        await setLayout.mutateAsync(args)
+      } finally {
+        releaseGroups()
+      }
+    },
+    [setLayout, releaseGroups],
+  )
+  const groupNodes = useMemo<GroupFlowNode[]>(() => {
+    if (!board) return []
+    return board.groups
+      .map((g) => ({ g, depth: groupDepth(board, g.id) }))
+      .toSorted((a, b) => a.depth - b.depth)
+      .map(({ g, depth }) => {
+        const content = groupContent(board, g.id)
+        return {
+          id: groupKey(g.id),
+          type: 'frame' as const,
+          position: { x: g.x, y: g.y },
+          width: g.width,
+          height: g.height,
+          dragHandle: '.group-handle',
+          className: 'group-node',
+          // Below every card, even when selected (selection adds 1000).
+          zIndex: -2000 + depth,
+          selected: selectedGroup === g.id,
+          data: {
+            group: g,
+            min: {
+              width: Math.max(160, content ? content.x + content.width - g.x : 0),
+              height: Math.max(GROUP_HEADER + 40, content ? content.y + content.height - g.y : 0),
+            },
+            count: g.nodes.length + board.groups.filter((x) => x.parent === g.id).length,
+            select: () => {
+              setSelectedGroup(g.id)
+              selectNodes([])
+              select(null)
+            },
+            rename: (title: string) => updateGroup.mutate([board.id, g.id, { title }]),
+            recolor: (color) => updateGroup.mutate([board.id, g.id, { color }]),
+            ungroup: () => {
+              setSelectedGroup(null)
+              deleteGroup.mutate([board.id, g.id])
+            },
+            resized: (rect: Rect) => void saveLayout({}, board.id, { groups: { [g.id]: rect }, sizes: measuredSizes() }),
+          },
+        }
+      })
+  }, [board, selectedGroup, select, selectNodes, updateGroup, deleteGroup, saveLayout, measuredSizes])
   // Drop settled drag positions once a new saved layout arrives (adjusting state during render, not in an effect).
   const [seenBoard, setSeenBoard] = useState(board)
   if (seenBoard !== board) {
@@ -287,6 +382,10 @@ export function Canvas() {
       let changed = false
       const next: Record<string, LocalNode> = {}
       for (const [id, entry] of Object.entries(previous)) {
+        if (groupIdOf(id)) {
+          next[id] = entry
+          continue
+        }
         const saved = board?.layout[id]
         const settled = !entry.dragging && entry.position && saved && saved.x === entry.position.x && saved.y === entry.position.y
         if (settled) {
@@ -297,21 +396,67 @@ export function Canvas() {
       return changed ? next : previous
     })
   }
-  const nodes = useMemo(
-    () =>
-      flowNodes.map((node) => {
+  const nodes = useMemo<AnyFlowNode[]>(
+    () => [
+      ...groupNodes.map((node) => {
+        const entry = local[node.id]
+        return entry
+          ? { ...node, position: entry.position ?? node.position, width: entry.size?.width ?? node.width, height: entry.size?.height ?? node.height }
+          : node
+      }),
+      ...flowNodes.map((node) => {
         const entry = local[node.id]
         return entry ? { ...node, position: entry.position ?? node.position, measured: entry.measured, dragging: entry.dragging } : node
       }),
-    [flowNodes, local],
+    ],
+    [groupNodes, flowNodes, local],
   )
   const changeNodes = useCallback(
-    (changes: NodeChange<FlowNode<CardData>>[]) => {
+    (changes: NodeChange<AnyFlowNode>[]) => {
       const geometry = changes.filter((change) => change.type === 'position' || change.type === 'dimensions')
       if (geometry.length)
         setLocal((previous) => {
           const next = { ...previous }
+          const b = boardRef.current
+          const resizing = new Set(geometry.filter((c) => c.type === 'dimensions' && c.resizing !== undefined).map((c) => c.id))
+          // Cards carried by a dragged group move with it; React Flow may also report them when they are selected.
+          const carried = new Set<string>()
           for (const change of geometry) {
+            const id = groupIdOf(change.id)
+            if (!id || !b) continue
+            const entry = { ...next[change.id] }
+            const saved = b.groups.find((g) => g.id === id)
+            if (!saved) continue
+            if (change.type === 'dimensions') {
+              if (change.resizing !== undefined && change.dimensions) {
+                entry.size = change.dimensions
+                entry.dragging = change.resizing
+              }
+            } else if (change.position) {
+              const from = entry.position ?? { x: saved.x, y: saved.y }
+              entry.position = change.position
+              if (!resizing.has(change.id)) {
+                entry.dragging = change.dragging
+                const dx = change.position.x - from.x
+                const dy = change.position.y - from.y
+                for (const sub of groupSubtree(b, id)) {
+                  const group = b.groups.find((g) => g.id === sub)!
+                  for (const n of group.nodes) {
+                    carried.add(n)
+                    const at = next[n]?.position ?? b.layout[n]
+                    if (at) next[n] = { ...next[n], position: { x: at.x + dx, y: at.y + dy }, dragging: change.dragging }
+                  }
+                  if (sub === id) continue
+                  carried.add(groupKey(sub))
+                  const at = next[groupKey(sub)]?.position ?? { x: group.x, y: group.y }
+                  next[groupKey(sub)] = { ...next[groupKey(sub)], position: { x: at.x + dx, y: at.y + dy }, dragging: change.dragging }
+                }
+              }
+            }
+            next[change.id] = entry
+          }
+          for (const change of geometry) {
+            if (groupIdOf(change.id) || carried.has(change.id)) continue
             const entry = { ...next[change.id] }
             if (change.type === 'position') {
               if (change.position) entry.position = change.position
@@ -321,11 +466,13 @@ export function Canvas() {
           }
           return next
         })
-      const selections = changes.filter((change) => change.type === 'select')
+      const selections = changes.filter((change) => change.type === 'select' && !groupIdOf(change.id))
+      if (selections.some((change) => change.type === 'select' && change.selected)) setSelectedGroup(null)
       if (!selections.length) return
       const previous = useUI.getState().selectedNodeIds
       const ids = new Set(previous)
       for (const change of selections) {
+        if (change.type !== 'select') continue
         if (change.selected) ids.add(change.id)
         else ids.delete(change.id)
       }
@@ -415,7 +562,7 @@ export function Canvas() {
     (c: Connection | FlowEdge) => {
       const source = flow.getNode(c.source)?.data as CardData | undefined
       const target = flow.getNode(c.target)?.data as CardData | undefined
-      if (!source || !target) return null
+      if (!source?.node || !target?.node) return null
       return connectType === 'auto' ? inferConnectionType(source.node.type, target.node.type) : connectType
     },
     [flow, connectType],
@@ -443,14 +590,134 @@ export function Canvas() {
     },
     [select],
   )
-  const onPaneClick = useCallback(() => select(null), [select])
+  const onPaneClick = useCallback(() => {
+    select(null)
+    setSelectedGroup(null)
+  }, [select])
+  // A dropped card joins the innermost group under its center (or leaves to the top level); a dropped group
+  // nests in the innermost larger group under its title bar. Groups then grow to fit in the main process.
   const onNodeDragStop = useCallback(
     (_: unknown, __: unknown, dragged: FlowNode[]) => {
-      setLayout.mutate([Object.fromEntries(dragged.map((n) => [n.id, n.position])), currentBoardId()])
+      const b = boardRef.current
+      if (!b) return
+      const work: Board = structuredClone(b)
+      const draggedGroups = dragged.map((n) => groupIdOf(n.id)).filter((id): id is string => !!id && work.groups.some((g) => g.id === id))
+      const carried = new Set(draggedGroups.flatMap((id) => [...groupSubtree(work, id)]))
+      // Move each outermost dragged group's subtree by the group's own drag offset.
+      for (const n of dragged) {
+        const id = groupIdOf(n.id)
+        const g = id && work.groups.find((x) => x.id === id)
+        if (!g || (g.parent && carried.has(g.parent))) continue
+        const dx = n.position.x - g.x
+        const dy = n.position.y - g.y
+        for (const sub of groupSubtree(work, g.id)) {
+          const s = work.groups.find((x) => x.id === sub)!
+          s.x += dx
+          s.y += dy
+          for (const card of s.nodes) if (work.layout[card]) work.layout[card] = { x: work.layout[card].x + dx, y: work.layout[card].y + dy }
+        }
+      }
+      for (const n of dragged) if (isCard(n) && !carried.has(groupOf(work, n.id)?.id ?? '')) work.layout[n.id] = n.position
+      const positions: Record<string, Position> = {}
+      const groups: Record<string, Rect> = {}
+      const assign: Record<string, string | null> = {}
+      const nest: Record<string, string | null> = {}
+      for (const id of carried) {
+        const g = work.groups.find((x) => x.id === id)!
+        groups[id] = { x: g.x, y: g.y, width: g.width, height: g.height }
+        for (const n of g.nodes) if (work.layout[n]) positions[n] = work.layout[n]
+      }
+      for (const n of dragged) {
+        if (!isCard(n)) continue
+        const at = work.layout[n.id]
+        positions[n.id] = at
+        const owner = groupOf(work, n.id)
+        if (owner && carried.has(owner.id)) continue
+        const size = cardSize(n)
+        const target = groupAt(work, { x: at.x + size.width / 2, y: at.y + size.height / 2 })?.id ?? null
+        if (target !== (owner?.id ?? null)) assign[n.id] = target
+      }
+      for (const id of draggedGroups) {
+        const g = work.groups.find((x) => x.id === id)!
+        if (g.parent && carried.has(g.parent)) continue
+        const own = groupSubtree(work, id)
+        const grip = { x: g.x + 16, y: g.y + GROUP_HEADER / 2 }
+        const target =
+          work.groups
+            .filter(
+              (o) =>
+                !own.has(o.id) &&
+                o.width * o.height > g.width * g.height &&
+                grip.x >= o.x &&
+                grip.x <= o.x + o.width &&
+                grip.y >= o.y &&
+                grip.y <= o.y + o.height,
+            )
+            .toSorted((x, y) => groupDepth(work, y.id) - groupDepth(work, x.id))[0]?.id ?? null
+        if (target !== (g.parent ?? null)) nest[id] = target
+      }
+      void saveLayout(positions, b.id, { groups, assign, nest, sizes: measuredSizes() })
     },
-    [setLayout],
+    [saveLayout, measuredSizes],
   )
-  const error = createError ?? undo.error ?? redo.error ?? history.error ?? setLayout.error ?? addEdge.error ?? duplicate.error
+  /** Wraps the selected cards in a new group, or adds an empty one at `point` (flow coordinates). */
+  const makeGroup = useCallback(
+    async (point?: Position) => {
+      const b = boardRef.current
+      if (!b) return
+      const ids = point ? [] : useUI.getState().selectedNodeIds.filter((id) => flow.getNode(id))
+      let rect: Rect
+      let parent: string | undefined
+      if (ids.length) {
+        const box = bounds(ids.map((id) => ({ ...flow.getNode(id)!.position, ...cardSize(flow.getNode(id) as CardFlowNode) })))!
+        rect = {
+          x: box.x - GROUP_PAD,
+          y: box.y - GROUP_PAD - GROUP_HEADER,
+          width: box.width + 2 * GROUP_PAD,
+          height: box.height + 2 * GROUP_PAD + GROUP_HEADER,
+        }
+        const owners = new Set(ids.map((id) => groupOf(b, id)?.id))
+        parent = owners.size === 1 ? [...owners][0] : undefined
+      } else {
+        const at = point ?? flow.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 })
+        rect = { x: at.x, y: at.y, width: 520, height: 300 }
+        parent = groupAt(b, at)?.id
+      }
+      const group = await createGroup.mutateAsync([b.id, { title: 'New group', nodes: ids, rect, parent, sizes: measuredSizes() }])
+      selectNodes([])
+      select(null)
+      setSelectedGroup(group.id)
+    },
+    [flow, createGroup, measuredSizes, select, selectNodes],
+  )
+  useEffect(() => {
+    const handle = (event: KeyboardEvent) => {
+      if (event.repeat || event.defaultPrevented || isEditing(event.target)) return
+      if (event.key === 'Delete' && selectedGroup && board) {
+        event.preventDefault()
+        setSelectedGroup(null)
+        deleteGroup.mutate([board.id, selectedGroup])
+      } else if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'g') {
+        event.preventDefault()
+        void makeGroup().catch(() => {
+          /* Rendered below. */
+        })
+      }
+    }
+    window.addEventListener('keydown', handle)
+    return () => window.removeEventListener('keydown', handle)
+  }, [selectedGroup, board, deleteGroup, makeGroup])
+  const error =
+    createError ??
+    createGroup.error ??
+    updateGroup.error ??
+    deleteGroup.error ??
+    undo.error ??
+    redo.error ??
+    history.error ??
+    setLayout.error ??
+    addEdge.error ??
+    duplicate.error
 
   return (
     <div
@@ -538,11 +805,8 @@ export function Canvas() {
           pannable
           zoomable
           ariaLabel="Graph overview — drag to pan, scroll to zoom"
-          nodeColor={(n) => {
-            const data = n.data as CardData
-            return NODE_STYLE[data.node.type].color
-          }}
-          nodeStrokeColor="#fafaf9"
+          nodeColor={(n) => (isCard(n) ? NODE_STYLE[n.data.node.type].color : 'transparent')}
+          nodeStrokeColor={(n) => (isCard(n) ? '#fafaf9' : GROUP_STYLE[(n as GroupFlowNode).data.group.color].border)}
           nodeStrokeWidth={2}
           nodeBorderRadius={3}
           bgColor="#292524"
@@ -557,6 +821,8 @@ export function Canvas() {
             canRedo={!!history.data?.canRedo && !historyBusy}
             travel={travel}
             openAddMenu={(point) => setAddMenu(point)}
+            group={() => void makeGroup().catch(() => {})}
+            afterLayout={releaseGroups}
           />
         </Panel>
         <Panel position="top-right" className="canvas-modes">
@@ -564,7 +830,8 @@ export function Canvas() {
         </Panel>
         <Panel position="bottom-center">
           <div className="rounded-md border border-stone-800 bg-stone-950/90 px-3 py-1.5 text-[11px] text-stone-400">
-            A / right-click blank space to add · Drag blank space to select · Shift / Ctrl / ⌘ to add · Ctrl+A/C/V select all, copy, paste · Middle drag to pan
+            A / right-click blank space to add · Ctrl+G group selection · Drag blank space to select · Shift / Ctrl / ⌘ to add · Ctrl+A/C/V select all, copy,
+            paste · Middle drag to pan
           </div>
           {error && (
             <div role="alert" className="mt-1 max-w-lg rounded bg-red-950 px-3 py-2 text-xs text-red-200">
@@ -582,6 +849,11 @@ export function Canvas() {
           }}
           board={board}
           nodes={all}
+          group={() => {
+            const position = addMenu.position
+            closeAddMenu()
+            void makeGroup(position).catch(() => {})
+          }}
           place={(id) => {
             const position = addMenu.position
             closeAddMenu()
@@ -600,10 +872,12 @@ function AddNodeMenu({
   board,
   nodes,
   place,
+  group,
 }: {
   point: { x: number; y: number }
   close: () => void
   create: (type: NodeType) => void
+  group: () => void
   board?: Board
   nodes: StoryNode[]
   place: (id: string) => void
@@ -670,6 +944,13 @@ function AddNodeMenu({
           </button>
         )
       })}
+      <button
+        role="menuitem"
+        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-stone-800 focus:bg-stone-800 focus:outline-none"
+        onClick={group}
+      >
+        <BoxSelect size={14} className="text-stone-400" /> Group area
+      </button>
       <div className="px-2 py-1.5 text-[11px] text-stone-500">Drop images or videos to add media.</div>
       {curated && (
         <div className="border-t border-stone-800 pt-1">
@@ -729,59 +1010,22 @@ function PhaseLanes({ board }: { board: Board }) {
   )
 }
 
-/** Dagre supplies ranks; deterministic obstacle placement preserves pinned rectangles. */
-function useAutoLayout() {
-  const flow = useReactFlow<FlowNode<CardData>>()
+/** Hierarchical auto layout: groups arrange their own content and move as blocks; pinned cards stay put. */
+function useAutoLayout(afterLayout: () => void) {
+  const flow = useReactFlow<AnyFlowNode>()
   const setLayout = useAction(api.setLayout)
   const board = useBoard()
   const [error, setError] = useState<Error | null>(null)
   const run = async () => {
     setError(null)
+    if (!board) return
     try {
-      const nodes = flow.getNodes()
-      const g = new dagre.graphlib.Graph().setGraph({ rankdir: 'LR', nodesep: 48, ranksep: 120 }).setDefaultEdgeLabel(() => ({}))
-      for (const n of nodes) g.setNode(n.id, cardSize(n))
-      for (const e of flow.getEdges()) g.setEdge(e.source, e.target)
-      dagre.layout(g)
-      const occupied = nodes.filter((n) => n.data.node.pinned).map((n) => ({ ...n.position, ...cardSize(n) }))
-      const positions: Record<string, { x: number; y: number }> = {}
-      const movable = nodes
-        .filter((n) => !n.data.node.pinned)
-        .toSorted((a, b) => {
-          const left = g.node(a.id)
-          const right = g.node(b.id)
-          return left.x - right.x || left.y - right.y || a.id.localeCompare(b.id)
-        })
-      for (const n of movable) {
-        const layout = g.node(n.id)
-        const rect = { x: layout.x - layout.width / 2, y: layout.y - layout.height / 2, ...cardSize(n) }
-        for (;;) {
-          const collisions = occupied.filter(
-            (o) => rect.x < o.x + o.width + 40 && rect.x + rect.width + 40 > o.x && rect.y < o.y + o.height + 40 && rect.y + rect.height + 40 > o.y,
-          )
-          if (!collisions.length) break
-          rect.y = Math.max(...collisions.map((o) => o.y + o.height + 40))
-        }
-        occupied.push(rect)
-        positions[n.id] = { x: rect.x, y: rect.y }
-      }
-      if (board?.phases.length) {
-        // Keep every card in its phase column; arrange each column in two lanes, in dagre order.
-        const columns = new Map<number, FlowNode<CardData>[]>()
-        for (const n of movable) {
-          const i = phaseIndex(board, n.position.x)
-          const column = i >= 0 ? i : n.position.x < 0 ? 0 : board.phases.length - 1
-          columns.set(column, [...(columns.get(column) ?? []), n])
-        }
-        for (const [column, list] of columns) {
-          list.sort((a, b) => g.node(a.id).y - g.node(b.id).y || a.id.localeCompare(b.id))
-          list.forEach((n, k) => {
-            positions[n.id] = { x: column * PHASE_WIDTH + 40 + (k % 2) * 250, y: Math.floor(k / 2) * 220 }
-          })
-        }
-      }
-      for (const n of nodes) if (n.data.node.pinned) positions[n.id] = { ...n.position }
-      if (nodes.length) await setLayout.mutateAsync([positions, board?.id])
+      const nodes = flow.getNodes().filter(isCard)
+      const cards = nodes.map((n) => ({ id: n.id, position: n.position, size: cardSize(n), pinned: n.data.node.pinned }))
+      const { positions, groups } = arrange(board, cards, flow.getEdges())
+      const sizes = Object.fromEntries(cards.map((c) => [c.id, c.size]))
+      if (nodes.length || board.groups.length) await setLayout.mutateAsync([positions, board.id, { groups, sizes }])
+      afterLayout()
       requestAnimationFrame(() => void flow.fitView({ padding: 0.15, maxZoom: 1, duration: 400 }))
     } catch (cause) {
       setError(cause instanceof Error ? cause : new Error(String(cause)))
@@ -795,13 +1039,17 @@ function Toolbar({
   canRedo,
   travel,
   openAddMenu,
+  group,
+  afterLayout,
 }: {
   canUndo: boolean
   canRedo: boolean
   travel: (direction: 'undo' | 'redo') => void
   openAddMenu: (point: { x: number; y: number }) => void
+  group: () => void
+  afterLayout: () => void
 }) {
-  const autoLayout = useAutoLayout()
+  const autoLayout = useAutoLayout(afterLayout)
   const { data: all = [] } = useNodes()
   const { storyScope, setStoryScope } = useUI()
   const button = 'rounded p-1.5 text-stone-400 hover:bg-stone-800 hover:text-stone-100 disabled:cursor-not-allowed disabled:opacity-30'
@@ -853,6 +1101,9 @@ function Toolbar({
           }}
         >
           <LayoutGrid size={16} />
+        </button>
+        <button aria-label="Group selection" aria-keyshortcuts="Control+G Meta+G" title="Group selected cards (Ctrl / ⌘ G)" className={button} onClick={group}>
+          <BoxSelect size={16} />
         </button>
         <select
           aria-label="Story scope"

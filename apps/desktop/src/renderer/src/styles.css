@@ -122,3 +122,11 @@ body {
 .prose-md td {
   @apply border border-stone-800 px-2 py-1;
 }
+
+/* Group frames sit behind cards: the body lets clicks through to the canvas (box select, add menu). */
+.react-flow__node.group-node {
+  pointer-events: none !important;
+}
+.react-flow__node.group-node .group-interactive {
+  pointer-events: auto;
+}

@@ -10,12 +10,12 @@ const refresh = () => queryClient.invalidateQueries({ predicate: (q) => q.queryK
 export function useCreateNode() {
   const flow = useReactFlow()
   const select = useUI((s) => s.select)
-  return async (type: NodeType, opts: { title?: string; parent?: string; position?: { x: number; y: number }; src?: string } = {}) => {
+  return async (type: NodeType, opts: { title?: string; parent?: string; position?: { x: number; y: number }; src?: string; group?: string } = {}) => {
     const el = document.querySelector('.react-flow')?.getBoundingClientRect()
     const pos =
       opts.position ??
       (el ? flow.screenToFlowPosition({ x: el.x + el.width / 2 - 110 + Math.random() * 60, y: el.y + el.height / 2 - 40 + Math.random() * 60 }) : undefined)
-    const node = await api.createNode({ type, title: opts.title ?? `New ${type}`, parent: opts.parent, src: opts.src }, pos, currentBoardId())
+    const node = await api.createNode({ type, title: opts.title ?? `New ${type}`, parent: opts.parent, src: opts.src }, pos, currentBoardId(), opts.group)
     await refresh()
     select({ kind: 'node', id: node.id })
     return node
