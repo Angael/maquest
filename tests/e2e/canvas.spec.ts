@@ -66,3 +66,40 @@ test('canvas display controls switch modes and retain display preferences', asyn
   await expect(labels.getByRole('button', { name: 'On hover / focus', exact: true })).toHaveAttribute('aria-pressed', 'true')
   await expect(references.getByRole('button', { name: 'Chips on cards', exact: true })).toHaveAttribute('aria-pressed', 'true')
 })
+
+test('boards are independent: remove keeps the entity, paste places a reference, duplicate copies', async ({ desktop }) => {
+  const { page, project, ids } = desktop
+  const card = (id: string) => page.locator(`.react-flow__node[data-id="${id}"]`)
+  const main = project.board().id
+  // Copy a reference, switch to a new board and paste it there.
+  await card(ids[0]).click()
+  await page.keyboard.press('ControlOrMeta+c')
+  await page.getByRole('button', { name: 'New board', exact: true }).click()
+  await page.getByRole('textbox', { name: 'New board name' }).fill('Arc')
+  await page.getByRole('textbox', { name: 'New board name' }).press('Enter')
+  await expect(page.getByRole('tab', { name: 'Arc' })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.locator('.react-flow__node')).toHaveCount(0)
+  const pane = page.locator('.react-flow__pane')
+  await pane.click({ button: 'right', position: { x: 300, y: 300 } })
+  await page.getByRole('menuitem', { name: /Paste reference/ }).click()
+  await expect(card(ids[0])).toBeVisible()
+  expect(project.listNodes()).toHaveLength(2)
+  expect(project.board('arc').nodes).toEqual([ids[0]])
+  // Adding a node here does not add it to the first board.
+  await pane.click({ button: 'right', position: { x: 120, y: 600 } })
+  await page.getByRole('menuitem', { name: 'Character' }).click()
+  await expect.poll(() => project.listNodes().length).toBe(3)
+  const created = project.listNodes().find((n) => n.type === 'character')!.id
+  expect(project.board(main).nodes).not.toContain(created)
+  // Removing from this board keeps the entity and its place on the first board.
+  await card(ids[0]).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: /Remove from board/ }).click()
+  await expect.poll(() => project.board('arc').nodes).not.toContain(ids[0])
+  expect(project.getNode(ids[0])).not.toBeNull()
+  expect(project.board(main).nodes).toContain(ids[0])
+  // Duplicate creates a new entity.
+  await card(created).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: /Duplicate/ }).click()
+  await expect.poll(() => project.listNodes().length).toBe(4)
+  expect(project.board('arc').nodes).toHaveLength(2)
+})

@@ -146,7 +146,9 @@ export const handlers = {
   createNode: (input: CreateNodeInput, position?: Position, board?: string, group?: string) =>
     history.record(p(), () => {
       const node = p().createNode(input)
+      // A new node lands only on the board it was created from.
       if (position) p().setLayout({ [node.id]: position }, board, group ? { assign: { [node.id]: group } } : {})
+      else p().updateBoard(p().board(board).id, { addNodes: [node.id] })
       return node
     }),
   /** Duplicates nodes (and edges among them) at an offset; one undo step. Returns the new ids. */
@@ -180,6 +182,7 @@ export const handlers = {
         const at = layout[n.id]
         const group = project.board(board).groups.find((g) => g.nodes.includes(n.id))
         if (at) project.setLayout({ [copy.id]: { x: at.x + offset.x, y: at.y + offset.y } }, board, group ? { assign: { [copy.id]: group.id } } : {})
+        else project.updateBoard(project.board(board).id, { addNodes: [copy.id] })
       }
       for (const e of project.graph().edges) {
         const source = copies.get(e.source)
@@ -187,6 +190,23 @@ export const handlers = {
         if (source && target) project.addEdge({ source, target, type: e.type, label: e.label, sourceHandle: e.sourceHandle, targetHandle: e.targetHandle })
       }
       return [...copies.values()]
+    }),
+  /** Places existing nodes on a board at an offset from where they sit on `from`; nodes already there stay put. One undo step. */
+  placeNodes: (ids: string[], offset: Position, board?: string, from?: string) =>
+    history.record(p(), () => {
+      const project = p()
+      const target = project.board(board)
+      const source = from ? project.board(from) : target
+      const missing = ids.filter((id) => project.getNode(id) && !target.nodes?.includes(id))
+      const positions: Record<string, Position> = {}
+      for (const id of missing) {
+        const at = source.layout[id]
+        if (at) positions[id] = { x: at.x + offset.x, y: at.y + offset.y }
+      }
+      if (Object.keys(positions).length) project.setLayout(positions, target.id)
+      const unplaced = missing.filter((id) => !positions[id])
+      if (unplaced.length) project.updateBoard(target.id, { addNodes: unplaced })
+      return missing
     }),
   updateNode: (id: string, patch: UpdateNodeInput) => history.record(p(), () => p().updateNode(id, patch)),
   deleteNodes: (ids: string[], recursive?: boolean) =>

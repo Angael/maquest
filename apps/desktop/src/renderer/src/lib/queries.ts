@@ -24,14 +24,15 @@ export const useConfig = () => useQuery({ queryKey: ['config'], queryFn: () => a
 /** Id of the board shown on the canvas, for imperative calls outside React. */
 export function currentBoardId() {
   const id = useUI.getState().board
-  return queryClient.getQueryData<Graph>(['graph'])?.boards.some((b) => b.id === id) ? id : MAIN_BOARD
+  const boards = queryClient.getQueryData<Graph>(['graph'])?.boards
+  return boards?.some((b) => b.id === id) ? id : (boards?.[0]?.id ?? MAIN_BOARD)
 }
 
-/** The board shown on the canvas; falls back to the main board when the chosen one is gone. */
+/** The board shown on the canvas; falls back to the first board when the chosen one is gone. */
 export function useBoard(): Board | undefined {
   const { data: graph } = useGraph()
   const id = useUI((s) => s.board)
-  return graph?.boards.find((b) => b.id === id) ?? graph?.boards.find((b) => b.id === MAIN_BOARD)
+  return graph?.boards.find((b) => b.id === id) ?? graph?.boards[0]
 }
 
 export function useNode(id: string | null) {

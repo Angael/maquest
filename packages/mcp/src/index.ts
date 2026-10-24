@@ -108,7 +108,7 @@ function nodeText(p: Project, n: StoryNode): string {
 function boardsText(p: Project, id: string) {
   return p
     .boards()
-    .filter((b) => b.nodes?.includes(id) || (b.phases.length && onBoard(b, id)))
+    .filter((b) => onBoard(b, id))
     .map((b) => {
       const at = b.layout[id]
       const i = at ? phaseIndex(b, at.x) : -1
@@ -118,7 +118,7 @@ function boardsText(p: Project, id: string) {
 }
 
 function boardSummary(b: Board) {
-  return `- ${b.id}: ${b.title} (${b.nodes ? `${b.nodes.length} cards` : 'all nodes'})${b.phases.length ? ` — phases: ${b.phases.map((x) => x.title).join(' → ')}` : ''}`
+  return `- ${b.id}: ${b.title} (${b.nodes?.length ?? 0} cards)${b.phases.length ? ` — phases: ${b.phases.map((x) => x.title).join(' → ')}` : ''}`
 }
 
 /** Group tree with member titles, e.g. "- g-1a2b3c: Tavern (2 cards: Bartender, Cellar)". */
@@ -135,7 +135,7 @@ function groupsText(b: Board, titles: Map<string, { title: string }>) {
 
 function boardText(p: Project, b: Board) {
   const titles = new Map(p.listNodes().map((n) => [n.id, n]))
-  const ids = b.nodes ?? [...titles.keys()]
+  const ids = b.nodes ?? []
   const entry = (id: string) => {
     const n = titles.get(id)
     return n ? line(n) : `- ${id} (missing)`
@@ -153,7 +153,7 @@ function boardText(p: Project, b: Board) {
   return [
     boardSummary(b),
     ...columns.map((g, i) => `## ${i + 1}. ${g.title}\n${g.ids.map(entry).join('\n') || '(empty)'}`),
-    b.nodes && loose.length ? `## Outside phases\n${loose.map(entry).join('\n')}` : '',
+    loose.length ? `## Outside phases\n${loose.map(entry).join('\n')}` : '',
     groups,
   ]
     .filter(Boolean)
@@ -168,7 +168,7 @@ Workflow: call "overview" first. Read "guidelines" before creative work and foll
 Be proactive. Turn what the author says into project changes right away (write/connect), then briefly report what changed. Put loose ideas in the backlog (type "idea"). Keep connections in sync (involves, located-at, foreshadows, leads-to...).
 Connection labels are short names for the relationship (max ${EDGE_LABEL_MAX} chars). Never put status or TODOs in labels; use the node's status, tags or body.
 RPG: plan situations, not plots. Use "clue-for" edges for clues (aim for 3+ per important conclusion; overview flags gaps), clocks on factions/threats for fronts, and boards with phase columns for loose acts.
-Boards are separate canvases (e.g. one per arc or investigation). The main board shows everything.
+Boards are separate canvases (e.g. one per arc or investigation); each shows only the nodes placed on it.
 Edits apply immediately to markdown files on disk, and the Maquest app updates live.`,
   },
 )
@@ -273,6 +273,7 @@ const WriteItem = z.object({
   appendBody: z.string().optional().describe('Markdown appended to the body'),
   media: z.array(z.string()).optional().describe('Attached media paths (media/...)'),
   src: z.string().optional().describe('For media nodes: media path shown on the canvas'),
+  board: z.string().optional().describe('When creating: board to place the node on (default: the first board)'),
   clock: Clock.nullable()
     .optional()
     .describe('Progress clock for fronts/threats/countdowns: {size, filled, steps[] (what happens at each segment)}. null removes it.'),
@@ -290,13 +291,15 @@ server.registerTool(
     return nodes
       .map((n) => {
         if (n.id) {
-          const { id, ...patch } = n
+          const { id, board: _board, ...patch } = n
           const r = p.updateNode(id, patch)
           return `updated ${r.id} (${r.type}) ${r.title}`
         }
         if (!n.type || !n.title) throw new Error('Creating a node requires type and title')
+        const { board, ...input } = n
+        const target = p.board(board).id
         const r = p.createNode({
-          ...n,
+          ...input,
           type: n.type,
           title: n.title,
           parent: n.parent ?? undefined,
@@ -305,7 +308,8 @@ server.registerTool(
           fields: n.fields && Object.fromEntries(Object.entries(n.fields).filter((e): e is [string, string] => e[1] !== null)),
           body: n.appendBody ? `${n.body ?? ''}${n.appendBody}` : n.body,
         })
-        return `created ${r.id} (${r.type}) ${r.title}`
+        p.updateBoard(target, { addNodes: [r.id] })
+        return `created ${r.id} (${r.type}) ${r.title} on ${target}`
       })
       .join('\n')
   }),
@@ -374,10 +378,10 @@ server.registerTool(
   {
     title: 'Boards (canvases)',
     description:
-      'Boards are separate canvases over the same nodes. "main" shows every node; other boards show only the nodes placed on them. A board may have phase columns (acts, left to right) — a node\'s phase is the column it sits in. Groups are bordered areas on a board (rooms, cities, chapters), may nest, and always contain their cards. Actions: list, read (nodes by phase, plus groups), create (title, phases?, nodes?), update (title?, phases? as ordered titles, removeNodes?), place (nodes onto the board, optionally into a phase or group), group (create a group: title, nodes?, parent?, color?; or edit one given group: title?, nodes? to add, removeNodes?, parent?, color?), ungroup (remove the group frame, keep its cards), delete.',
+      "Boards are separate canvases over the same nodes. Each board shows only the nodes placed on it; none is special, and removing a node from a board keeps it in the project. A board may have phase columns (acts, left to right) — a node's phase is the column it sits in. Groups are bordered areas on a board (rooms, cities, chapters), may nest, and always contain their cards. Actions: list, read (nodes by phase, plus groups), create (title, phases?, nodes?), update (title?, phases? as ordered titles, removeNodes?), place (nodes onto the board, optionally into a phase or group), group (create a group: title, nodes?, parent?, color?; or edit one given group: title?, nodes? to add, removeNodes?, parent?, color?), ungroup (remove the group frame, keep its cards), delete.",
     inputSchema: {
       action: z.enum(['list', 'read', 'create', 'update', 'place', 'group', 'ungroup', 'delete']),
-      id: z.string().optional().describe('Board id (default "main")'),
+      id: z.string().optional().describe('Board id (default: the first board)'),
       title: z.string().optional(),
       phases: z.array(z.string()).optional().describe('Phase titles in order; replaces the columns'),
       nodes: z.array(z.string()).optional().describe('Node ids (create, place)'),
@@ -408,12 +412,12 @@ server.registerTool(
       }
       case 'place': {
         if (!nodes?.length) throw new Error('place requires nodes')
-        const b = p.updateBoard(id ?? 'main', { addNodes: nodes, phase })
+        const b = p.updateBoard(p.board(id).id, { addNodes: nodes, phase })
         if (group) p.updateGroup(b.id, group, { addNodes: nodes })
         return `placed ${nodes.length} node(s) on ${b.id}${phase ? ` in ${phase}` : ''}${group ? ` in group ${group}` : ''}`
       }
       case 'group': {
-        const board = id ?? 'main'
+        const board = p.board(id).id
         if (group) {
           const g = p.updateGroup(board, group, { title, color, parent, addNodes: nodes, removeNodes })
           return `updated group ${g.id}: ${g.title}`
@@ -424,7 +428,7 @@ server.registerTool(
       }
       case 'ungroup':
         if (!group) throw new Error('ungroup requires group')
-        p.deleteGroup(id ?? 'main', group)
+        p.deleteGroup(p.board(id).id, group)
         return `removed group ${group}`
       case 'delete':
         if (!id) throw new Error('delete requires id')

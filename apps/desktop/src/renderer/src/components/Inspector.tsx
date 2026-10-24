@@ -352,14 +352,14 @@ function ClockEditor({ node }: { node: StoryNode }) {
 function BoardMembership({ id }: { id: string }) {
   const { data: graph } = useGraph()
   const update = useAction(api.updateBoard)
-  const curated = graph?.boards.filter((b) => b.nodes) ?? []
-  if (!curated.length) return null
+  const boards = graph?.boards ?? []
+  if (!boards.length) return null
   return (
     <div>
       <Label>Boards</Label>
       <div className="flex flex-wrap gap-1">
-        {curated.map((b) => {
-          const on = b.nodes!.includes(id)
+        {boards.map((b) => {
+          const on = !!b.nodes?.includes(id)
           return (
             <button
               key={b.id}

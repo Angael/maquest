@@ -159,7 +159,7 @@ export const GROUP_HEADER = 36
 /** Card size assumed where the real (rendered) size is unknown. */
 export const CARD_SIZE: Size = { width: 224, height: 160 }
 
-/** A canvas. `nodes` undefined = every node (the main board); otherwise only the listed nodes. */
+/** A canvas showing the listed nodes. `nodes` undefined only in legacy files, where it meant every node (read as such). */
 export const Board = z.object({
   id: z.string(),
   title: z.string(),
@@ -175,16 +175,17 @@ export const Graph = z
   .object({
     edges: z.array(Edge).default([]),
     boards: z.array(Board).default([]),
-    /** Legacy single-board layout, folded into the main board on read. */
+    /** Legacy single-board layout, folded into a starting board on read. */
     layout: z.record(z.string(), Position).optional(),
   })
   .transform(({ edges, boards, layout }) => {
-    if (!boards.some((b) => b.id === MAIN_BOARD)) boards = [{ id: MAIN_BOARD, title: 'Main', phases: [], layout: layout ?? {}, groups: [] }, ...boards]
+    // A legacy layout showed every node; a fresh project starts with one empty board.
+    if (!boards.length) boards = [{ id: MAIN_BOARD, title: 'Main', nodes: layout ? undefined : [], phases: [], layout: layout ?? {}, groups: [] }]
     return { edges, boards }
   })
 export type Graph = z.output<typeof Graph>
 
-export const onBoard = (board: Board, id: string) => !board.nodes || board.nodes.includes(id)
+export const onBoard = (board: Board, id: string) => !!board.nodes?.includes(id)
 
 /** Index of the phase column containing x, or -1 outside the columns. */
 export function phaseIndex(board: Board, x: number) {

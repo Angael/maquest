@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import type { Selection } from './store'
 import { useUI } from './store'
 import { api } from './api'
-import { useAction, useNodes } from './queries'
+import { currentBoardId, useAction, useNodes } from './queries'
 
 export const BEFORE_DELETE = 'maquest:before-delete'
 
@@ -52,17 +52,52 @@ export function useDeleteSelection() {
   }
 }
 
+/** Takes nodes off the shown board only; the entities stay in the project and on other boards. */
+export function useRemoveFromBoard() {
+  const update = useAction(api.updateBoard)
+  return async (ids: string[]) => {
+    if (!ids.length) return
+    window.dispatchEvent(new CustomEvent(BEFORE_DELETE, { detail: ids }))
+    useUI.getState().select(null)
+    try {
+      await update.mutateAsync([currentBoardId(), { removeNodes: ids }])
+    } catch (error) {
+      alert(error instanceof Error ? error.message : String(error))
+    }
+  }
+}
+
+/** Confirms, then deletes nodes from the project and every board. */
+export function useDeleteEverywhere() {
+  const remove = useDeleteSelection()
+  return (ids: string[]) => {
+    if (
+      !ids.length ||
+      !confirm(ids.length === 1 ? 'Delete this node from the project and every board?' : `Delete ${ids.length} nodes from the project and every board?`)
+    )
+      return
+    void remove({ kind: 'node', id: ids[0] }, ids)
+  }
+}
+
+/** Delete on the canvas removes cards from the board; Shift+Delete (or Delete elsewhere) deletes the entity. */
 export function useDeleteShortcut() {
   const remove = useDeleteSelection()
+  const unplace = useRemoveFromBoard()
+  const destroy = useDeleteEverywhere()
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Delete' || event.repeat || event.defaultPrevented || event.isComposing || isEditingTarget(event.target)) return
-      const { selection, selectedNodeIds } = useUI.getState()
+      const { selection, selectedNodeIds, view } = useUI.getState()
       if (!selection) return
       event.preventDefault()
-      void remove(selection, selectedNodeIds)
+      const ids = selectedNodeIds.length ? selectedNodeIds : [selection.id]
+      if (selection.kind === 'node' && view === 'canvas') {
+        if (event.shiftKey) destroy(ids)
+        else void unplace(ids)
+      } else void remove(selection, selectedNodeIds)
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [remove])
+  }, [remove, unplace, destroy])
 }

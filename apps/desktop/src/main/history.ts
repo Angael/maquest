@@ -4,12 +4,15 @@ import { GRAPH_FILE, TYPE_DIRS, Graph, MaquestError, parseFrontmatter, type Boar
 
 type Snapshot = { files: Map<string, string>; graph: Graph }
 type Change<T> = { key: string; before: T | undefined; after: T | undefined }
-type BoardMeta = Omit<Board, 'layout'>
-/** Layout keys are `board\0node`. */
-type Entry = { files: Change<string>[]; edges: Change<Edge>[]; boards: Change<BoardMeta>[]; layout: Change<Position>[] }
-const boardMap = (g: Graph) => new Map(g.boards.map(({ layout: _, ...meta }) => [meta.id, meta]))
+/** Board settings; `legacy` marks a node list that was never written (every node). */
+type BoardMeta = Omit<Board, 'layout' | 'nodes'> & { legacy?: true }
+/** Layout and membership keys are `board\0node`, so unrelated cards placed or removed elsewhere merge cleanly. */
+type Entry = { files: Change<string>[]; edges: Change<Edge>[]; boards: Change<BoardMeta>[]; layout: Change<Position>[]; members: Change<true>[] }
+const boardMap = (g: Graph) =>
+  new Map(g.boards.map(({ layout: _, nodes, ...meta }): [string, BoardMeta] => [meta.id, nodes ? meta : { ...meta, legacy: true }]))
 const layoutMap = (g: Graph) =>
   new Map<string, Position>(g.boards.flatMap((b) => Object.entries(b.layout).map(([id, at]): [string, Position] => [`${b.id}\0${id}`, at])))
+const memberMap = (g: Graph) => new Map<string, true>(g.boards.flatMap((b) => (b.nodes ?? []).map((id): [string, true] => [`${b.id}\0${id}`, true])))
 const layoutNode = (key: string) => key.slice(key.indexOf('\0') + 1)
 const LIMIT = 100
 
@@ -69,8 +72,9 @@ export class ProjectHistory {
         edges: changes(new Map(before.graph.edges.map((e) => [e.id, e])), new Map(after.graph.edges.map((e) => [e.id, e]))),
         boards: changes(boardMap(before.graph), boardMap(after.graph)),
         layout: changes(layoutMap(before.graph), layoutMap(after.graph)),
+        members: changes(memberMap(before.graph), memberMap(after.graph)),
       }
-      if (entry.files.length || entry.edges.length || entry.boards.length || entry.layout.length) {
+      if (entry.files.length || entry.edges.length || entry.boards.length || entry.layout.length || entry.members.length) {
         this.past.push(entry)
         if (this.past.length > LIMIT) this.past.shift()
         this.future = []
@@ -97,6 +101,7 @@ export class ProjectHistory {
     const edges = new Map(current.graph.edges.map((e) => [e.id, e]))
     const boards = boardMap(current.graph)
     const layout = layoutMap(current.graph)
+    const members = memberMap(current.graph)
     const apply = <T>(map: Map<string, T>, deltas: Change<T>[]) => {
       for (const delta of deltas) {
         const expected = forward ? delta.before : delta.after
@@ -112,6 +117,7 @@ export class ProjectHistory {
     apply(edges, entry.edges)
     apply(boards, entry.boards)
     apply(layout, entry.layout)
+    apply(members, entry.members)
 
     // Check relationships against the merged result, including new external links/children.
     const ids = new Set([...files.keys()].map((file) => path.basename(file, '.md')))
@@ -138,7 +144,7 @@ export class ProjectHistory {
     for (const id of removedIds) {
       if (laidOut.has(id)) throw new MaquestError(`Cannot restore history: externally added layout still refers to ${id}. No files were changed.`)
     }
-    const graphChanged = entry.edges.length > 0 || entry.boards.length > 0 || entry.layout.length > 0
+    const graphChanged = entry.edges.length > 0 || entry.boards.length > 0 || entry.layout.length > 0 || entry.members.length > 0
     // Recheck raw bytes immediately before writing, catching non-cooperating disk editors.
     for (const delta of entry.files) {
       const file = path.join(project.root, delta.key)
@@ -157,10 +163,17 @@ export class ProjectHistory {
         else writeAtomic(file, content)
       }
       if (graphChanged) {
-        const restored = [...boards.values()].map((meta) => ({
-          ...meta,
-          layout: Object.fromEntries([...layout].filter(([key]) => key.startsWith(`${meta.id}\0`)).map(([key, at]) => [layoutNode(key), at])),
-        }))
+        const restored = [...boards.values()].map(({ legacy, ...meta }) => {
+          const ids = [...members.keys()].filter((key) => key.startsWith(`${meta.id}\0`)).map(layoutNode)
+          // Keep the current card order and append restored cards.
+          const order = current.graph.boards.find((b) => b.id === meta.id)?.nodes ?? []
+          const nodes = legacy && !ids.length ? undefined : [...order.filter((id) => ids.includes(id)), ...ids.filter((id) => !order.includes(id))]
+          return {
+            ...meta,
+            nodes,
+            layout: Object.fromEntries([...layout].filter(([key]) => key.startsWith(`${meta.id}\0`)).map(([key, at]) => [layoutNode(key), at])),
+          }
+        })
         writeAtomic(graphFile, JSON.stringify({ edges: [...edges.values()], boards: restored }, null, 2) + '\n')
       }
     } catch (error) {

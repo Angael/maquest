@@ -22,7 +22,6 @@ import {
   type Rect,
   type Size,
   EDGE_LABEL_MAX,
-  MAIN_BOARD,
   Edge,
   EdgeHandle,
   Graph,
@@ -408,7 +407,7 @@ export class Project {
     g.edges = g.edges.filter((e) => e.source !== id && e.target !== id)
     for (const b of g.boards) {
       delete b.layout[id]
-      if (b.nodes) b.nodes = b.nodes.filter((n) => n !== id)
+      b.nodes = b.nodes?.filter((n) => n !== id)
       for (const group of b.groups) group.nodes = group.nodes.filter((n) => n !== id)
     }
     this.saveGraph(g)
@@ -442,7 +441,13 @@ export class Project {
   // ---------- graph ----------
 
   graph(): Graph {
-    return Graph.parse(readJson(path.join(this.root, GRAPH_FILE), {}))
+    const g = Graph.parse(readJson(path.join(this.root, GRAPH_FILE), {}))
+    // Legacy boards without a node list showed every node; pin that down so boards stay independent.
+    if (g.boards.some((b) => !b.nodes)) {
+      const all = this.listNodes().map((n) => n.id)
+      for (const b of g.boards) b.nodes ??= all
+    }
+    return g
   }
 
   private saveGraph(g: Graph) {
@@ -505,19 +510,22 @@ export class Project {
     return this.graph().boards
   }
 
-  board(id: string = MAIN_BOARD): Board {
-    const b = this.graph().boards.find((x) => x.id === id)
+  /** A board by id; without one, the first board. */
+  board(id?: string): Board {
+    const boards = this.graph().boards
+    const b = id === undefined ? boards[0] : boards.find((x) => x.id === id)
     if (!b) throw new MaquestError(`Board not found: ${id}`)
     return b
   }
 
   /** Saves card positions on a board; on a curated board this also adds the cards to it. */
-  setLayout(positions: Record<string, Position>, boardId: string = MAIN_BOARD, extras: LayoutExtras = {}) {
+  setLayout(positions: Record<string, Position>, boardId?: string, extras: LayoutExtras = {}) {
     const g = this.graph()
-    const b = g.boards.find((x) => x.id === boardId)
+    const b = boardId === undefined ? g.boards[0] : g.boards.find((x) => x.id === boardId)
     if (!b) throw new MaquestError(`Board not found: ${boardId}`)
     Object.assign(b.layout, positions)
-    if (b.nodes) for (const id of Object.keys(positions)) if (!b.nodes.includes(id)) b.nodes.push(id)
+    b.nodes ??= []
+    for (const id of Object.keys(positions)) if (!b.nodes.includes(id)) b.nodes.push(id)
     try {
       for (const [id, target] of Object.entries(extras.nest ?? {})) assignGroup(b, id, target, true)
       for (const [id, target] of Object.entries(extras.assign ?? {})) assignGroup(b, id, target)
@@ -594,8 +602,9 @@ export class Project {
     if (patch.parent !== undefined) this.groupAction(() => assignGroup(b, group.id, patch.parent ?? null, true))
     for (const n of patch.addNodes ?? []) {
       this.requireNode(n)
-      if (b.nodes && !b.nodes.includes(n)) b.nodes.push(n)
-      const placed = b.layout[n] ?? g.boards.find((x) => x.id === MAIN_BOARD)?.layout[n]
+      b.nodes ??= []
+      if (!b.nodes.includes(n)) b.nodes.push(n)
+      const placed = b.layout[n] ?? g.boards.find((x) => x.layout[n])?.layout[n]
       // Cards already in place keep their spot when the group is being built around them.
       b.layout[n] = patch.keepPositions && placed ? placed : spotInGroup(b, group)
       assignGroup(b, n, group.id)
@@ -631,12 +640,12 @@ export class Project {
     if (patch.phase !== undefined && column < 0) throw new MaquestError(`Phase not found on ${id}: ${patch.phase}`)
     for (const n of patch.addNodes ?? []) {
       this.requireNode(n)
-      if (b.nodes && !b.nodes.includes(n)) b.nodes.push(n)
-      if (column >= 0 || !b.layout[n]) b.layout[n] = freeSpot(b, column, g.boards.find((x) => x.id === MAIN_BOARD)?.layout[n])
+      b.nodes ??= []
+      if (!b.nodes.includes(n)) b.nodes.push(n)
+      if (column >= 0 || !b.layout[n]) b.layout[n] = freeSpot(b, column, g.boards.find((x) => x.layout[n])?.layout[n])
     }
     if (patch.removeNodes?.length) {
-      if (!b.nodes) throw new MaquestError('The main board shows every node; remove nodes from curated boards only')
-      b.nodes = b.nodes.filter((n) => !patch.removeNodes!.includes(n))
+      b.nodes = (b.nodes ?? []).filter((n) => !patch.removeNodes!.includes(n))
       for (const n of patch.removeNodes) delete b.layout[n]
       for (const group of b.groups) group.nodes = group.nodes.filter((n) => !patch.removeNodes!.includes(n))
     }
@@ -645,8 +654,8 @@ export class Project {
   }
 
   deleteBoard(id: string) {
-    if (id === MAIN_BOARD) throw new MaquestError('The main board cannot be deleted')
     const g = this.graph()
+    if (g.boards.length === 1 && g.boards[0].id === id) throw new MaquestError('A project needs at least one board')
     const before = g.boards.length
     g.boards = g.boards.filter((b) => b.id !== id)
     if (g.boards.length === before) throw new MaquestError(`Board not found: ${id}`)
@@ -769,7 +778,7 @@ function phase(title: string, i: number): Phase {
 
 /**
  * Where a newly placed card goes: below the cards already in its phase column; without a phase, in the
- * unsorted strip left of the columns (phase boards) or at its main-board spot.
+ * unsorted strip left of the columns (phase boards) or where it sits on another board.
  */
 function freeSpot(b: Board, column: number, fallback?: Position): Position {
   if (column < 0 && fallback && !b.phases.length) return fallback

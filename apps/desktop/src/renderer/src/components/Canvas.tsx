@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import {
   Background,
   BackgroundVariant,
@@ -22,8 +22,12 @@ import clsx from 'clsx'
 import {
   BoxSelect,
   ChevronDown,
+  ClipboardPaste,
   Columns3,
+  Copy,
+  CopyPlus,
   Eye,
+  EyeOff,
   Globe,
   LayoutGrid,
   MousePointer2,
@@ -43,7 +47,6 @@ import {
   EDGE_TYPES,
   GROUP_HEADER,
   GROUP_PAD,
-  MAIN_BOARD,
   NODE_TYPES,
   PHASE_WIDTH,
   bounds,
@@ -68,7 +71,7 @@ import { api } from '../lib/api'
 import { importFiles, useCreateNode } from '../lib/actions'
 import { currentBoardId, queryClient, useAction, useBoard, useGraph, useNodes } from '../lib/queries'
 import { useUI } from '../lib/store'
-import { isEditingTarget as isEditing } from '../lib/deletion'
+import { isEditingTarget as isEditing, useDeleteEverywhere, useRemoveFromBoard } from '../lib/deletion'
 import { EDGE_STYLE, NODE_STYLE, type EdgeKind } from '../lib/styles'
 import { inferConnectionType } from '../lib/connections'
 import { StoryCard, type CardData, type CardRef } from './StoryCard'
@@ -136,8 +139,8 @@ function useAddEdge() {
   })
 }
 
-/** In-app node clipboard; paste duplicates from disk so edits after copy are included. */
-let clipboard: { ids: string[]; pastes: number } | null = null
+/** In-app node clipboard of references: pasting places the same entities on the shown board, never copies them. */
+let clipboard: { ids: string[]; board: string; pastes: number } | null = null
 
 const cardSize = (n: CardFlowNode) => ({ width: n.measured?.width ?? (n.data.node.type === 'media' ? 256 : 224), height: n.measured?.height ?? 160 })
 
@@ -183,6 +186,65 @@ export function Canvas() {
   const undo = useAction(api.undo)
   const redo = useAction(api.redo)
   const duplicate = useAction(api.duplicateNodes)
+  const place = useAction(api.placeNodes)
+  const removeFromBoard = useRemoveFromBoard()
+  const deleteEverywhere = useDeleteEverywhere()
+  const copyRefs = useCallback((ids: string[]) => {
+    clipboard = { ids, board: currentBoardId(), pastes: 0 }
+  }, [])
+  /** Places the copied entities on the shown board (offset on their own board, as-is on another one). */
+  const paste = useCallback(
+    (at?: Position) => {
+      if (!clipboard) return
+      const board = currentBoardId()
+      const same = clipboard.board === board
+      const step = same ? 40 * ++clipboard.pastes : 0
+      const ids = clipboard.ids
+      let offset = { x: step, y: step }
+      if (at) {
+        const source = queryClient.getQueryData<Graph>(['graph'])?.boards.find((b) => b.id === clipboard!.board)
+        const origin = bounds(ids.flatMap((id) => (source?.layout[id] ? [{ ...source.layout[id], width: 0, height: 0 }] : [])))
+        if (origin) offset = { x: at.x - origin.x, y: at.y - origin.y }
+      }
+      place
+        .mutateAsync([ids, offset, board, clipboard.board])
+        .then(() => selectNodes(ids))
+        .catch(() => {
+          /* Rendered below. */
+        })
+    },
+    [place, selectNodes],
+  )
+  /** Copies the entities themselves (new files), placed beside the originals on the shown board. */
+  const duplicateNodes = useCallback(
+    (ids: string[]) => {
+      // Refetch before selecting, or the stale-selection cleanup drops the new ids.
+      duplicate
+        .mutateAsync([ids, { x: 40, y: 40 }, currentBoardId()])
+        .then(async (copies) => {
+          await queryClient.refetchQueries({ queryKey: ['nodes'] })
+          selectNodes(copies)
+        })
+        .catch(() => {
+          /* Rendered below. */
+        })
+    },
+    [duplicate, selectNodes],
+  )
+  const [nodeMenu, setNodeMenu] = useState<{ x: number; y: number; ids: string[] } | null>(null)
+  const openNodeMenu = (event: { preventDefault: () => void; clientX: number; clientY: number }, id?: string) => {
+    event.preventDefault()
+    const selected = useUI.getState().selectedNodeIds
+    const ids = id && !selected.includes(id) ? [id] : selected
+    if (!ids.length) return
+    if (id && !selected.includes(id)) selectNodes(ids)
+    setAddMenu(null)
+    setNodeMenu({ x: event.clientX, y: event.clientY, ids })
+  }
+  const closeNodeMenu = () => {
+    setNodeMenu(null)
+    workspace.current?.focus({ preventScroll: true })
+  }
   const history = useQuery({ queryKey: ['history'], queryFn: () => api.history() })
   const historyBusy = undo.isPending || redo.isPending
   const historyQueue = useRef(Promise.resolve())
@@ -217,21 +279,16 @@ export function Canvas() {
         const ids = useUI.getState().selectedNodeIds
         if (!ids.length) return
         event.preventDefault()
-        clipboard = { ids, pastes: 0 }
+        copyRefs(ids)
       } else if (key === 'v' && !event.shiftKey) {
         if (!clipboard || event.repeat) return
         event.preventDefault()
-        const step = 40 * ++clipboard.pastes
-        // Refetch before selecting, or the stale-selection cleanup drops the new ids.
-        duplicate
-          .mutateAsync([clipboard.ids, { x: step, y: step }, currentBoardId()])
-          .then(async (ids) => {
-            await queryClient.refetchQueries({ queryKey: ['nodes'] })
-            selectNodes(ids)
-          })
-          .catch(() => {
-            /* Rendered below. */
-          })
+        paste()
+      } else if (key === 'd' && !event.shiftKey) {
+        const ids = useUI.getState().selectedNodeIds
+        if (!ids.length || event.repeat) return
+        event.preventDefault()
+        duplicateNodes(ids)
       } else if (key === 'z' || key === 'y') {
         event.preventDefault()
         travel(key === 'y' || event.shiftKey ? 'redo' : 'undo')
@@ -239,7 +296,7 @@ export function Canvas() {
     }
     window.addEventListener('keydown', handle)
     return () => window.removeEventListener('keydown', handle)
-  }, [travel, duplicate, selectNodes])
+  }, [travel, copyRefs, paste, duplicateNodes, selectNodes])
 
   const visible = useMemo(() => {
     let list = all.filter((n) => !hiddenNodes.includes(n.type) && (!board || onBoard(board, n.id)))
@@ -745,7 +802,8 @@ export function Canvas() {
     history.error ??
     setLayout.error ??
     addEdge.error ??
-    duplicate.error
+    duplicate.error ??
+    place.error
 
   return (
     <div
@@ -812,8 +870,13 @@ export function Canvas() {
         onNodeMouseLeave={() => setHovered({})}
         onPaneContextMenu={(event) => {
           event.preventDefault()
+          setNodeMenu(null)
           openAddMenu({ x: event.clientX, y: event.clientY })
         }}
+        onNodeContextMenu={(event, node) => {
+          if (isCard(node)) openNodeMenu(event, node.id)
+        }}
+        onSelectionContextMenu={(event) => openNodeMenu(event)}
         onNodeDragStop={onNodeDragStop}
         selectionOnDrag
         selectionMode={SelectionMode.Partial}
@@ -858,8 +921,8 @@ export function Canvas() {
         </Panel>
         <Panel position="bottom-center">
           <div className="rounded-md border border-stone-800 bg-stone-950/90 px-3 py-1.5 text-[11px] text-stone-400">
-            A / right-click blank space to add · Ctrl+G group selection · Drag blank space to select · Shift / Ctrl / ⌘ to add · Ctrl+A/C/V select all, copy,
-            paste · Middle drag to pan
+            A / right-click blank space to add · Right-click cards for actions · Ctrl+G group · Ctrl+C/V reference · Ctrl+D duplicate · Del remove from board ·
+            Middle drag to pan
           </div>
           {error && (
             <div role="alert" className="mt-1 max-w-lg rounded bg-red-950 px-3 py-2 text-xs text-red-200">
@@ -877,6 +940,15 @@ export function Canvas() {
           }}
           board={board}
           nodes={all}
+          paste={
+            clipboard
+              ? () => {
+                  const position = addMenu.position
+                  closeAddMenu()
+                  paste(position)
+                }
+              : undefined
+          }
           group={() => {
             const position = addMenu.position
             closeAddMenu()
@@ -889,31 +961,27 @@ export function Canvas() {
           }}
         />
       )}
+      {nodeMenu && (
+        <NodeMenu
+          point={nodeMenu}
+          count={nodeMenu.ids.length}
+          close={closeNodeMenu}
+          actions={{
+            copy: () => copyRefs(nodeMenu.ids),
+            duplicate: () => duplicateNodes(nodeMenu.ids),
+            group: () => void makeGroup().catch(() => {}),
+            remove: () => void removeFromBoard(nodeMenu.ids),
+            destroy: () => deleteEverywhere(nodeMenu.ids),
+          }}
+        />
+      )}
     </div>
   )
 }
 
-function AddNodeMenu({
-  point,
-  close,
-  create,
-  board,
-  nodes,
-  place,
-  group,
-}: {
-  point: { x: number; y: number }
-  close: () => void
-  create: (type: NodeType) => void
-  group: () => void
-  board?: Board
-  nodes: StoryNode[]
-  place: (id: string) => void
-}) {
+/** Keeps a floating menu on screen, focuses its first item and closes it on outside clicks. */
+function useFloatingMenu(point: { x: number; y: number }, close: () => void) {
   const menu = useRef<HTMLDivElement>(null)
-  const [query, setQuery] = useState('')
-  const curated = !!board?.nodes
-  const missing = curated ? nodes.filter((n) => !onBoard(board!, n.id) && n.title.toLowerCase().includes(query.toLowerCase())).slice(0, 8) : []
   useLayoutEffect(() => {
     const element = menu.current!
     const rect = element.getBoundingClientRect()
@@ -932,6 +1000,97 @@ function AddNodeMenu({
       window.removeEventListener('resize', close)
     }
   }, [close])
+  return menu
+}
+
+/** Arrow / Home / End move between items; Escape and Tab close. */
+function menuKeys(event: ReactKeyboardEvent<HTMLDivElement>, close: () => void) {
+  const buttons = Array.from(event.currentTarget.querySelectorAll('button'))
+  const index = buttons.indexOf(document.activeElement as HTMLButtonElement)
+  if (event.target instanceof HTMLInputElement && event.key !== 'Escape' && event.key !== 'ArrowDown') return
+  if (event.key === 'Escape' || event.key === 'Tab') {
+    event.preventDefault()
+    close()
+  } else if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+    event.preventDefault()
+    const next =
+      event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length
+    buttons[next]?.focus()
+  }
+}
+
+const MENU_ITEM = 'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-stone-800 focus:bg-stone-800 focus:outline-none'
+
+function NodeMenu({
+  point,
+  count,
+  close,
+  actions,
+}: {
+  point: { x: number; y: number }
+  count: number
+  close: () => void
+  actions: Record<'copy' | 'duplicate' | 'group' | 'remove' | 'destroy', () => void>
+}) {
+  const menu = useFloatingMenu(point, close)
+  const items: { key: keyof typeof actions; label: string; icon: LucideIcon; shortcut?: string; danger?: boolean }[] = [
+    { key: 'copy', label: 'Copy reference', icon: Copy, shortcut: 'Ctrl+C' },
+    { key: 'duplicate', label: 'Duplicate', icon: CopyPlus, shortcut: 'Ctrl+D' },
+    { key: 'group', label: 'Group', icon: BoxSelect, shortcut: 'Ctrl+G' },
+    { key: 'remove', label: 'Remove from board', icon: EyeOff, shortcut: 'Del' },
+    { key: 'destroy', label: 'Delete everywhere…', icon: Trash2, shortcut: 'Shift+Del', danger: true },
+  ]
+  return (
+    <div
+      ref={menu}
+      role="menu"
+      aria-label={count === 1 ? 'Card actions' : `Actions for ${count} cards`}
+      className="fixed z-50 w-60 rounded-lg border border-stone-700 bg-stone-900 p-1 text-sm shadow-2xl"
+      style={{ left: point.x, top: point.y }}
+      onContextMenu={(event) => event.preventDefault()}
+      onKeyDown={(event) => menuKeys(event, close)}
+    >
+      {count > 1 && <div className="px-2 py-1 text-[11px] text-stone-500">{count} cards</div>}
+      {items.map(({ key, label, icon: Icon, shortcut, danger }) => (
+        <button
+          key={key}
+          role="menuitem"
+          className={clsx(MENU_ITEM, danger && 'text-red-300')}
+          onClick={() => {
+            close()
+            actions[key]()
+          }}
+        >
+          <Icon size={14} className={danger ? 'text-red-400' : 'text-stone-400'} /> <span className="flex-1">{label}</span>
+          {shortcut && <span className="text-[11px] text-stone-500">{shortcut}</span>}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function AddNodeMenu({
+  point,
+  close,
+  create,
+  board,
+  nodes,
+  place,
+  group,
+  paste,
+}: {
+  point: { x: number; y: number }
+  close: () => void
+  create: (type: NodeType) => void
+  group: () => void
+  paste?: () => void
+  board?: Board
+  nodes: StoryNode[]
+  place: (id: string) => void
+}) {
+  const [query, setQuery] = useState('')
+  const missing = board ? nodes.filter((n) => !onBoard(board, n.id) && n.title.toLowerCase().includes(query.toLowerCase())).slice(0, 8) : []
+  const menu = useFloatingMenu(point, close)
   return (
     <div
       ref={menu}
@@ -940,25 +1099,14 @@ function AddNodeMenu({
       className="fixed z-50 max-h-[calc(100vh-16px)] w-56 overflow-y-auto rounded-lg border border-stone-700 bg-stone-900 p-1 text-sm shadow-2xl"
       style={{ left: point.x, top: point.y }}
       onContextMenu={(event) => event.preventDefault()}
-      onKeyDown={(event) => {
-        const buttons = Array.from(event.currentTarget.querySelectorAll('button'))
-        const index = buttons.indexOf(document.activeElement as HTMLButtonElement)
-        if (event.target instanceof HTMLInputElement && event.key !== 'Escape' && event.key !== 'ArrowDown') return
-        if (event.key === 'Escape' || event.key === 'Tab') {
-          event.preventDefault()
-          close()
-        } else if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
-          event.preventDefault()
-          const next =
-            event.key === 'Home'
-              ? 0
-              : event.key === 'End'
-                ? buttons.length - 1
-                : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length
-          buttons[next]?.focus()
-        }
-      }}
+      onKeyDown={(event) => menuKeys(event, close)}
     >
+      {paste && (
+        <button role="menuitem" className={clsx(MENU_ITEM, 'border-b border-stone-800')} onClick={paste}>
+          <ClipboardPaste size={14} className="text-stone-400" /> <span className="flex-1">Paste reference</span>
+          <span className="text-[11px] text-stone-500">Ctrl+V</span>
+        </button>
+      )}
       {NODE_TYPES.filter((type) => type !== 'media').map((type) => {
         const style = NODE_STYLE[type]
         return (
@@ -980,7 +1128,7 @@ function AddNodeMenu({
         <BoxSelect size={14} className="text-stone-400" /> Group area
       </button>
       <div className="px-2 py-1.5 text-[11px] text-stone-500">Drop images or videos to add media.</div>
-      {curated && (
+      {board && (
         <div className="border-t border-stone-800 pt-1">
           <input
             aria-label="Find an existing node to place on this board"
@@ -1345,7 +1493,7 @@ function BoardBar() {
               role="tab"
               aria-selected={b.id === board.id}
               onClick={() => setBoard(b.id)}
-              title={b.nodes ? `${b.nodes.length} cards` : 'Every node in the project'}
+              title={`${b.nodes?.length ?? 0} cards`}
               className={clsx(
                 'shrink-0 rounded px-2 py-1 text-xs',
                 b.id === board.id ? 'bg-stone-700 text-stone-50' : 'text-stone-400 hover:bg-stone-800 hover:text-stone-100',
@@ -1411,13 +1559,13 @@ function BoardBar() {
         >
           <Columns3 size={14} />
         </button>
-        {board.id !== MAIN_BOARD && (
+        {graph.boards.length > 1 && (
           <button
             aria-label="Delete board"
             title="Delete board (cards stay in the project)"
             className={clsx(button, 'hover:text-red-400')}
             onClick={() => {
-              setBoard(MAIN_BOARD)
+              setBoard(graph.boards.find((b) => b.id !== board.id)!.id)
               remove.mutate([board.id])
             }}
           >

@@ -48,7 +48,7 @@ test('deletion undo restores node bytes, detached children, incident handles and
   history.redo(project)
   assert.equal(project.getNode(story.id), null)
   assert.equal(project.requireNode(child.id).parent, undefined)
-  assert.deepEqual(project.graph(), { edges: [], boards: [{ id: 'main', title: 'Main', phases: [], layout: {}, groups: [] }] })
+  assert.deepEqual(project.graph(), { edges: [], boards: [{ id: 'main', title: 'Main', nodes: [], phases: [], layout: {}, groups: [] }] })
 })
 
 test('a new mutation after undo clears the redo branch', (t) => {
