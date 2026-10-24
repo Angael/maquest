@@ -3,6 +3,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      commit:
+        description: Commit on main that introduced the version (for release retries)
+        required: true
+        type: string
 permissions:
   contents: write
 concurrency:
@@ -18,30 +23,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.commit || github.sha }}
           fetch-depth: 0
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - name: Install desktop test dependencies
-        run: sudo apt-get update && sudo apt-get install -y xvfb libgtk-3-0 libnss3 libasound2t64
-      - run: pnpm check
       - id: version
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          pnpm version:release
-          if ! git diff --quiet; then
-            git config user.name 'github-actions[bot]'
-            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git add .changeset apps/desktop/package.json apps/desktop/CHANGELOG.md pnpm-lock.yaml
-            git commit -m 'Release desktop version [skip ci]'
-            git push origin HEAD:main
-          fi
+          git merge-base --is-ancestor HEAD origin/main
           version=$(node -p "require('./apps/desktop/package.json').version")
+          previous=$(git show HEAD^:apps/desktop/package.json | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version")
+          if [ "$version" = "$previous" ]; then
+            echo 'release=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           if gh release view "v$version" >/dev/null 2>&1; then
@@ -49,6 +44,20 @@ jobs:
           else
             echo 'release=true' >> "$GITHUB_OUTPUT"
           fi
+      - if: steps.version.outputs.release == 'true'
+        uses: pnpm/action-setup@v4
+      - if: steps.version.outputs.release == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - if: steps.version.outputs.release == 'true'
+        run: pnpm install --frozen-lockfile
+      - name: Install desktop test dependencies
+        if: steps.version.outputs.release == 'true'
+        run: sudo apt-get update && sudo apt-get install -y xvfb libgtk-3-0 libnss3 libasound2t64
+      - if: steps.version.outputs.release == 'true'
+        run: pnpm check
   build:
     needs: prepare
     if: needs.prepare.outputs.release == 'true'

@@ -63,4 +63,4 @@ Each test creates a temporary project and isolated user profile, closes Electron
 
 Download Windows x64 installers or Linux x64 AppImage/tarballs from [GitHub Releases](https://github.com/Angael/maquest/releases). Builds are unsigned.
 
-For releasable changes, run `pnpm changeset` and select `@maquest/desktop`. Pushing the changeset to `main` runs checks, updates the version and changelog, and publishes downloads after both platform builds pass. The Release workflow can be run manually to retry a failed build. See [.changeset/README.md](.changeset/README.md).
+For releasable changes, run `pnpm changeset` and select `@maquest/desktop`. Changes merged to `main` accumulate in an automated **Version Packages** PR. Merge that PR when ready to bump the version and publish downloads after both platform builds pass. Ordinary changes do not publish releases. See [.changeset/README.md](.changeset/README.md) for setup and retries.
