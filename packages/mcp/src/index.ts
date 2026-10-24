@@ -253,7 +253,7 @@ const WriteItem = z.object({
   summary: z.string().optional().describe('One-line summary (scenes: "X tries to Y, but Z, so W")'),
   tags: z.array(z.string()).optional(),
   pinned: z.boolean().optional().describe('Keep this node fixed during automatic canvas layout'),
-  fields: z.record(z.string(), z.string()).optional().describe('Merged into the existing fields; "" removes a field'),
+  fields: z.record(z.string(), z.string().nullable()).optional().describe('Merged into the existing fields; null removes a field'),
   body: z.string().optional().describe('Markdown body (replaces the existing body)'),
   appendBody: z.string().optional().describe('Markdown appended to the body'),
   media: z.array(z.string()).optional().describe('Attached media paths (media/...)'),
@@ -287,6 +287,7 @@ server.registerTool(
           parent: n.parent ?? undefined,
           status: n.status ?? undefined,
           clock: n.clock ?? undefined,
+          fields: n.fields && Object.fromEntries(Object.entries(n.fields).filter((e): e is [string, string] => e[1] !== null)),
           body: n.appendBody ? `${n.body ?? ''}${n.appendBody}` : n.body,
         })
         return `created ${r.id} (${r.type}) ${r.title}`

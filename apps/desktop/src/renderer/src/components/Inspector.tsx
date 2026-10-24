@@ -34,13 +34,24 @@ export function Inspector() {
           <X size={16} />
         </Button>
       </div>
-      {selection.kind === 'node' ? <NodeInspector id={selection.id} /> : <EdgeInspector id={selection.id} />}
+      {selection.kind === 'node' ? <NodeInspector key={selection.id} id={selection.id} /> : <EdgeInspector key={selection.id} id={selection.id} />}
     </aside>
   )
 }
 
 type Draft = Pick<StoryNode, 'title' | 'summary' | 'body' | 'fields' | 'tags'>
+/** Unsaved changes; `fields` holds only changed keys, null marking removal. */
+type Patch = Partial<Omit<Draft, 'fields'>> & { fields?: Record<string, string | null> }
 const toDraft = (n: StoryNode): Draft => ({ title: n.title, summary: n.summary ?? '', body: n.body, fields: n.fields, tags: n.tags })
+const mergePatch = (a: Patch, b: Patch): Patch => ({ ...a, ...b, ...((a.fields || b.fields) && { fields: { ...a.fields, ...b.fields } }) })
+const applyPatch = (d: Draft, p: Patch): Draft => {
+  const fields = { ...d.fields }
+  for (const [k, v] of Object.entries(p.fields ?? {})) {
+    if (v === null) delete fields[k]
+    else fields[k] = v
+  }
+  return { ...d, ...p, fields }
+}
 
 function NodeInspector({ id }: { id: string }) {
   const node = useNode(id)
@@ -54,10 +65,10 @@ function NodeInspector({ id }: { id: string }) {
   const [newField, setNewField] = useState('')
   const dirty = useRef(false)
   const revision = useRef(0)
-  const pending = useRef<Partial<Draft>>({})
+  const pending = useRef<Patch>({})
   const saveQueue = useRef(Promise.resolve())
   const deleting = useRef(false)
-  const save = useDebouncedCallback((targetId: string, patch: Partial<Draft>, version: number) => {
+  const save = useDebouncedCallback((targetId: string, patch: Patch, version: number) => {
     const persist = async () => {
       if (deleting.current) return
       try {
@@ -69,7 +80,7 @@ function NodeInspector({ id }: { id: string }) {
         }
       } catch {
         // Keep the local draft on failure; later edits retry its pending fields.
-        pending.current = { ...patch, ...pending.current }
+        pending.current = mergePatch(patch, pending.current)
       }
     }
     saveQueue.current = saveQueue.current.then(persist)
@@ -98,11 +109,10 @@ function NodeInspector({ id }: { id: string }) {
 
   if (!node || !draft) return <div className="p-4 text-sm text-stone-500">Node not found.</div>
   const S = NODE_STYLE[node.type]
-  const change = (patch: Partial<Draft>) => {
+  const change = (patch: Patch) => {
     dirty.current = true
-    const next = { ...draft, ...patch }
-    setDraft(next)
-    pending.current = { ...pending.current, ...patch }
+    setDraft(applyPatch(draft, patch))
+    pending.current = mergePatch(pending.current, patch)
     save(id, pending.current, ++revision.current)
   }
   const parents = all.filter((n) => ALLOWED_PARENTS[node.type]?.includes(n.type))
@@ -174,12 +184,8 @@ function NodeInspector({ id }: { id: string }) {
           {Object.entries(draft.fields).map(([k, v]) => (
             <div key={k} className="flex items-center gap-2">
               <span className="w-20 shrink-0 truncate text-xs text-stone-400">{k}</span>
-              <Input value={v} onChange={(e) => change({ fields: { ...draft.fields, [k]: e.target.value } })} />
-              <button
-                className="text-stone-600 hover:text-red-400"
-                onClick={() => change({ fields: Object.fromEntries(Object.entries(draft.fields).filter(([x]) => x !== k)) })}
-                title="Remove field"
-              >
+              <Input value={v} onChange={(e) => change({ fields: { [k]: e.target.value } })} />
+              <button className="text-stone-600 hover:text-red-400" onClick={() => change({ fields: { [k]: null } })} title="Remove field">
                 <X size={14} />
               </button>
             </div>
@@ -188,8 +194,9 @@ function NodeInspector({ id }: { id: string }) {
             className="flex gap-2"
             onSubmit={(e) => {
               e.preventDefault()
-              if (newField.trim()) {
-                change({ fields: { ...draft.fields, [newField.trim()]: '' } })
+              const name = newField.trim()
+              if (name) {
+                if (!(name in draft.fields)) change({ fields: { [name]: '' } })
                 setNewField('')
               }
             }}

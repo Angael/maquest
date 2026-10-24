@@ -75,8 +75,8 @@ export type UpdateNodeInput = {
   pinned?: boolean
   media?: string[]
   src?: string
-  /** Merged into existing fields; empty string removes a field. */
-  fields?: Record<string, string>
+  /** Merged into existing fields; null removes a field. */
+  fields?: Record<string, string | null>
   /** null removes the clock */
   clock?: Clock | null
   body?: string
@@ -300,7 +300,7 @@ export class Project {
     if (parent === id) throw new MaquestError('A node cannot be its own parent')
     const fields = { ...cur.fields }
     for (const [k, v] of Object.entries(patch.fields ?? {})) {
-      if (v === '') delete fields[k]
+      if (v === null) delete fields[k]
       else fields[k] = v
     }
     let body = patch.body ?? cur.body
@@ -327,7 +327,13 @@ export class Project {
       next.order = Math.max(0, ...this.listNodes({ type, parent }).map((s) => s.order ?? 0)) + 1
     }
     this.writeNode(next)
-    if (type !== cur.type) fs.rmSync(path.join(this.root, oldPath), { force: true })
+    if (type !== cur.type) {
+      fs.rmSync(path.join(this.root, oldPath), { force: true })
+      // Children that may not live under the new type are detached.
+      for (const child of this.children(id)) {
+        if (!ALLOWED_PARENTS[child.type]?.includes(type)) this.updateNode(child.id, { parent: null })
+      }
+    }
     return this.requireNode(id)
   }
 
