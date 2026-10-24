@@ -53,7 +53,7 @@ See [AGENTS.md](AGENTS.md) for the architecture, file format and guidelines.
 
 ### Desktop end-to-end tests
 
-`pnpm test:e2e` builds the app and runs Playwright against the real Electron executable. On Linux without a display, the runner automatically uses Xvfb (install the `xvfb` package first). No separate Playwright browser download is needed: Electron supplies Chromium.
+`pnpm test:e2e` builds the app and runs Playwright against the real Electron executable. On Linux, the runner always uses an isolated Xvfb display (install the `xvfb` package first), so test windows cannot appear on your desktop or take focus. For visible debugging, explicitly run `MAQUEST_E2E_HEADED=1 pnpm test:e2e`. No separate Playwright browser download is needed: Electron supplies Chromium.
 
 Each test creates a temporary project and isolated user profile, closes Electron, and removes both afterward. The suite covers grouping selected cards, dragging a group with its contents, renaming, recoloring, ungrouping without losing cards, and watching external file edits. Persistence assertions read the project's files through core rather than mocking IPC. Failed tests save a screenshot and trace under `test-results/`; open a trace with `pnpm exec playwright show-trace <path-to-trace.zip>`.
 

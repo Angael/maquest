@@ -21,7 +21,12 @@ export const test = base.extend<{ desktop: { page: Page; project: Project; ids: 
     try {
       electron = await playwright._electron.launch({
         executablePath: require('electron'),
-        args: [path.resolve('apps/desktop'), `--user-data-dir=${path.join(temporary, 'profile')}`, project.root],
+        args: [
+          path.resolve('apps/desktop'),
+          ...(process.platform === 'linux' ? ['--ozone-platform=x11'] : []),
+          `--user-data-dir=${path.join(temporary, 'profile')}`,
+          project.root,
+        ],
         env,
       })
       const page = await electron.firstWindow()
