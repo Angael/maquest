@@ -2,6 +2,8 @@
   "name": "@maquest/desktop",
   "version": "0.1.0",
   "private": true,
+  "description": "A desktop workspace for stories, novels, screenplays, and tabletop RPG campaigns",
+  "author": "Angael",
   "type": "module",
   "main": "out/main/index.js",
   "scripts": {
@@ -29,6 +31,7 @@
     "@xyflow/react": "^12.12.0",
     "clsx": "^2.1.1",
     "electron": "^45.0.0",
+    "electron-builder": "^26.18.0",
     "electron-vite": "^6.0.0",
     "lucide-react": "^1.61.0",
     "react": "^19.3.1",
@@ -41,6 +44,45 @@
     "use-debounce": "^10.1.1",
     "vite": "^8.3.5",
     "zustand": "^5.0.16"
+  },
+  "build": {
+    "appId": "com.angael.maquest",
+    "productName": "Maquest",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../../packages/mcp/dist",
+        "to": "mcp",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "npmRebuild": false,
+    "artifactName": "Maquest-${version}-${os}-${arch}.${ext}",
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "tar.gz"
+      ],
+      "category": "Office",
+      "executableName": "maquest"
+    }
   },
   "desktopName": "maquest.desktop",
   "productName": "Maquest"

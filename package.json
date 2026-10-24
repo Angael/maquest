@@ -15,9 +15,13 @@
     "format:check": "oxfmt --check",
     "check": "oxlint && oxfmt --check && pnpm typecheck && pnpm test && pnpm test:e2e",
     "check:fix": "oxlint --fix; oxfmt && oxlint && pnpm typecheck && pnpm test && pnpm test:e2e",
-    "test:e2e": "pnpm build && node scripts/test-e2e.mjs"
+    "test:e2e": "pnpm build && node scripts/test-e2e.mjs",
+    "changeset": "changeset",
+    "version:release": "changeset version",
+    "package:desktop": "pnpm build && pnpm --filter @maquest/desktop exec electron-builder --publish never"
   },
   "devDependencies": {
+    "@changesets/cli": "^3.0.3",
     "@playwright/test": "^1.64.1",
     "oxfmt": "^0.74.0",
     "oxlint": "^1.89.0",

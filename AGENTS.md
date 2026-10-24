@@ -22,3 +22,5 @@ Workflow:
 - Before committing, run `pnpm check:fix` and fix lint errors rather than disabling rules.
 - The installed desktop launcher runs this checkout, so run `pnpm build` after app changes.
 - `pnpm check` and `pnpm check:fix` include Playwright tests against the built Electron app. Run the full check after changes; keep common user flows covered in `tests/e2e`. Tests use temporary projects and profiles. On Linux the runner always uses an isolated Xvfb display, which must be installed, so checks never interrupt the desktop. Use `MAQUEST_E2E_HEADED=1` only when visible debugging is explicitly requested.
+
+- Add a desktop changeset (`pnpm changeset`) for releasable changes; merging it to `main` automatically versions and publishes a release.
