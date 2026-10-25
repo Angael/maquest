@@ -47,6 +47,7 @@ import {
 export const CONFIG_FILE = 'maquest.json'
 export const GRAPH_FILE = 'graph.json'
 export const GUIDELINES_DIR = 'guidelines'
+export const GUIDELINE_USAGE_FILE = 'usage.json'
 export const MEDIA_DIR = 'media'
 
 export class MaquestError extends Error {}
@@ -701,7 +702,26 @@ export class Project {
       out.push({ id, title: o.title ?? id, scope: o.scope ?? 'all', body: o.body ?? '', disabled: o.disabled, source: 'custom' })
     }
     const kind = this.config().kind
-    return out.filter((g) => (opts.includeDisabled || !g.disabled) && (!opts.applicableOnly || kind === 'mixed' || g.scope === 'all' || g.scope === kind))
+    const usage = this.guidelineUsage()
+    return out
+      .filter((g) => (opts.includeDisabled || !g.disabled) && (!opts.applicableOnly || kind === 'mixed' || g.scope === 'all' || g.scope === kind))
+      .map((g) => ({ ...g, reads: usage[g.id]?.reads ?? 0, writes: usage[g.id]?.writes ?? 0 }))
+  }
+
+  private guidelineUsage(): Record<string, { reads?: number; writes?: number }> {
+    try {
+      return JSON.parse(fs.readFileSync(path.join(this.root, GUIDELINES_DIR, GUIDELINE_USAGE_FILE), 'utf8'))
+    } catch {
+      return {}
+    }
+  }
+
+  /** Counts agent reads/writes per guideline in guidelines/usage.json. */
+  trackGuidelineUse(ids: string[], kind: 'reads' | 'writes') {
+    if (!ids.length) return
+    const usage = this.guidelineUsage()
+    for (const id of ids) usage[id] = { ...usage[id], [kind]: (usage[id]?.[kind] ?? 0) + 1 }
+    writeAtomic(path.join(this.root, GUIDELINES_DIR, GUIDELINE_USAGE_FILE), JSON.stringify(usage, null, 2) + '\n')
   }
 
   guideline(id: string): Guideline | null {

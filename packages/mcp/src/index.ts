@@ -479,15 +479,26 @@ server.registerTool(
           .map((g) => `- ${g.id}: ${g.title} [${g.scope}, ${g.source}${g.disabled ? ', disabled' : ''}]`)
           .join('\n')
       case 'read': {
-        if (!id) return p.guidelines({ applicableOnly: true }).map(guidelineText).join('\n\n')
+        if (!id) {
+          const all = p.guidelines({ applicableOnly: true })
+          p.trackGuidelineUse(
+            all.map((g) => g.id),
+            'reads',
+          )
+          return all.map(guidelineText).join('\n\n')
+        }
         const g = p.guideline(id)
         if (!g) throw new Error(`Unknown guideline: ${id}`)
+        p.trackGuidelineUse([g.id], 'reads')
         const d = g.source === 'override' ? p.defaultGuideline(id) : null
         return guidelineText(g) + (d ? `\n\n### Built-in default (overridden)\n${d.body}` : '')
       }
-      case 'write':
+      case 'write': {
         if (!id) throw new Error('write requires id')
-        return `saved ${p.setGuideline(id, { title, body, scope }).id}`
+        const saved = p.setGuideline(id, { title, body, scope })
+        p.trackGuidelineUse([saved.id], 'writes')
+        return `saved ${saved.id}`
+      }
       case 'reset':
         if (!id) throw new Error('reset requires id')
         p.resetGuideline(id)
@@ -571,7 +582,9 @@ server.registerResource(
   }),
   { title: 'Writing guideline', mimeType: 'text/markdown' },
   (uri, { id }) => {
-    const g = project().guideline(String(id))
+    const p = project()
+    const g = p.guideline(String(id))
+    if (g) p.trackGuidelineUse([g.id], 'reads')
     return { contents: [{ uri: uri.href, mimeType: 'text/markdown', text: g ? `# ${g.title}\n\n${g.body}` : 'Not found' }] }
   },
 )

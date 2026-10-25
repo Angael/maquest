@@ -331,5 +331,8 @@ export type Guideline = {
   body: string
   disabled?: boolean
   source: 'default' | 'override' | 'custom'
+  /** How often agents read/wrote it via MCP (guidelines/usage.json). */
+  reads?: number
+  writes?: number
 }
 export type OutlineNode = { id: string; type: NodeType; title: string; status?: Status; summary?: string; children: OutlineNode[] }

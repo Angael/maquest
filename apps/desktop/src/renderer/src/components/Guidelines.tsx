@@ -47,7 +47,10 @@ export function Guidelines() {
                 )}
               >
                 <span className="truncate">{x.title}</span>
-                <span className={clsx('ml-auto text-[10px] uppercase', SOURCE_BADGE[x.source])}>{x.source}</span>
+                <span className="ml-auto shrink-0 text-[10px] tabular-nums text-stone-500" title={`Agent reads: ${x.reads ?? 0}, writes: ${x.writes ?? 0}`}>
+                  {x.reads ?? 0}r · {x.writes ?? 0}w
+                </span>
+                <span className={clsx('text-[10px] uppercase', SOURCE_BADGE[x.source])}>{x.source}</span>
               </button>
             )
           })}
