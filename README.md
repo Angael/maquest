@@ -6,7 +6,7 @@ A desktop app for writing stories, novels, screenplays and tabletop RPG campaign
 - Node canvas with free and typed connections (`leads-to`, `branches-to`, `foreshadows`, `involves`, `member-of`, …). Connections can be named, each type has its own color and line style, and you can filter them
 - Backlog for raw ideas, which you can promote to anything later
 - Images and videos on the canvas, embedded in markdown, and attached to nodes
-- Built-in writing guidelines (general, RPG, screenplay) that each project can override; also editable by the agent
+- Built-in writing guidelines (general, RPG, screenplay) that each project can override; also editable by the agent. An "Author's style" guideline captures the author's voice: the agent fills it in from their pages and corrections and sees it whenever it reads or writes scenes
 - Everything is plain markdown and JSON in a folder, so it works with git
 
 ## Canvas and editing

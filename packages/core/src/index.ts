@@ -1,5 +1,5 @@
 export * from './schema'
 export * from './project'
 export * from './templates'
-export { DEFAULT_GUIDELINES } from './guidelines/defaults'
+export { DEFAULT_GUIDELINES, STYLE_GUIDELINE_ID } from './guidelines/defaults'
 export { parseFrontmatter, stringifyFrontmatter } from './frontmatter'

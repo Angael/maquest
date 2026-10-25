@@ -20,6 +20,7 @@ import {
   EdgeType,
   EdgeHandle,
   GuidelineScope,
+  STYLE_GUIDELINE_ID,
   NodeType,
   Project,
   ProjectKind,
@@ -62,6 +63,15 @@ const line = (n: StoryNode) => `- ${n.id} [${n.type}${n.status ? `, ${n.status}`
 const section = (title: string, nodes: StoryNode[]) => (nodes.length ? `## ${title}\n${nodes.map(line).join('\n')}` : '')
 const guidelineText = (g: { id: string; title: string; scope: string; source: string; disabled?: boolean; body: string }) =>
   `## ${g.title} (${g.id}; ${g.scope}; ${g.source}${g.disabled ? '; disabled' : ''})\n${g.body}`
+
+/** Appended to scene reads and prose writes so the author's voice is in view while writing. */
+function styleReminder(p: Project) {
+  const g = p.guidelines({ applicableOnly: true }).find((x) => x.id === STYLE_GUIDELINE_ID)
+  if (!g) return ''
+  return g.source === 'default'
+    ? `\n\n---\nThe "${STYLE_GUIDELINE_ID}" guideline is not filled in yet. Fill it from the author's own pages (guidelines write) before writing prose.`
+    : `\n\n---\n## Style reminder (${STYLE_GUIDELINE_ID})\n${g.body}`
+}
 
 function outlineText(nodes: OutlineNode[], depth = 0): string {
   return nodes
@@ -166,10 +176,9 @@ const server = new McpServer(
   { name: 'maquest', version: '0.1.0' },
   {
     instructions: `Maquest is a writing project: stories → chapters → scenes, plus entities (characters, locations, factions, items), free notes, a backlog of ideas, media, and a node graph of typed, labeled connections.
-Workflow: call "overview" first. Read "guidelines" before creative work and follow them. Project overrides beat defaults.
-Be proactive. Turn what the author says into project changes right away (write/connect), then briefly report what changed. Put loose ideas in the backlog (type "idea"). Keep connections in sync (involves, located-at, foreshadows, leads-to...).
+Workflow: call "overview" first. Read "guidelines" before creative work and follow them. Project overrides beat defaults. When the author corrects your writing or says what they like or dislike, save it to the "${STYLE_GUIDELINE_ID}" guideline right away.
+Capture structure eagerly: turn what the author says into project changes right away (write/connect), then briefly report what changed. Put loose ideas in the backlog (type "idea"). Keep connections in sync (involves, located-at, foreshadows, leads-to...). Story prose is the author's: write or rewrite it only when asked; otherwise suggest.
 Connection labels are short names for the relationship (max ${EDGE_LABEL_MAX} chars). Never put status or TODOs in labels; use the node's status, tags or body.
-RPG: plan situations, not plots. Use "clue-for" edges for clues (aim for 3+ per important conclusion; overview flags gaps), clocks on factions/threats for fronts, and boards with phase columns for loose acts.
 Boards are separate canvases (e.g. one per arc or investigation); each shows only the nodes placed on it.
 Edits apply immediately to markdown files on disk, and the Maquest app updates live.`,
   },
@@ -250,13 +259,15 @@ server.registerTool(
   'read',
   {
     title: 'Read nodes',
-    description: 'Full content of nodes: metadata, fields, connections (with edge ids), children and markdown body.',
+    description:
+      "Full content of nodes: metadata, fields, connections (with edge ids), children and markdown body. Reading scenes also returns the author's style guideline.",
     inputSchema: { ids: z.array(z.string()).min(1) },
     annotations: { readOnlyHint: true },
   },
   safe(({ ids }) => {
     const p = project()
-    return ids.map((id) => nodeText(p, p.requireNode(id))).join('\n\n---\n\n')
+    const nodes = ids.map((id) => p.requireNode(id))
+    return nodes.map((n) => nodeText(p, n)).join('\n\n---\n\n') + (nodes.some((n) => n.type === 'scene') ? styleReminder(p) : '')
   }),
 )
 
@@ -290,11 +301,14 @@ server.registerTool(
   },
   safe(({ nodes }) => {
     const p = project()
-    return nodes
+    let prose = false
+    const out = nodes
       .map((n) => {
+        const wroteBody = n.body !== undefined || n.appendBody !== undefined
         if (n.id) {
           const { id, board: _board, ...patch } = n
           const r = p.updateNode(id, patch)
+          prose ||= wroteBody && r.type === 'scene'
           return `updated ${r.id} (${r.type}) ${r.title}`
         }
         if (!n.type || !n.title) throw new Error('Creating a node requires type and title')
@@ -311,9 +325,11 @@ server.registerTool(
           body: n.appendBody ? `${n.body ?? ''}${n.appendBody}` : n.body,
         })
         p.updateBoard(target, { addNodes: [r.id] })
+        prose ||= wroteBody && r.type === 'scene'
         return `created ${r.id} (${r.type}) ${r.title} on ${target}`
       })
       .join('\n')
+    return out + (prose ? styleReminder(p) : '')
   }),
 )
 
