@@ -9,6 +9,7 @@ import { Inspector } from './components/Inspector'
 import { Backlog } from './components/Backlog'
 import { Guidelines } from './components/Guidelines'
 import { InspectorPanel } from './components/InspectorPanel'
+import { CommandPalette } from './components/CommandPalette'
 import { useDeleteShortcut } from './lib/deletion'
 
 export function App() {
@@ -24,6 +25,7 @@ export function App() {
   return (
     <ReactFlowProvider>
       <div className="flex h-full flex-col">
+        <CommandPalette />
         <TopBar />
         <div className="flex min-h-0 flex-1">
           <Sidebar />

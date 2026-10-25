@@ -17,6 +17,8 @@ type UI = {
   connectType: EdgeType | 'auto'
   /** Current canvas (board id). */
   board: string
+  /** Guideline open in the Guidelines view. */
+  guideline: string | null
   /** 'focus' shows edge names only for hovered / selected / focused lines. */
   edgeLabels: 'focus' | 'always'
   /** Draw involves/located-at/member-of/owns as lines instead of chips on the card. */
@@ -29,6 +31,7 @@ type UI = {
   setStoryScope: (id: string | null) => void
   setConnectType: (t: EdgeType | 'auto') => void
   setBoard: (id: string) => void
+  setGuideline: (id: string | null) => void
 }
 
 const toggle = <T>(list: T[], v: T) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v])
@@ -44,6 +47,7 @@ export const useUI = create<UI>()(
       storyScope: null,
       connectType: 'auto',
       board: 'main',
+      guideline: null,
       edgeLabels: 'focus',
       referenceLines: false,
       setView: (view) => set({ view }),
@@ -63,6 +67,7 @@ export const useUI = create<UI>()(
       setStoryScope: (storyScope) => set({ storyScope }),
       setConnectType: (connectType) => set({ connectType }),
       setBoard: (board) => set({ board, selection: null, selectedNodeIds: [] }),
+      setGuideline: (guideline) => set({ guideline }),
     }),
     {
       name: 'maquest-ui',

@@ -5,6 +5,7 @@ import { RotateCcw } from 'lucide-react'
 import { PROJECT_KINDS, type Guideline, type ProjectKind } from '@maquest/core/schema'
 import { api } from '../lib/api'
 import { useAction, useConfig, useGuidelines } from '../lib/queries'
+import { useUI } from '../lib/store'
 import { MarkdownEditor } from './MarkdownEditor'
 import { Button, Input, Label, Select } from './ui'
 
@@ -20,7 +21,8 @@ export function Guidelines() {
   const { data: config } = useConfig()
   const updateConfig = useAction(api.updateConfig)
   const setGuideline = useAction(api.setGuideline)
-  const [active, setActive] = useState<string | null>(null)
+  const active = useUI((s) => s.guideline)
+  const setActive = useUI((s) => s.setGuideline)
   const [newId, setNewId] = useState('')
   const g = list.find((x) => x.id === active) ?? list[0]
 
