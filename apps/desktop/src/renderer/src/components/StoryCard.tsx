@@ -77,7 +77,11 @@ export const StoryCard = memo(function StoryCard({ data, selected }: NodeProps<N
             {n.status && <span className="ml-auto rounded bg-stone-800 px-1 text-stone-400 normal-case">{n.status}</span>}
           </div>
           <div className="mt-0.5 font-serif text-[15px] leading-snug text-stone-100">{n.title}</div>
-          {(n.summary || n.fields.role) && <div className="mt-1 line-clamp-2 text-xs text-stone-400">{n.summary || n.fields.role}</div>}
+          {(n.summary || n.fields.role) && (
+            <div className="mt-1 line-clamp-2 text-xs text-stone-400" title={n.summary || n.fields.role}>
+              {n.summary || n.fields.role}
+            </div>
+          )}
           {(clock || data.clues !== undefined) && (
             <div className="mt-1.5 flex items-center gap-2 text-[11px]">
               {clock && (

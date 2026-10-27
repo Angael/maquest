@@ -32,6 +32,7 @@ Whenever the author corrects your writing or says what they like or dislike, add
 - When you do write prose, read the style guideline and nearby scenes first, and match them.
 - Make small, targeted edits. Never silently delete author-written content; park meaningful cuts in the backlog.
 - Not sure where something belongs? Put it in the backlog (type \`idea\`).
+- Titles are short complete phrases; summaries are one sentence. Keep the author's own wording in the body, not in the title or summary.
 - Check for contradictions with established facts before suggesting anything.
 - For big creative decisions, offer 2-3 genuinely different options and recommend one.`,
   },

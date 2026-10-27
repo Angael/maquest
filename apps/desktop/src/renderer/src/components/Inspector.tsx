@@ -22,7 +22,7 @@ import { BEFORE_DELETE, useDeleteSelection } from '../lib/deletion'
 import { EDGE_STYLE, NODE_STYLE } from '../lib/styles'
 import { MarkdownEditor } from './MarkdownEditor'
 import { ClockDial } from './ClockDial'
-import { Button, Input, Label, Select } from './ui'
+import { Button, Input, Label, Select, Textarea } from './ui'
 
 const STATUSES: Status[] = ['idea', 'draft', 'revised', 'done']
 
@@ -173,10 +173,14 @@ function NodeInspector({ id }: { id: string }) {
 
       <div>
         <Label>Summary</Label>
-        <Input
+        <Textarea
+          aria-label="Summary"
+          rows={1}
+          className="field-sizing-content max-h-28 resize-none"
           value={draft.summary}
           placeholder={node.type === 'scene' ? 'X tries to Y, but Z, so W' : 'One line'}
-          onChange={(e) => change({ summary: e.target.value })}
+          onKeyDown={(e) => e.key === 'Enter' && e.preventDefault()}
+          onChange={(e) => change({ summary: e.target.value.replaceAll(/\s*\n\s*/g, ' ') })}
         />
       </div>
 

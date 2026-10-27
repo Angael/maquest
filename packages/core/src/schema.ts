@@ -100,6 +100,18 @@ export const isReferenceEdge = (t: EdgeType) => (REFERENCE_EDGE_TYPES as readonl
 /** Edge labels name the relationship in a few words; notes and status belong on nodes. */
 export const EDGE_LABEL_MAX = 48
 
+/** Soft limit: summaries are one line on cards; longer detail belongs in the body. */
+export const SUMMARY_MAX = 160
+
+/** Advisory notes about a node's title/summary (never blocks a write). */
+export function textWarnings(n: { title?: string; summary?: string }): string[] {
+  const out: string[] = []
+  if (n.title && /(…|\.\.\.)\s*$/.test(n.title)) out.push('title ends with "…"; use a short complete phrase')
+  if (n.summary && n.summary.length > SUMMARY_MAX)
+    out.push(`summary is ${n.summary.length} chars; keep it one sentence under ${SUMMARY_MAX} and move detail to body`)
+  return out
+}
+
 /** Incoming clue-for count per target node (only nodes with at least one clue). */
 export function clueCounts(edges: readonly Edge[]): Map<string, number> {
   const out = new Map<string, number>()

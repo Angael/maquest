@@ -6,6 +6,8 @@ import {
   Clock,
   EDGE_DESCRIPTIONS,
   EDGE_LABEL_MAX,
+  SUMMARY_MAX,
+  textWarnings,
   REFERENCE_EDGE_TYPES,
   clueCounts,
   onBoard,
@@ -271,14 +273,24 @@ server.registerTool(
   }),
 )
 
+const warn = (n: StoryNode) =>
+  textWarnings(n)
+    .map((w) => `\n  warning: ${w}`)
+    .join('')
+
 const WriteItem = z.object({
   id: z.string().optional().describe('Existing node id to update. Omit to create a new node.'),
   type: NodeType.optional().describe('Required when creating. Changing it on update converts the node.'),
-  title: z.string().optional().describe('Required when creating'),
+  title: z.string().optional().describe('Required when creating. A short complete phrase; never cut off with "…"'),
   parent: z.string().nullable().optional().describe('chapter→story, scene→chapter, note→story/chapter/scene. null detaches.'),
   order: z.number().optional().describe('Position among siblings'),
   status: Status.nullable().optional(),
-  summary: z.string().optional().describe('One-line summary (scenes: "X tries to Y, but Z, so W")'),
+  summary: z
+    .string()
+    .optional()
+    .describe(
+      `One sentence, under ${SUMMARY_MAX} chars, no prefixes like "Author's note:" (scenes: "X tries to Y, but Z, so W"). Put full wording and quotes in body.`,
+    ),
   tags: z.array(z.string()).optional(),
   pinned: z.boolean().optional().describe('Keep this node fixed during automatic canvas layout'),
   fields: z.record(z.string(), z.string().nullable()).optional().describe('Merged into the existing fields; null removes a field'),
@@ -309,7 +321,7 @@ server.registerTool(
           const { id, board: _board, ...patch } = n
           const r = p.updateNode(id, patch)
           prose ||= wroteBody && r.type === 'scene'
-          return `updated ${r.id} (${r.type}) ${r.title}`
+          return `updated ${r.id} (${r.type}) ${r.title}${warn(r)}`
         }
         if (!n.type || !n.title) throw new Error('Creating a node requires type and title')
         const { board, ...input } = n
@@ -326,7 +338,7 @@ server.registerTool(
         })
         p.updateBoard(target, { addNodes: [r.id] })
         prose ||= wroteBody && r.type === 'scene'
-        return `created ${r.id} (${r.type}) ${r.title} on ${target}`
+        return `created ${r.id} (${r.type}) ${r.title} on ${target}${warn(r)}`
       })
       .join('\n')
     return out + (prose ? styleReminder(p) : '')
