@@ -130,3 +130,9 @@ body {
 .react-flow__node.group-node .group-interactive {
   pointer-events: auto;
 }
+/* Resize lines are 1px wide; give them an easier grab area. */
+.react-flow__node.group-node .react-flow__resize-control.line::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+}

@@ -45,6 +45,7 @@ import {
 import {
   EDGE_DESCRIPTIONS,
   EDGE_TYPES,
+  CARD_SIZE,
   GROUP_HEADER,
   GROUP_PAD,
   NODE_TYPES,
@@ -413,23 +414,51 @@ export function Canvas() {
     for (const [id, entry] of Object.entries(localRef.current)) if (entry.measured && !groupIdOf(id)) out[id] = entry.measured
     return out
   }, [])
-  /** Group rectangles are refitted on save, so in-flight ones are dropped once the save lands instead of compared. */
-  const releaseGroups = useCallback(() => {
+  /**
+   * Once no save is in flight, the saved layout is authoritative: drop every settled position and size, so later
+   * changes (auto layout, agents, undo) show up even where the save landed slightly off (groups are refitted, carried
+   * cards accumulate rounding).
+   */
+  const saving = useRef(0)
+  const releaseLayout = useCallback(() => {
+    if (saving.current) return
     setLocal((previous) => {
-      const next = { ...previous }
-      for (const id of Object.keys(next)) if (groupIdOf(id) && !next[id].dragging) delete next[id]
+      const next: Record<string, LocalNode> = {}
+      for (const [id, entry] of Object.entries(previous)) {
+        if (entry.dragging) next[id] = entry
+        else if (entry.measured && !groupIdOf(id)) next[id] = { measured: entry.measured }
+      }
       return next
     })
   }, [])
   const saveLayout = useCallback(
     async (...args: Parameters<typeof api.setLayout>) => {
+      saving.current++
       try {
         await setLayout.mutateAsync(args)
       } finally {
-        releaseGroups()
+        saving.current--
+        releaseLayout()
       }
     },
-    [setLayout, releaseGroups],
+    [setLayout, releaseLayout],
+  )
+  // Rendered card sizes keyed by value, so group frames only recompute when a card's size actually changes.
+  const sizeKey = Object.entries(local)
+    .flatMap(([id, entry]) => (entry.measured && !groupIdOf(id) ? [`${id}\0${entry.measured.width}\0${entry.measured.height}`] : []))
+    .join('\n')
+  const sizes = useMemo(
+    () =>
+      Object.fromEntries(
+        sizeKey
+          .split('\n')
+          .filter(Boolean)
+          .map((line): [string, Size] => {
+            const [id, width, height] = line.split('\0')
+            return [id, { width: Number(width), height: Number(height) }]
+          }),
+      ),
+    [sizeKey],
   )
   const groupNodes = useMemo<GroupFlowNode[]>(() => {
     if (!board) return []
@@ -437,7 +466,7 @@ export function Canvas() {
       .map((g) => ({ g, depth: groupDepth(board, g.id) }))
       .toSorted((a, b) => a.depth - b.depth)
       .map(({ g, depth }) => {
-        const content = groupContent(board, g.id)
+        const content = groupContent(board, g.id, (id) => sizes[id] ?? CARD_SIZE)
         return {
           id: groupKey(g.id),
           type: 'frame' as const,
@@ -453,10 +482,7 @@ export function Canvas() {
           selected: selectedGroup === g.id,
           data: {
             group: g,
-            min: {
-              width: Math.max(160, content ? content.x + content.width - g.x : 0),
-              height: Math.max(GROUP_HEADER + 40, content ? content.y + content.height - g.y : 0),
-            },
+            content,
             count: g.nodes.length + board.groups.filter((x) => x.parent === g.id).length,
             select: () => {
               setSelectedGroup(g.id)
@@ -473,7 +499,7 @@ export function Canvas() {
           },
         }
       })
-  }, [board, selectedGroup, select, selectNodes, updateGroup, deleteGroup, saveLayout, measuredSizes])
+  }, [board, sizes, selectedGroup, select, selectNodes, updateGroup, deleteGroup, saveLayout, measuredSizes])
   // Drop settled drag positions once a new saved layout arrives (adjusting state during render, not in an effect).
   const [seenBoard, setSeenBoard] = useState(board)
   if (seenBoard !== board) {
@@ -962,7 +988,7 @@ export function Canvas() {
             travel={travel}
             openAddMenu={(point) => setAddMenu(point)}
             group={() => void makeGroup().catch(() => {})}
-            afterLayout={releaseGroups}
+            afterLayout={releaseLayout}
           />
         </Panel>
         <Panel position="top-right" className="canvas-modes">

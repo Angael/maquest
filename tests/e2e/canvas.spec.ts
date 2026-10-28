@@ -175,3 +175,72 @@ test('auto-layout runs the chosen style and remembers it', async ({ desktop }) =
   await page.reload()
   await expect(page.getByRole('combobox', { name: 'Auto-layout style' })).toHaveValue('grid')
 })
+
+test('cards in nested groups follow saved layouts after the groups are dragged', async ({ desktop }) => {
+  const { page, project, ids } = desktop
+  const board = project.board().id
+  const attic = project.createNode({ type: 'location', title: 'Attic' }).id
+  project.setLayout({ [attic]: { x: 100, y: 500 } }, board)
+  const inner = project.createGroup(board, { title: 'Inner', nodes: ids })
+  const outer = project.createGroup(board, { title: 'Outer', nodes: [attic], groups: [inner.id] })
+  const card = (id: string) => page.locator(`.react-flow__node[data-id="${id}"]`)
+  await expect(card(attic)).toBeVisible()
+  // A fractional zoom gives fractional drag offsets, which made carried cards drift from the saved layout.
+  const pane = (await page.locator('.react-flow__pane').boundingBox())!
+  await page.mouse.move(pane.x + pane.width / 2, pane.y + pane.height / 2)
+  await page.mouse.wheel(0, 37)
+  await page.waitForTimeout(300)
+  const drag = async (group: string, dx: number, dy: number) => {
+    const before = project.board().groups.find((g) => g.id === group)!.x
+    const box = (await page.locator(`.react-flow__node[data-id="group:${group}"] .group-handle`).boundingBox())!
+    await page.mouse.move(box.x + 30, box.y + box.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(box.x + 30 + dx, box.y + box.height / 2 + dy, { steps: 13 })
+    await page.mouse.up()
+    await expect.poll(() => project.board().groups.find((g) => g.id === group)!.x).not.toBe(before)
+  }
+  await drag(outer.id, 77, 31)
+  await drag(inner.id, 13, 9)
+  await drag(outer.id, -41, 23)
+  const members = JSON.stringify(project.board().groups.map((g) => [g.id, g.parent, g.nodes.toSorted()]))
+  // A saved layout from elsewhere (auto layout, an agent) must move the carried cards on screen too.
+  project.setLayout({ [ids[0]]: { x: 2000, y: 2000 }, [ids[1]]: { x: 2400, y: 2000 }, [attic]: { x: 2000, y: 2400 } }, board)
+  for (const id of [...ids, attic])
+    await expect
+      .poll(async () => {
+        const transform = await card(id).evaluate((el) => (el as HTMLElement).style.transform)
+        const at = project.board().layout[id]
+        return transform === `translate(${at.x}px, ${at.y}px)`
+      })
+      .toBe(true)
+  expect(JSON.stringify(project.board().groups.map((g) => [g.id, g.parent, g.nodes.toSorted()]))).toBe(members)
+})
+
+test('groups resize from every side, down to their content', async ({ desktop }) => {
+  const { page, project, ids } = desktop
+  const board = project.board().id
+  const group = project.createGroup(board, { title: 'Room', nodes: ids })
+  const fitted = project.board().groups[0]
+  const frame = page.locator(`.react-flow__node[data-id="group:${group.id}"]`)
+  await frame.locator('.group-handle').click()
+  const resize = async (selector: string, dx: number, dy: number) => {
+    const box = (await frame.locator(`.react-flow__resize-control.${selector}`).boundingBox())!
+    const before = JSON.stringify(project.board().groups[0])
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(box.x + box.width / 2 + dx, box.y + box.height / 2 + dy, { steps: 6 })
+    await page.mouse.up()
+    await expect.poll(() => JSON.stringify(project.board().groups[0])).not.toBe(before)
+    return project.board().groups[0]
+  }
+  // Grow from the top-left corner, then shrink back from the top edge and the left edge.
+  const grown = await resize('handle.top.left', -80, -80)
+  expect(grown.x).toBeLessThan(fitted.x)
+  expect(grown.y).toBeLessThan(fitted.y)
+  let shrunk = await resize('line.top', 0, 400)
+  expect(shrunk.y).toBeCloseTo(fitted.y, 0)
+  shrunk = await resize('line.left', 400, 0)
+  expect(shrunk.x).toBeCloseTo(fitted.x, 0)
+  expect(shrunk.width).toBeCloseTo(fitted.width, 0)
+  expect(shrunk.height).toBeCloseTo(fitted.height, 0)
+})

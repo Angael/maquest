@@ -1,5 +1,5 @@
 import { memo, useState } from 'react'
-import { NodeResizer, NodeToolbar, Position, type Node, type NodeProps } from '@xyflow/react'
+import { NodeResizeControl, NodeToolbar, Position, ResizeControlVariant, type ControlPosition, type Node, type NodeProps } from '@xyflow/react'
 import clsx from 'clsx'
 import { Ungroup } from 'lucide-react'
 import { GROUP_COLORS, GROUP_HEADER, type Group, type GroupColor, type Rect } from '@maquest/core/schema'
@@ -15,8 +15,8 @@ export const GROUP_STYLE: Record<GroupColor, { border: string; fill: string; tex
 
 export type GroupData = {
   group: Group
-  /** Smallest size that still holds the group's content. */
-  min: { width: number; height: number }
+  /** What the group holds (cards, subgroups, padding and title bar); resizing never cuts into it. */
+  content: Rect | null
   count: number
   select: () => void
   rename: (title: string) => void
@@ -25,6 +25,20 @@ export type GroupData = {
   resized: (rect: Rect) => void
 }
 export type GroupFlowNode = Node<GroupData, 'frame'>
+
+const LINES: ControlPosition[] = ['top', 'right', 'bottom', 'left']
+const CORNERS: ControlPosition[] = ['top-left', 'top-right', 'bottom-left', 'bottom-right']
+
+/** Smallest size for a resize from `position`: dragged edges stop at the content, the opposite edges stay put. */
+function minSize(group: Group, content: Rect | null, position: ControlPosition) {
+  let width = 160
+  let height = GROUP_HEADER + 40
+  if (content) {
+    width = Math.max(width, position.includes('left') ? group.x + group.width - content.x : content.x + content.width - group.x)
+    height = Math.max(height, position.includes('top') ? group.y + group.height - content.y : content.y + content.height - group.y)
+  }
+  return { minWidth: width, minHeight: height }
+}
 
 /** Bordered area behind cards. Only the title bar and resize handles take the pointer; the body stays canvas. */
 export const GroupFrame = memo(function GroupFrame({ data, selected }: NodeProps<GroupFlowNode>) {
@@ -40,15 +54,18 @@ export const GroupFrame = memo(function GroupFrame({ data, selected }: NodeProps
       className={clsx('h-full w-full rounded-xl border-2', selected ? 'border-solid' : 'border-dashed')}
       style={{ borderColor: selected ? '#fbbf24' : `${style.border}99`, background: style.fill }}
     >
-      <NodeResizer
-        isVisible={selected}
-        minWidth={data.min.width}
-        minHeight={data.min.height}
-        color="#fbbf24"
-        handleClassName="group-interactive"
-        lineClassName="group-interactive"
-        onResizeEnd={(_, p) => data.resized({ x: p.x, y: p.y, width: p.width, height: p.height })}
-      />
+      {selected &&
+        [...LINES, ...CORNERS].map((position) => (
+          <NodeResizeControl
+            key={position}
+            position={position}
+            variant={LINES.includes(position) ? ResizeControlVariant.Line : ResizeControlVariant.Handle}
+            className="group-interactive"
+            color="#fbbf24"
+            {...minSize(group, data.content, position)}
+            onResizeEnd={(_, p) => data.resized({ x: p.x, y: p.y, width: p.width, height: p.height })}
+          />
+        ))}
       <NodeToolbar
         isVisible={selected}
         position={Position.Top}
