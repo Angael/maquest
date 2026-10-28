@@ -59,6 +59,7 @@ import {
   isReferenceEdge,
   onBoard,
   entityOf,
+  freeRefKey,
   type Board,
   type EdgeType,
   type Graph,
@@ -69,7 +70,7 @@ import {
   type StoryNode,
 } from '@maquest/core/schema'
 import { api } from '../lib/api'
-import { importFiles, useCreateNode } from '../lib/actions'
+import { NODE_DRAG_TYPE, importFiles, useCreateNode } from '../lib/actions'
 import { currentBoardId, queryClient, useAction, useBoard, useGraph, useNodes } from '../lib/queries'
 import { useUI } from '../lib/store'
 import { isEditingTarget as isEditing, useDeleteEverywhere, useRemoveFromBoard } from '../lib/deletion'
@@ -874,9 +875,27 @@ export function Canvas() {
         )
           event.currentTarget.focus({ preventScroll: true })
       }}
-      onDragOver={(e) => e.preventDefault()}
+      onDragOver={(e) => {
+        e.preventDefault()
+        if (e.dataTransfer.types.includes(NODE_DRAG_TYPE)) e.dataTransfer.dropEffect = 'copy'
+      }}
       onDrop={async (e) => {
         e.preventDefault()
+        const dragged = e.dataTransfer.getData(NODE_DRAG_TYPE)
+        if (dragged) {
+          if (!board) return
+          // Centre the card under the pointer; a node already on the board gets another card.
+          const at = flow.screenToFlowPosition({ x: e.clientX, y: e.clientY })
+          const key = freeRefKey(board, dragged)
+          try {
+            await setLayout.mutateAsync([{ [key]: { x: at.x - 110, y: at.y - 40 } }, board.id])
+          } catch {
+            return // Rendered below.
+          }
+          await queryClient.refetchQueries({ queryKey: ['graph'] })
+          selectNodes([key])
+          return
+        }
         const files = await importFiles(e.dataTransfer.files)
         const pos = flow.screenToFlowPosition({ x: e.clientX, y: e.clientY })
         for (const [i, src] of files.entries()) await create('media', { title: src.split('/').pop()!, src, position: { x: pos.x + i * 30, y: pos.y + i * 30 } })

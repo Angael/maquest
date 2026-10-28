@@ -4,6 +4,9 @@ import { api } from './api'
 import { currentBoardId, queryClient } from './queries'
 import { useUI } from './store'
 
+/** dataTransfer type carrying an entity id dragged from the sidebar. */
+export const NODE_DRAG_TYPE = 'application/x-maquest-node'
+
 const refresh = () => queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] !== 'app' })
 
 /** Creates a node, drops it at the canvas center and selects it. */

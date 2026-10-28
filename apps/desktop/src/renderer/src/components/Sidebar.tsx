@@ -3,7 +3,7 @@ import clsx from 'clsx'
 import { useReactFlow } from '@xyflow/react'
 import { ChevronRight, Plus } from 'lucide-react'
 import type { NodeType, OutlineNode } from '@maquest/core/schema'
-import { useCreateNode } from '../lib/actions'
+import { NODE_DRAG_TYPE, useCreateNode } from '../lib/actions'
 import { useBoard, useNodes, useOutline } from '../lib/queries'
 import { useUI } from '../lib/store'
 import { NODE_STYLE } from '../lib/styles'
@@ -53,6 +53,11 @@ function Row({
         selected ? 'bg-stone-800 text-stone-100' : 'text-stone-300 hover:bg-stone-900',
       )}
       style={{ paddingLeft: 4 + depth * 14 }}
+      draggable
+      onDragStart={(event) => {
+        event.dataTransfer.setData(NODE_DRAG_TYPE, id)
+        event.dataTransfer.effectAllowed = 'copy'
+      }}
       onClick={(event) => {
         event.currentTarget.focus()
         focus(id)

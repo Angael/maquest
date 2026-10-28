@@ -125,3 +125,18 @@ test('boards are independent: remove keeps the entity, paste places a reference,
   await expect.poll(() => project.listNodes().length).toBe(3)
   expect(project.listNodes().filter((n) => n.type === 'character')).toHaveLength(1)
 })
+
+test('dragging a sidebar entry onto the canvas adds another card', async ({ desktop }) => {
+  const { page, project, ids } = desktop
+  const title = project.getNode(ids[0])!.title
+  const pane = page.locator('.react-flow__pane')
+  const box = await pane.boundingBox()
+  if (!box) throw new Error('Canvas has no bounds')
+  // Native drag-and-drop does not complete under Xvfb, so dispatch the HTML5 events with a shared DataTransfer.
+  const data = await page.evaluateHandle(() => new DataTransfer())
+  const at = { clientX: box.x + 60, clientY: box.y + 60, dataTransfer: data }
+  await page.locator('[data-sidebar]').getByRole('button', { name: title, exact: true }).dispatchEvent('dragstart', { dataTransfer: data })
+  await pane.dispatchEvent('dragover', at)
+  await pane.dispatchEvent('drop', at)
+  await expect.poll(() => project.board().nodes?.filter((key) => key.startsWith(ids[0])).length).toBe(2)
+})
