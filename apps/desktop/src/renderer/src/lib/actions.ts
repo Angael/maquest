@@ -1,7 +1,7 @@
-import { useReactFlow } from '@xyflow/react'
-import type { NodeType } from '@maquest/core/schema'
+import { useReactFlow, useStoreApi } from '@xyflow/react'
+import { refsOf, type NodeType } from '@maquest/core/schema'
 import { api } from './api'
-import { currentBoardId, queryClient } from './queries'
+import { currentBoardId, queryClient, useBoard, useGraph } from './queries'
 import { useUI } from './store'
 
 /** dataTransfer type carrying an entity id dragged from the sidebar. */
@@ -22,6 +22,47 @@ export function useCreateNode() {
     await refresh()
     select({ kind: 'node', id: node.id })
     return node
+  }
+}
+
+/**
+ * Selects a node and makes sure one of its cards is on screen: switches to a board that has it
+ * if the current one doesn't, and pans (keeping the zoom) only when the card is out of view.
+ */
+export function useRevealNode() {
+  const flow = useReactFlow()
+  const store = useStoreApi()
+  const { data: graph } = useGraph()
+  const current = useBoard()
+  return (id: string) => {
+    const ui = useUI.getState()
+    const onCurrent = current && refsOf(current, id).length > 0
+    const board = onCurrent ? current : graph?.boards.find((b) => refsOf(b, id).length)
+    if (board && board.id !== current?.id) ui.setBoard(board.id)
+    ui.select({ kind: 'node', id })
+    if (!board) return
+    if (!onCurrent) {
+      const pos = board.layout[refsOf(board, id)[0]]
+      // Let the canvas switch boards before moving the viewport.
+      if (pos) setTimeout(() => void flow.setCenter(pos.x + 110, pos.y + 80, { zoom: flow.getZoom(), duration: 400 }), 50)
+      return
+    }
+    const { width, height, transform } = store.getState()
+    const [tx, ty, zoom] = transform
+    const visible = (key: string) => {
+      const n = flow.getInternalNode(key)
+      if (!n) return false
+      const { x, y } = n.internals.positionAbsolute
+      const w = n.measured.width ?? 224
+      const h = n.measured.height ?? 160
+      return x * zoom + tx < width && (x + w) * zoom + tx > 0 && y * zoom + ty < height && (y + h) * zoom + ty > 0
+    }
+    const keys = refsOf(board, id)
+    if (keys.some(visible)) return
+    const n = flow.getInternalNode(keys[0])
+    const pos = n?.internals.positionAbsolute ?? board.layout[keys[0]]
+    if (!pos) return
+    void flow.setCenter(pos.x + (n?.measured.width ?? 224) / 2, pos.y + (n?.measured.height ?? 160) / 2, { zoom, duration: 400 })
   }
 }
 

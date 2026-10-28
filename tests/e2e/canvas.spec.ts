@@ -140,3 +140,23 @@ test('dragging a sidebar entry onto the canvas adds another card', async ({ desk
   await pane.dispatchEvent('drop', at)
   await expect.poll(() => project.board().nodes?.filter((key) => key.startsWith(ids[0])).length).toBe(2)
 })
+
+test('clicking a sidebar entry pans an off-screen card into view', async ({ desktop }) => {
+  const { page, project, ids } = desktop
+  const card = page.locator(`.react-flow__node[data-id="${ids[0]}"]`)
+  const pane = page.locator('.react-flow__pane')
+  const box = await pane.boundingBox()
+  if (!box) throw new Error('Canvas has no bounds')
+  // Middle-drag pans; push the card far off screen.
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down({ button: 'middle' })
+  await page.mouse.move(box.x + box.width / 2 + 3000, box.y + box.height / 2, { steps: 5 })
+  await page.mouse.up({ button: 'middle' })
+  await expect(card).not.toBeInViewport()
+  await page
+    .locator('[data-sidebar]')
+    .getByRole('button', { name: project.getNode(ids[0])!.title, exact: true })
+    .click()
+  await expect(card).toBeInViewport()
+  await expect(card).toHaveClass(/selected/)
+})

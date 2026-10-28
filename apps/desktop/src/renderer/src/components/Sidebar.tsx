@@ -1,24 +1,18 @@
 import { useId, useState } from 'react'
 import clsx from 'clsx'
-import { useReactFlow } from '@xyflow/react'
 import { ChevronRight, Plus } from 'lucide-react'
 import type { NodeType, OutlineNode } from '@maquest/core/schema'
-import { NODE_DRAG_TYPE, useCreateNode } from '../lib/actions'
-import { useBoard, useNodes, useOutline } from '../lib/queries'
+import { NODE_DRAG_TYPE, useCreateNode, useRevealNode } from '../lib/actions'
+import { useNodes, useOutline } from '../lib/queries'
 import { useUI } from '../lib/store'
 import { NODE_STYLE } from '../lib/styles'
 
 const CHILD: Partial<Record<NodeType, NodeType>> = { story: 'chapter', chapter: 'scene' }
 
 function useFocus() {
-  const flow = useReactFlow()
-  const board = useBoard()
+  const reveal = useRevealNode()
   const { select, view } = useUI()
-  return (id: string) => {
-    select({ kind: 'node', id })
-    const pos = board?.layout[id]
-    if (pos && view === 'canvas') void flow.setCenter(pos.x + 110, pos.y + 40, { zoom: 1.1, duration: 400 })
-  }
+  return (id: string) => (view === 'canvas' ? reveal(id) : select({ kind: 'node', id }))
 }
 
 function Row({
