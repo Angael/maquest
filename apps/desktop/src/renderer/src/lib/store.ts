@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { EdgeType, NodeType } from '@maquest/core/schema'
 import { entityOf } from '@maquest/core/schema'
+import type { LayoutMode } from './layout'
 
 export type View = 'canvas' | 'backlog' | 'guidelines'
 export type Selection = { kind: 'node'; id: string } | { kind: 'edge'; id: string } | null
@@ -23,6 +24,8 @@ type UI = {
   edgeLabels: 'focus' | 'always'
   /** Draw involves/located-at/member-of/owns as lines instead of chips on the card. */
   referenceLines: boolean
+  /** Algorithm the auto-layout button runs. */
+  layoutMode: LayoutMode
   setView: (v: View) => void
   select: (s: Selection) => void
   selectNodes: (ids: string[]) => void
@@ -32,6 +35,7 @@ type UI = {
   setConnectType: (t: EdgeType | 'auto') => void
   setBoard: (id: string) => void
   setGuideline: (id: string | null) => void
+  setLayoutMode: (mode: LayoutMode) => void
 }
 
 const toggle = <T>(list: T[], v: T) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v])
@@ -50,6 +54,7 @@ export const useUI = create<UI>()(
       guideline: null,
       edgeLabels: 'focus',
       referenceLines: false,
+      layoutMode: 'smart',
       setView: (view) => set({ view }),
       select: (selection) => set({ selection, selectedNodeIds: selection?.kind === 'node' ? [selection.id] : [] }),
       selectNodes: (selectedNodeIds) =>
@@ -68,6 +73,7 @@ export const useUI = create<UI>()(
       setConnectType: (connectType) => set({ connectType }),
       setBoard: (board) => set({ board, selection: null, selectedNodeIds: [] }),
       setGuideline: (guideline) => set({ guideline }),
+      setLayoutMode: (layoutMode) => set({ layoutMode }),
     }),
     {
       name: 'maquest-ui',
@@ -80,14 +86,16 @@ export const useUI = create<UI>()(
           connectType: 'auto' as const,
           edgeLabels: 'focus' as const,
           referenceLines: false,
+          layoutMode: 'smart' as const,
         }
       },
-      partialize: ({ hiddenEdges, hiddenNodes, connectType, edgeLabels, referenceLines }) => ({
+      partialize: ({ hiddenEdges, hiddenNodes, connectType, edgeLabels, referenceLines, layoutMode }) => ({
         hiddenEdges,
         hiddenNodes,
         connectType,
         edgeLabels,
         referenceLines,
+        layoutMode,
       }),
     },
   ),

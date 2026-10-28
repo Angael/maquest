@@ -79,7 +79,7 @@ import { inferConnectionType } from '../lib/connections'
 import { StoryCard, type CardData, type CardRef } from './StoryCard'
 import { FloatingConnectionLine, FloatingEdge, type FloatingFlowEdge } from './FloatingEdge'
 import { GROUP_STYLE, GroupFrame, type GroupFlowNode } from './GroupFrame'
-import { arrange } from '../lib/layout'
+import { LAYOUT_MODES, arrange } from '../lib/layout'
 
 const nodeTypes = { card: StoryCard, frame: GroupFrame }
 const edgeTypes = { floating: FloatingEdge }
@@ -1240,6 +1240,7 @@ function useAutoLayout(afterLayout: () => void) {
   const flow = useReactFlow<AnyFlowNode>()
   const setLayout = useAction(api.setLayout)
   const board = useBoard()
+  const layoutMode = useUI((s) => s.layoutMode)
   const [error, setError] = useState<Error | null>(null)
   const run = async () => {
     setError(null)
@@ -1247,7 +1248,9 @@ function useAutoLayout(afterLayout: () => void) {
     try {
       const nodes = flow.getNodes().filter(isCard)
       const cards = nodes.map((n) => ({ id: n.id, position: n.position, size: cardSize(n), pinned: n.data.node.pinned }))
-      const { positions, groups } = arrange(board, cards, flow.getEdges())
+      const pane = document.querySelector('.react-flow')?.getBoundingClientRect()
+      const aspectRatio = pane && pane.height > 0 ? pane.width / pane.height : undefined
+      const { positions, groups } = await arrange(board, cards, flow.getEdges(), { mode: layoutMode, aspectRatio })
       const sizes = Object.fromEntries(cards.map((c) => [c.id, c.size]))
       if (nodes.length || board.groups.length) await setLayout.mutateAsync([positions, board.id, { groups, sizes }])
       afterLayout()
@@ -1276,7 +1279,8 @@ function Toolbar({
 }) {
   const autoLayout = useAutoLayout(afterLayout)
   const { data: all = [] } = useNodes()
-  const { storyScope, setStoryScope } = useUI()
+  const { storyScope, setStoryScope, layoutMode, setLayoutMode } = useUI()
+  const mode = LAYOUT_MODES.find((m) => m.mode === layoutMode) ?? LAYOUT_MODES[0]
   const button = 'rounded p-1.5 text-stone-400 hover:bg-stone-800 hover:text-stone-100 disabled:cursor-not-allowed disabled:opacity-30'
   return (
     <div className="space-y-1.5">
@@ -1318,7 +1322,7 @@ function Toolbar({
         </button>
         <button
           aria-label="Auto-layout unpinned nodes"
-          title="Arrange visible nodes around pinned cards"
+          title={`Arrange visible nodes around pinned cards (${mode.label}: ${mode.hint})`}
           disabled={autoLayout.pending}
           className={button}
           onClick={() => {
@@ -1327,6 +1331,19 @@ function Toolbar({
         >
           <LayoutGrid size={16} />
         </button>
+        <select
+          aria-label="Auto-layout style"
+          title={mode.hint}
+          className="-ml-1 rounded bg-stone-800 px-1 py-1 text-xs text-stone-200 outline-amber-400"
+          value={mode.mode}
+          onChange={(e) => setLayoutMode(e.target.value as typeof layoutMode)}
+        >
+          {LAYOUT_MODES.map((m) => (
+            <option key={m.mode} value={m.mode} title={m.hint}>
+              {m.label}
+            </option>
+          ))}
+        </select>
         <button aria-label="Group selection" aria-keyshortcuts="Control+G Meta+G" title="Group selected cards (Ctrl / ⌘ G)" className={button} onClick={group}>
           <BoxSelect size={16} />
         </button>

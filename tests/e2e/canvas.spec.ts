@@ -160,3 +160,18 @@ test('clicking a sidebar entry pans an off-screen card into view', async ({ desk
   await expect(card).toBeInViewport()
   await expect(card).toHaveClass(/selected/)
 })
+
+test('auto-layout runs the chosen style and remembers it', async ({ desktop }) => {
+  const { page, project } = desktop
+  const ids = [...desktop.ids, ...['Attic', 'Garden', 'Stable', 'Chapel', 'Well', 'Gate'].map((title) => project.createNode({ type: 'location', title }).id)]
+  project.setLayout(Object.fromEntries(ids.map((id, i) => [id, { x: 100, y: 100 + i * 200 }])))
+  await expect(page.locator('.react-flow__node').filter({ hasText: 'Gate' })).toBeVisible()
+  const style = page.getByRole('combobox', { name: 'Auto-layout style' })
+  await expect(style).toHaveValue('smart')
+  await style.selectOption('grid')
+  await page.getByRole('button', { name: 'Auto-layout unpinned nodes' }).click()
+  // A column of unlinked cards is packed into several columns instead of staying one tall stack.
+  await expect.poll(() => new Set(ids.map((id) => project.board().layout[id].x)).size).toBeGreaterThan(1)
+  await page.reload()
+  await expect(page.getByRole('combobox', { name: 'Auto-layout style' })).toHaveValue('grid')
+})

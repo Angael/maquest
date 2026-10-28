@@ -1,19 +1,75 @@
 import dagre from '@dagrejs/dagre'
+import ELK, { type LayoutOptions } from 'elkjs/lib/elk.bundled.js'
 import { CARD_SIZE, GROUP_HEADER, GROUP_PAD, PHASE_WIDTH, bounds, phaseIndex, type Board, type Position, type Rect, type Size } from '@maquest/core/schema'
 
 export type LayoutCard = { id: string; position: Position; size: Size; pinned?: boolean }
 export type LayoutResult = { positions: Record<string, Position>; groups: Record<string, Rect> }
+export type LayoutMode = 'smart' | 'grid' | 'flow-right' | 'flow-down' | 'classic'
+export type LayoutOptionsInput = { mode?: LayoutMode; /** Width / height to aim for at the top level, usually the viewport's. */ aspectRatio?: number }
+
+export const LAYOUT_MODES: { mode: LayoutMode; label: string; hint: string }[] = [
+  { mode: 'smart', label: 'Smart', hint: 'Flow where cards are linked, compact grid where they are not; fits the screen' },
+  { mode: 'grid', label: 'Grid', hint: 'Pack everything into a compact grid in reading order, ignoring links' },
+  { mode: 'flow-right', label: 'Flow →', hint: 'Follow links left to right, wrapping long chains to fit the screen' },
+  { mode: 'flow-down', label: 'Flow ↓', hint: 'Follow links top to bottom' },
+  { mode: 'classic', label: 'Classic', hint: 'The original left-to-right layout' },
+]
 
 const GAP = 40
+const GROUP_ASPECT = 1.6
 const key = (id: string, group: boolean) => (group ? `group:${id}` : id)
+const elk = new ELK()
+
+type Box = { key: string; width: number; height: number }
+
+/** Top-left positions for one container's items, in an arbitrary frame. */
+async function place(items: Box[], links: [string, string][], mode: LayoutMode, aspectRatio: number): Promise<Map<string, Position>> {
+  if (mode === 'classic') {
+    const g = new dagre.graphlib.Graph().setGraph({ rankdir: 'LR', nodesep: 48, ranksep: 120 }).setDefaultEdgeLabel(() => ({}))
+    for (const item of items) g.setNode(item.key, { width: item.width, height: item.height })
+    for (const [source, target] of links) g.setEdge(source, target)
+    dagre.layout(g)
+    return new Map(items.map((item) => [item.key, { x: g.node(item.key).x - item.width / 2, y: g.node(item.key).y - item.height / 2 }]))
+  }
+  const packed = mode === 'grid' || (mode === 'smart' && !links.length)
+  const common: LayoutOptions = {
+    'elk.aspectRatio': String(aspectRatio),
+    'elk.spacing.nodeNode': String(GAP),
+    'elk.padding': '[top=0,left=0,bottom=0,right=0]',
+  }
+  const options: LayoutOptions = packed
+    ? { ...common, 'elk.algorithm': 'rectpacking' }
+    : {
+        ...common,
+        'elk.algorithm': 'layered',
+        'elk.direction': mode === 'flow-down' ? 'DOWN' : 'RIGHT',
+        'elk.separateConnectedComponents': 'true',
+        'elk.spacing.componentComponent': String(GAP * 1.5),
+        'elk.layered.spacing.nodeNodeBetweenLayers': '120',
+        'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
+        ...(mode === 'flow-right' ? { 'elk.layered.wrapping.strategy': 'MULTI_EDGE' } : {}),
+      }
+  const result = await elk.layout({
+    id: 'root',
+    layoutOptions: options,
+    children: items.map((item) => ({ id: item.key, width: item.width, height: item.height })),
+    edges: packed ? [] : links.map(([source, target], i) => ({ id: `e${i}`, sources: [source], targets: [target] })),
+  })
+  return new Map((result.children ?? []).map((c) => [c.id, { x: c.x ?? 0, y: c.y ?? 0 }]))
+}
 
 /**
- * Arranges cards bottom-up: each group lays out its own cards and subgroups (dagre, edges lifted to the
+ * Arranges cards bottom-up: each group lays out its own cards and subgroups (per `mode`, edges lifted to the
  * group's direct children), shrinks to fit, then moves as one block in its parent. Pinned cards never move;
  * a group holding a pinned card keeps its place and arranges the rest around it. Cards not passed in
  * (hidden) travel with their group untouched.
  */
-export function arrange(board: Board, cards: LayoutCard[], edges: { source: string; target: string }[]): LayoutResult {
+export async function arrange(
+  board: Board,
+  cards: LayoutCard[],
+  edges: { source: string; target: string }[],
+  { mode = 'smart', aspectRatio = 16 / 9 }: LayoutOptionsInput = {},
+): Promise<LayoutResult> {
   const card = new Map(cards.map((c) => [c.id, c]))
   const pos = new Map<string, Position>(Object.entries(board.layout).map(([id, p]) => [id, { ...p }]))
   for (const c of cards) pos.set(c.id, { ...c.position })
@@ -51,8 +107,8 @@ export function arrange(board: Board, cards: LayoutCard[], edges: { source: stri
     return null
   }
 
-  const layout = (container: string | undefined) => {
-    for (const g of childGroups(container)) layout(g)
+  const layout = async (container: string | undefined) => {
+    for (const g of childGroups(container)) await layout(g)
     type Item = { key: string; id: string; group: boolean; fixed: boolean; box: () => Rect }
     const items: Item[] = [
       ...childCards(container).map((id) => ({
@@ -65,29 +121,32 @@ export function arrange(board: Board, cards: LayoutCard[], edges: { source: stri
       ...childGroups(container).map((id) => ({ key: key(id, true), id, group: true, fixed: hasPinned(id), box: () => rect.get(id)! })),
     ]
     if (items.length) {
-      const g = new dagre.graphlib.Graph().setGraph({ rankdir: 'LR', nodesep: 48, ranksep: 120 }).setDefaultEdgeLabel(() => ({}))
-      for (const item of items) g.setNode(item.key, { width: item.box().width, height: item.box().height })
+      // Feed items in reading order so packed layouts keep the user's rough arrangement.
+      items.sort((a, b) => a.box().y - b.box().y || a.box().x - b.box().x || a.key.localeCompare(b.key))
+      const links = new Map<string, [string, string]>()
       for (const e of edges) {
         const source = representative(e.source, container)
         const target = representative(e.target, container)
-        if (source && target && source !== target) g.setEdge(source, target)
+        if (source && target && source !== target) links.set(`${source}\n${target}`, [source, target])
       }
-      dagre.layout(g)
-      const topLeft = (item: Item) => {
-        const n = g.node(item.key)
-        return { x: n.x - n.width / 2, y: n.y - n.height / 2 }
-      }
+      const placed = await place(
+        items.map((item) => ({ key: item.key, width: item.box().width, height: item.box().height })),
+        [...links.values()],
+        mode,
+        container === undefined ? aspectRatio : GROUP_ASPECT,
+      )
+      const topLeft = (item: Item) => placed.get(item.key) ?? { x: 0, y: 0 }
       const movable = items
         .filter((item) => !item.fixed)
-        .toSorted((a, b) => g.node(a.key).x - g.node(b.key).x || g.node(a.key).y - g.node(b.key).y || a.key.localeCompare(b.key))
-      // Inside a group, dagre coordinates start at the group's content origin (top level keeps dagre's own).
+        .toSorted((a, b) => topLeft(a).x - topLeft(b).x || topLeft(a).y - topLeft(b).y || a.key.localeCompare(b.key))
+      // Inside a group, layout coordinates start at the group's content origin (top level keeps the layout's own).
       const frame = container === undefined ? null : rect.get(container)!
       const minimum = bounds(movable.map((item) => ({ ...topLeft(item), width: 0, height: 0 })))
       const origin = frame && minimum ? { x: frame.x + GROUP_PAD - minimum.x, y: frame.y + GROUP_HEADER + GROUP_PAD - minimum.y } : { x: 0, y: 0 }
       const occupied = items.filter((item) => item.fixed).map((item) => item.box())
       const targets = new Map<Item, Position>()
       if (container === undefined && board.phases.length) {
-        // Keep every item in its phase column; pack each column into two lanes, in dagre order.
+        // Keep every item in its phase column; pack each column into two lanes, in layout order.
         const columns = new Map<number, Item[]>()
         for (const item of movable) {
           const x = item.box().x
@@ -96,7 +155,7 @@ export function arrange(board: Board, cards: LayoutCard[], edges: { source: stri
           columns.set(column, [...(columns.get(column) ?? []), item])
         }
         for (const [column, list] of columns) {
-          list.sort((a, b) => g.node(a.key).y - g.node(b.key).y || a.key.localeCompare(b.key))
+          list.sort((a, b) => topLeft(a).y - topLeft(b).y || a.key.localeCompare(b.key))
           const lanes = [0, 0]
           for (const item of list) {
             const { width, height } = item.box()
@@ -135,9 +194,9 @@ export function arrange(board: Board, cards: LayoutCard[], edges: { source: stri
     }
     if (container !== undefined) {
       // Shrink-wrap the group around everything it holds, hidden cards included.
-      const g = board.groups.find((x) => x.id === container)!
+      const group = board.groups.find((x) => x.id === container)!
       const content = bounds([
-        ...g.nodes.filter((n) => pos.has(n)).map((n) => ({ ...pos.get(n)!, ...(card.get(n)?.size ?? CARD_SIZE) })),
+        ...group.nodes.filter((n) => pos.has(n)).map((n) => ({ ...pos.get(n)!, ...(card.get(n)?.size ?? CARD_SIZE) })),
         ...childGroups(container).map((c) => rect.get(c)!),
       ])
       if (content)
@@ -149,7 +208,7 @@ export function arrange(board: Board, cards: LayoutCard[], edges: { source: stri
         })
     }
   }
-  layout(undefined)
+  await layout(undefined)
 
   const positions: Record<string, Position> = {}
   for (const [id, p] of pos) if (card.has(id) || groupOfCard.has(id)) positions[id] = p
