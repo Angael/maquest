@@ -1,6 +1,4 @@
 ---
-'@maquest/core': patch
-'@maquest/mcp': patch
 '@maquest/desktop': patch
 ---
 
