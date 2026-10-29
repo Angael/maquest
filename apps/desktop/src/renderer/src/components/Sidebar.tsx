@@ -73,7 +73,7 @@ function Row({
       }}
     >
       <span
-        className="w-4"
+        className="w-4 shrink-0"
         onClick={(e) => {
           e.stopPropagation()
           onToggle?.()
@@ -82,7 +82,7 @@ function Row({
         {onToggle && <ChevronRight size={14} className={clsx('text-stone-500 transition-transform', open && 'rotate-90')} />}
       </span>
       <S.icon size={14} style={{ color: S.color }} className="shrink-0" />
-      <span className="truncate">{title}</span>
+      <span className="min-w-0 truncate">{title}</span>
       {onAdd && (
         <button
           title={`Add ${CHILD[type]}`}
