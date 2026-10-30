@@ -10,6 +10,7 @@ import { Backlog } from './components/Backlog'
 import { Guidelines } from './components/Guidelines'
 import { InspectorPanel } from './components/InspectorPanel'
 import { CommandPalette } from './components/CommandPalette'
+import { UpdateToast } from './components/UpdateToast'
 import { useDeleteShortcut } from './lib/deletion'
 
 export function App() {
@@ -20,10 +21,17 @@ export function App() {
   const selection = useUI((s) => s.selection)
 
   if (isLoading) return null
-  if (!current) return <StartScreen />
+  if (!current)
+    return (
+      <>
+        <StartScreen />
+        <UpdateToast />
+      </>
+    )
 
   return (
     <ReactFlowProvider>
+      <UpdateToast />
       <div className="flex h-full flex-col">
         <CommandPalette />
         <TopBar />

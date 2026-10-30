@@ -86,6 +86,8 @@ jobs:
             apps/desktop/release/*.exe
             apps/desktop/release/*.AppImage
             apps/desktop/release/*.tar.gz
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/latest*.yml
           if-no-files-found: error
   publish:
     needs: [prepare, build]
