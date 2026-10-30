@@ -7,6 +7,12 @@ const bridge = {
     ipcRenderer.on('project:changed', listener)
     return () => void ipcRenderer.removeListener('project:changed', listener)
   },
+  onUpdateReady: (cb: (version: string) => void) => {
+    const listener = (_e: unknown, version: string) => cb(version)
+    ipcRenderer.on('update:ready', listener)
+    return () => void ipcRenderer.removeListener('update:ready', listener)
+  },
+  installUpdate: () => ipcRenderer.invoke('update:install'),
   /** Absolute path of a File dropped from the OS. */
   pathForFile: (file: File) => webUtils.getPathForFile(file),
 }

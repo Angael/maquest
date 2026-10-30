@@ -3,6 +3,7 @@ import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, ipcMain, net, protocol } from 'electron'
 import { Project } from '@maquest/core'
 import { handlers, mediaPath } from './handlers'
+import { setupUpdates } from './updater'
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'maquest-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } }])
 
@@ -49,6 +50,7 @@ app.whenReady().then(() => {
   else if (last) handlers.open(last)
 
   createWindow()
+  setupUpdates()
   app.on('activate', () => BrowserWindow.getAllWindows().length === 0 && createWindow())
 })
 

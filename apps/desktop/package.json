@@ -15,6 +15,7 @@
   "dependencies": {
     "@maquest/core": "workspace:*",
     "chokidar": "^6.0.0",
+    "electron-updater": "^6.8.11",
     "zod": "^4.6.7"
   },
   "devDependencies": {
@@ -84,6 +85,11 @@
       ],
       "category": "Office",
       "executableName": "maquest"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "Angael",
+      "repo": "maquest"
     }
   },
   "desktopName": "maquest.desktop",
