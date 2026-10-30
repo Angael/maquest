@@ -1,5 +1,12 @@
 # @maquest/desktop
 
+## 0.3.0
+
+### Minor Changes
+
+- 6cceef1: Maquest now updates itself from GitHub Releases. The Windows installer and Linux AppImage check for a new version on launch, download it in the background and offer a Restart button; if you skip it, the update installs when you quit.
+- a970ef2: Make large story rewrites easier for agents: `find` accepts several terms and shows the matching lines, `write` supports targeted find-and-replace `edits`, renaming ids with `newId` (links, connections, children and boards follow) and placing existing nodes on `boards`, and `delete` reports dangling `[[links]]` or hands everything over with `replaceWith`. Ids from titles with letters like `ł` or `ß` are now transliterated instead of cut, and agent config files are only rewritten when they change and are git-ignored in projects.
+
 ## 0.2.0
 
 ### Minor Changes
