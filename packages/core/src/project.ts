@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
+import transliterate from '@sindresorhus/transliterate'
 import { parseFrontmatter, stringifyFrontmatter } from './frontmatter'
 import { DEFAULT_GUIDELINES } from './guidelines/defaults'
 import { TEMPLATES } from './templates'
@@ -57,7 +58,50 @@ export type NodeFilter = {
   parent?: string | null
   tag?: string
   status?: Status
-  text?: string
+  /** Case-insensitive; with several terms a node matches any of them. */
+  text?: string | string[]
+}
+
+/** Find-and-replace on a body. Fails unless `find` occurs exactly once, or `all` is set. */
+export type BodyEdit = { find: string; replace: string; all?: boolean }
+
+export type TextMatch = { where: string; text: string }
+
+/** Matches [[id]] and [[id|alias]]. Ids are slugs, so they need no escaping. */
+const linkPattern = (id: string) => new RegExp(`\\[\\[${id}(\\|[^\\]]*)?\\]\\]`, 'g')
+
+/** Where the terms occur in a node: title, summary, fields and body lines, each trimmed around the match. */
+export function textMatches(n: StoryNode, terms: string[], max = 5): TextMatch[] {
+  const needles = terms.map((t) => t.toLowerCase()).filter(Boolean)
+  const places: [string, string][] = [
+    ['title', n.title],
+    ['summary', n.summary ?? ''],
+    ...Object.entries(n.fields).map(([k, v]): [string, string] => [`field ${k}`, v]),
+    ...n.body.split('\n').map((line, i): [string, string] => [`body line ${i + 1}`, line]),
+  ]
+  const out: TextMatch[] = []
+  for (const [where, value] of places) {
+    const lower = value.toLowerCase()
+    const at = Math.min(...needles.map((t) => lower.indexOf(t)).filter((i) => i >= 0))
+    if (!Number.isFinite(at)) continue
+    const start = Math.max(0, at - 50)
+    const end = Math.min(value.length, at + 90)
+    out.push({ where, text: `${start ? '…' : ''}${value.slice(start, end).trim()}${end < value.length ? '…' : ''}` })
+    if (out.length >= max) break
+  }
+  return out
+}
+
+function applyEdits(body: string, edits: BodyEdit[], id: string) {
+  for (const e of edits) {
+    const count = e.find ? body.split(e.find).length - 1 : 0
+    if (!count) throw new MaquestError(`${id}: text to replace not found: ${JSON.stringify(e.find.slice(0, 80))}`)
+    if (count > 1 && !e.all) {
+      throw new MaquestError(`${id}: text to replace occurs ${count} times; add more context or set all: true: ${JSON.stringify(e.find.slice(0, 80))}`)
+    }
+    body = body.replaceAll(e.find, () => e.replace)
+  }
+  return body
 }
 
 export type CreateNodeInput = {
@@ -96,6 +140,8 @@ export type UpdateNodeInput = {
   clock?: Clock | null
   body?: string
   appendBody?: string
+  /** Find-and-replace edits applied to the body (after `body`, before `appendBody`). */
+  edits?: BodyEdit[]
 }
 
 export type BoardPatch = {
@@ -149,9 +195,7 @@ export type LayoutExtras = {
 
 export function slugify(s: string): string {
   return (
-    s
-      .normalize('NFKD')
-      .replaceAll(/[̀-ͯ]/g, '')
+    transliterate(s)
       .toLowerCase()
       .replaceAll(/[^a-z0-9]+/g, '-')
       .replaceAll(/^-+|-+$/g, '')
@@ -257,7 +301,7 @@ export class Project {
 
   listNodes(filter: NodeFilter = {}): StoryNode[] {
     const types = filter.type ? ([] as NodeType[]).concat(filter.type) : [...NODE_TYPES]
-    const text = filter.text?.toLowerCase()
+    const terms = filter.text === undefined ? [] : ([] as string[]).concat(filter.text).map((t) => t.toLowerCase())
     const out: StoryNode[] = []
     for (const type of types) {
       const dir = path.join(this.root, TYPE_DIRS[type])
@@ -269,7 +313,10 @@ export class Project {
         if (filter.parent !== undefined && (n.parent ?? null) !== filter.parent) continue
         if (filter.tag && !n.tags.includes(filter.tag)) continue
         if (filter.status && n.status !== filter.status) continue
-        if (text && !`${n.title}\n${n.summary ?? ''}\n${n.body}\n${Object.values(n.fields).join('\n')}`.toLowerCase().includes(text)) continue
+        if (terms.length) {
+          const hay = `${n.title}\n${n.summary ?? ''}\n${n.body}\n${Object.values(n.fields).join('\n')}`.toLowerCase()
+          if (!terms.some((t) => hay.includes(t))) continue
+        }
         out.push(n)
       }
     }
@@ -360,6 +407,7 @@ export class Project {
       else fields[k] = v
     }
     let body = patch.body ?? cur.body
+    if (patch.edits?.length) body = applyEdits(body, patch.edits, id)
     if (patch.appendBody) body = `${body.trimEnd()}\n\n${patch.appendBody}\n`
     const { path: oldPath, ...rest } = cur
     const next = {
@@ -397,13 +445,89 @@ export class Project {
     return this.listNodes({ parent: id })
   }
 
-  /** Deletes a node. With `recursive`, deletes all descendants; otherwise children are detached. */
-  deleteNode(id: string, opts: { recursive?: boolean } = {}): string[] {
+  /** Nodes whose body links to `id` with [[id]]. */
+  linksTo(id: string): StoryNode[] {
+    const re = linkPattern(id)
+    return this.listNodes().filter((n) => n.id !== id && n.body.match(re))
+  }
+
+  /** Rewrites [[from]] links in every body to [[to]], keeping any |alias. Returns the ids of changed nodes. */
+  private relink(from: string, to: string): string[] {
+    const re = linkPattern(from)
+    return this.linksTo(from).map((n) => {
+      const { path: _path, ...rest } = n
+      this.writeNode({ ...rest, body: n.body.replaceAll(re, (_m, alias: string | undefined) => `[[${to}${alias ?? ''}]]`) })
+      return n.id
+    })
+  }
+
+  /** Changes a node's id: renames its file and updates children, connections, board cards and [[links]]. */
+  renameNode(id: string, newId: string): StoryNode {
+    const cur = this.requireNode(id)
+    const next = slugify(newId)
+    if (next === id) return cur
+    if (this.getNode(next)) throw new MaquestError(`Node already exists: ${next}`)
+    const { path: oldPath, ...rest } = cur
+    this.writeNode({ ...rest, id: next, updated: new Date().toISOString() })
+    fs.rmSync(path.join(this.root, oldPath), { force: true })
+    for (const child of this.children(id)) {
+      const { path: _path, ...c } = child
+      this.writeNode({ ...c, parent: next })
+    }
+    const g = this.graph()
+    this.repoint(g, id, next)
+    this.saveGraph(g)
+    this.relink(id, next)
+    return this.requireNode(next)
+  }
+
+  /** Moves connections and board cards from one node id to another, dropping duplicates. */
+  private repoint(g: Graph, from: string, to: string) {
+    const rekey = (key: string) => (entityOf(key) === from ? `${to}${key.slice(from.length)}` : key)
+    for (const e of g.edges) {
+      if (e.source === from) e.source = to
+      if (e.target === from) e.target = to
+    }
+    const seen = new Set<string>()
+    g.edges = g.edges.filter((e) => {
+      const k = `${e.source}>${e.target}>${e.type}`
+      if (e.source === e.target || seen.has(k)) return false
+      seen.add(k)
+      return true
+    })
+    for (const b of g.boards) {
+      const taken = new Set(b.nodes ?? [])
+      for (const key of refsOf(b, from)) {
+        const target = taken.has(rekey(key)) ? null : rekey(key)
+        if (target && b.layout[key]) b.layout[target] = b.layout[key]
+        delete b.layout[key]
+        if (target) taken.add(target)
+        b.nodes = b.nodes?.flatMap((k) => (k === key ? (target ? [target] : []) : [k]))
+        for (const group of b.groups) group.nodes = group.nodes.flatMap((k) => (k === key ? (target ? [target] : []) : [k]))
+      }
+    }
+  }
+
+  /**
+   * Deletes a node. With `recursive`, deletes all descendants; otherwise children are detached.
+   * With `replaceWith`, its connections, board cards and [[links]] move to that node instead of being dropped.
+   */
+  deleteNode(id: string, opts: { recursive?: boolean; replaceWith?: string } = {}): string[] {
     const n = this.requireNode(id)
+    if (opts.replaceWith !== undefined) {
+      if (opts.replaceWith === id) throw new MaquestError('A node cannot replace itself')
+      this.requireNode(opts.replaceWith)
+    }
     const deleted: string[] = []
     for (const child of this.children(id)) {
-      if (opts.recursive) deleted.push(...this.deleteNode(child.id, opts))
+      if (opts.recursive) deleted.push(...this.deleteNode(child.id, { recursive: true }))
       else this.updateNode(child.id, { parent: null })
+    }
+    if (opts.replaceWith) {
+      const g = this.graph()
+      this.repoint(g, id, opts.replaceWith)
+      this.saveGraph(g)
+      this.relink(id, opts.replaceWith)
     }
     fs.rmSync(path.join(this.root, n.path), { force: true })
     deleted.push(id)
@@ -858,13 +982,18 @@ This folder is a Maquest writing project (stories, chapters, scenes, entities, b
 `,
 ])
 
+/** Rewriting unchanged files would show up as noise in the project's git history. */
+function write(file: string, content: string) {
+  if (!fs.existsSync(file) || fs.readFileSync(file, 'utf8') !== content) writeAtomic(file, content)
+}
+
 /** Writes .mcp.json (Claude Code & others), .codex/config.toml, .cursor/mcp.json and agent instructions. */
 export function writeAgentFiles(root: string, mcp: McpLaunch) {
   const server = { command: mcp.command, args: mcp.args, ...(mcp.env ? { env: mcp.env } : {}) }
   const mcpJson = path.join(root, '.mcp.json')
   const existing = readJson<{ mcpServers?: Record<string, unknown> }>(mcpJson, {})
-  writeAtomic(mcpJson, JSON.stringify({ ...existing, mcpServers: { ...existing.mcpServers, maquest: server } }, null, 2) + '\n')
-  writeAtomic(path.join(root, '.cursor', 'mcp.json'), JSON.stringify({ mcpServers: { maquest: server } }, null, 2) + '\n')
+  write(mcpJson, JSON.stringify({ ...existing, mcpServers: { ...existing.mcpServers, maquest: server } }, null, 2) + '\n')
+  write(path.join(root, '.cursor', 'mcp.json'), JSON.stringify({ mcpServers: { maquest: server } }, null, 2) + '\n')
   const toml = `[mcp_servers.maquest]\ncommand = ${JSON.stringify(mcp.command)}\nargs = ${JSON.stringify(mcp.args)}\n${
     mcp.env
       ? `env = { ${Object.entries(mcp.env)
@@ -872,8 +1001,16 @@ export function writeAgentFiles(root: string, mcp: McpLaunch) {
           .join(', ')} }\n`
       : ''
   }`
-  writeAtomic(path.join(root, '.codex', 'config.toml'), toml)
+  write(path.join(root, '.codex', 'config.toml'), toml)
   const agents = path.join(root, 'AGENTS.md')
-  if (!fs.existsSync(agents) || LEGACY_AGENT_DOCS.has(fs.readFileSync(agents, 'utf8'))) writeAtomic(agents, AGENT_DOC)
-  if (!fs.existsSync(path.join(root, 'CLAUDE.md'))) writeAtomic(path.join(root, 'CLAUDE.md'), '@AGENTS.md\n')
+  if (!fs.existsSync(agents) || LEGACY_AGENT_DOCS.has(fs.readFileSync(agents, 'utf8'))) write(agents, AGENT_DOC)
+  if (!fs.existsSync(path.join(root, 'CLAUDE.md'))) write(path.join(root, 'CLAUDE.md'), '@AGENTS.md\n')
+  const ignore = path.join(root, '.gitignore')
+  const current = fs.existsSync(ignore) ? fs.readFileSync(ignore, 'utf8') : ''
+  const lines = new Set(current.split(/\r?\n/).map((l) => l.trim()))
+  const missing = GIT_IGNORED.filter((l) => !lines.has(l))
+  if (missing.length) write(ignore, `${current}${current && !current.endsWith('\n') ? '\n' : ''}${missing.join('\n')}\n`)
 }
+
+/** Machine-specific agent config and usage counters that don't belong in a project's history. */
+const GIT_IGNORED = ['.mcp.json', '.cursor/', '.codex/', `${GUIDELINES_DIR}/${GUIDELINE_USAGE_FILE}`]

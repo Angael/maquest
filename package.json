@@ -6,7 +6,7 @@
     "dev": "pnpm --filter @maquest/mcp build && pnpm --filter @maquest/desktop dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
-    "test": "tsx --test apps/desktop/src/main/history.test.ts packages/core/src/frontmatter.test.mjs apps/desktop/src/renderer/src/lib/connections.test.ts packages/core/src/groups.test.ts packages/core/src/boards.test.ts packages/core/src/text.test.ts apps/desktop/src/renderer/src/lib/layout.test.ts",
+    "test": "tsx --test apps/desktop/src/main/history.test.ts packages/core/src/frontmatter.test.mjs apps/desktop/src/renderer/src/lib/connections.test.ts packages/core/src/groups.test.ts packages/core/src/boards.test.ts packages/core/src/text.test.ts packages/core/src/editing.test.ts apps/desktop/src/renderer/src/lib/layout.test.ts",
     "mcp:build": "pnpm --filter @maquest/mcp build",
     "install:desktop": "bash scripts/install-desktop.sh",
     "lint": "oxlint",

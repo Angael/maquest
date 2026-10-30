@@ -15,6 +15,7 @@ import {
   refsOf,
   phaseIndex,
   slugify,
+  textMatches,
   GroupColor,
   type Board,
   EDGE_TYPES,
@@ -241,19 +242,30 @@ server.registerTool(
   'find',
   {
     title: 'Find nodes',
-    description: 'Search/list nodes. Returns one line per node (id, type, status, title, summary). All filters optional.',
+    description:
+      'Search/list nodes. Returns one line per node (id, type, status, title, summary); with text, also the matching lines (title, summary, field or body line). All filters optional.',
     inputSchema: {
       type: z.array(NodeType).optional().describe('Node types to include'),
       parent: z.string().optional().describe('Only direct children of this node id'),
       tag: z.string().optional(),
       status: Status.optional(),
-      text: z.string().optional().describe('Case-insensitive full-text match on title/summary/body/fields'),
+      text: z
+        .union([z.string(), z.array(z.string()).min(1)])
+        .optional()
+        .describe('Case-insensitive full-text match on title/summary/body/fields. Several terms match any of them, e.g. to sweep for stale references.'),
     },
     annotations: { readOnlyHint: true },
   },
   safe((a) => {
     const nodes = project().listNodes(a)
-    return nodes.length ? nodes.map(line).join('\n') : 'No matches.'
+    if (!nodes.length) return 'No matches.'
+    const terms = a.text === undefined ? [] : ([] as string[]).concat(a.text)
+    return nodes
+      .map((n) => {
+        const hits = terms.length ? textMatches(n, terms) : []
+        return [line(n), ...hits.map((h) => `    ${h.where}: ${h.text}`)].join('\n')
+      })
+      .join('\n')
   }),
 )
 
@@ -280,6 +292,7 @@ const warn = (n: StoryNode) =>
 
 const WriteItem = z.object({
   id: z.string().optional().describe('Existing node id to update. Omit to create a new node.'),
+  newId: z.string().optional().describe('On update: rename the node id. Children, connections, board cards and [[links]] in other nodes follow.'),
   type: NodeType.optional().describe('Required when creating. Changing it on update converts the node.'),
   title: z.string().optional().describe('Required when creating. A short complete phrase; never cut off with "…"'),
   parent: z.string().nullable().optional().describe('chapter→story, scene→chapter, note→story/chapter/scene. null detaches.'),
@@ -296,9 +309,20 @@ const WriteItem = z.object({
   fields: z.record(z.string(), z.string().nullable()).optional().describe('Merged into the existing fields; null removes a field'),
   body: z.string().optional().describe('Markdown body (replaces the existing body)'),
   appendBody: z.string().optional().describe('Markdown appended to the body'),
+  edits: z
+    .array(
+      z.object({
+        find: z.string().min(1).describe('Exact text in the body'),
+        replace: z.string(),
+        all: z.boolean().optional().describe('Replace every occurrence; otherwise find must occur exactly once'),
+      }),
+    )
+    .optional()
+    .describe('Targeted find-and-replace in the body. Prefer this over resending the whole body for small changes.'),
   media: z.array(z.string()).optional().describe('Attached media paths (media/...)'),
   src: z.string().optional().describe('For media nodes: media path shown on the canvas'),
   board: z.string().optional().describe('When creating: board to place the node on (default: the first board)'),
+  boards: z.array(z.string()).optional().describe('Also place the node on these boards (create or update)'),
   clock: Clock.nullable()
     .optional()
     .describe('Progress clock for fronts/threats/countdowns: {size, filled, steps[] (what happens at each segment)}. null removes it.'),
@@ -316,15 +340,21 @@ server.registerTool(
     let prose = false
     const out = nodes
       .map((n) => {
-        const wroteBody = n.body !== undefined || n.appendBody !== undefined
+        const wroteBody = n.body !== undefined || n.appendBody !== undefined || !!n.edits?.length
+        const place = (id: string) => {
+          for (const b of n.boards ?? []) p.updateBoard(p.board(b).id, { addNodes: [id] })
+          return n.boards?.length ? ` on ${n.boards.join(', ')}` : ''
+        }
         if (n.id) {
-          const { id, board: _board, ...patch } = n
-          const r = p.updateNode(id, patch)
+          const { id, newId, board: _board, boards: _boards, ...patch } = n
+          let r = p.updateNode(id, patch)
+          if (newId) r = p.renameNode(r.id, newId)
           prose ||= wroteBody && r.type === 'scene'
-          return `updated ${r.id} (${r.type}) ${r.title}${warn(r)}`
+          return `updated ${r.id}${r.id !== id ? ` (renamed from ${id})` : ''} (${r.type}) ${r.title}${place(r.id)}${warn(r)}`
         }
         if (!n.type || !n.title) throw new Error('Creating a node requires type and title')
-        const { board, ...input } = n
+        if (n.edits?.length || n.newId) throw new Error('edits and newId only apply when updating (pass id)')
+        const { board, boards: _boards, newId: _newId, edits: _edits, ...input } = n
         const target = p.board(board).id
         const r = p.createNode({
           ...input,
@@ -337,8 +367,9 @@ server.registerTool(
           body: n.appendBody ? `${n.body ?? ''}${n.appendBody}` : n.body,
         })
         p.updateBoard(target, { addNodes: [r.id] })
+        place(r.id)
         prose ||= wroteBody && r.type === 'scene'
-        return `created ${r.id} (${r.type}) ${r.title} on ${target}${warn(r)}`
+        return `created ${r.id} (${r.type}) ${r.title} on ${[target, ...(n.boards ?? []).filter((b) => b !== target)].join(', ')}${warn(r)}`
       })
       .join('\n')
     return out + (prose ? styleReminder(p) : '')
@@ -350,13 +381,29 @@ server.registerTool(
   {
     title: 'Delete nodes',
     description:
-      'Delete nodes and their connections. Children are detached unless recursive=true. Prefer moving unwanted author content into the backlog over deleting it.',
-    inputSchema: { ids: z.array(z.string()).min(1), recursive: z.boolean().optional() },
+      'Delete nodes and their connections. Children are detached unless recursive=true. Reports nodes whose bodies still link to a deleted node. Prefer moving unwanted author content into the backlog over deleting it.',
+    inputSchema: {
+      ids: z.array(z.string()).min(1),
+      recursive: z.boolean().optional(),
+      replaceWith: z
+        .string()
+        .optional()
+        .describe('Node id that takes over the connections, board cards and [[links]] of the deleted nodes (e.g. after merging or replacing a character)'),
+    },
     annotations: { destructiveHint: true },
   },
-  safe(({ ids, recursive }) => {
+  safe(({ ids, recursive, replaceWith }) => {
     const p = project()
-    return `deleted: ${ids.flatMap((id) => p.deleteNode(id, { recursive })).join(', ')}`
+    const deleted: string[] = []
+    // Ids already removed as descendants of an earlier recursive delete are skipped.
+    for (const id of ids) if (!deleted.includes(id)) deleted.push(...p.deleteNode(id, { recursive, replaceWith }))
+    const dangling = deleted.flatMap((id) => {
+      const from = p.linksTo(id)
+      return from.length ? [`- [[${id}]] still linked from: ${from.map((n) => n.id).join(', ')}`] : []
+    })
+    return [`deleted: ${deleted.join(', ')}`, dangling.length ? `Dangling links (edit them or delete with replaceWith):\n${dangling.join('\n')}` : '']
+      .filter(Boolean)
+      .join('\n')
   }),
 )
 
