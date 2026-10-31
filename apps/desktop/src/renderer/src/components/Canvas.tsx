@@ -30,6 +30,7 @@ import {
   EyeOff,
   Globe,
   LayoutGrid,
+  Lock,
   MousePointer2,
   Pencil,
   Plus,
@@ -43,6 +44,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import {
+  ALL_BOARD,
   EDGE_DESCRIPTIONS,
   EDGE_TYPES,
   CARD_SIZE,
@@ -147,13 +149,17 @@ let clipboard: { ids: string[]; board: string; pastes: number } | null = null
 /** Separates an edge id from the card keys of its extra copies (when a node has several cards). */
 const EDGE_REF = '@'
 
-const cardSize = (n: CardFlowNode) => ({ width: n.measured?.width ?? (n.data.node.type === 'media' ? 256 : 224), height: n.measured?.height ?? 160 })
+const cardSize = (n: CardFlowNode) => ({
+  width: n.measured?.width ?? (n.data.node.type === 'media' ? 288 : CARD_SIZE.width),
+  height: n.measured?.height ?? CARD_SIZE.height,
+})
 
 export function Canvas() {
   const { data: all = NONE } = useNodes()
   const { data: graph } = useGraph()
   const { selection, selectedNodeIds, select, selectNodes, hiddenEdges, hiddenNodes, storyScope, connectType, edgeLabels, referenceLines } = useUI()
   const board = useBoard()
+  const readOnly = board?.id === ALL_BOARD
   const [hovered, setHovered] = useState<{ edge?: string; node?: string }>({})
   useEffect(() => {
     if (all === NONE) return
@@ -173,6 +179,7 @@ export function Canvas() {
     workspace.current?.focus({ preventScroll: true })
   }
   const openAddMenu = (point: { x: number; y: number }) => {
+    if (readOnly) return
     setAddMenu({ ...point, position: flow.screenToFlowPosition(point) })
   }
   const spawnNode = async (type: NodeType) => {
@@ -242,6 +249,7 @@ export function Canvas() {
   const [nodeMenu, setNodeMenu] = useState<{ x: number; y: number; ids: string[] } | null>(null)
   const openNodeMenu = (event: { preventDefault: () => void; clientX: number; clientY: number }, id?: string) => {
     event.preventDefault()
+    if (readOnly) return
     const selected = useUI.getState().selectedNodeIds
     const ids = id && !selected.includes(id) ? [id] : selected
     if (!ids.length) return
@@ -289,12 +297,12 @@ export function Canvas() {
         event.preventDefault()
         copyRefs(ids)
       } else if (key === 'v' && !event.shiftKey) {
-        if (!clipboard || event.repeat) return
+        if (!clipboard || event.repeat || currentBoardId() === ALL_BOARD) return
         event.preventDefault()
         paste()
       } else if (key === 'd' && !event.shiftKey) {
         const ids = useUI.getState().selectedNodeIds
-        if (!ids.length || event.repeat) return
+        if (!ids.length || event.repeat || currentBoardId() === ALL_BOARD) return
         event.preventDefault()
         duplicateNodes(ids)
       } else if (key === 'z' || key === 'y') {
@@ -522,6 +530,20 @@ export function Canvas() {
       return changed ? next : previous
     })
   }
+  /** Positions on the read-only All canvas: one column per node type, cards stacked by their rendered height. */
+  const allLayout = useMemo(() => {
+    if (!readOnly) return null
+    const out = new Map<string, Position>()
+    const columns = NODE_TYPES.filter((t) => cards.some((c) => c.node.type === t))
+    for (const [col, type] of columns.entries()) {
+      let y = 0
+      for (const c of cards.filter((card) => card.node.type === type)) {
+        out.set(c.key, { x: col * (288 + 64), y })
+        y += (sizes[c.key]?.height ?? CARD_SIZE.height) + 32
+      }
+    }
+    return out
+  }, [readOnly, cards, sizes])
   const nodes = useMemo<AnyFlowNode[]>(
     () => [
       ...groupNodes.map((node) => {
@@ -538,10 +560,12 @@ export function Canvas() {
       }),
       ...flowNodes.map((node) => {
         const entry = local[node.id]
+        const fixed = allLayout?.get(node.id)
+        if (fixed) return { ...node, position: fixed, measured: entry?.measured }
         return entry ? { ...node, position: entry.position ?? node.position, measured: entry.measured, dragging: entry.dragging } : node
       }),
     ],
-    [groupNodes, flowNodes, local],
+    [groupNodes, flowNodes, local, allLayout],
   )
   const changeNodes = useCallback(
     (changes: NodeChange<AnyFlowNode>[]) => {
@@ -806,7 +830,7 @@ export function Canvas() {
   const makeGroup = useCallback(
     async (point?: Position) => {
       const b = boardRef.current
-      if (!b) return
+      if (!b || b.id === ALL_BOARD) return
       const ids = point ? [] : useUI.getState().selectedNodeIds.filter((id) => flow.getNode(id))
       let rect: Rect
       let parent: string | undefined
@@ -907,6 +931,7 @@ export function Canvas() {
       }}
       onDrop={async (e) => {
         e.preventDefault()
+        if (readOnly) return
         const dragged = e.dataTransfer.getData(NODE_DRAG_TYPE)
         if (dragged) {
           if (!board) return
@@ -914,7 +939,7 @@ export function Canvas() {
           const at = flow.screenToFlowPosition({ x: e.clientX, y: e.clientY })
           const key = freeRefKey(board, dragged)
           try {
-            await setLayout.mutateAsync([{ [key]: { x: at.x - 110, y: at.y - 40 } }, board.id])
+            await setLayout.mutateAsync([{ [key]: { x: at.x - 128, y: at.y - 40 } }, board.id])
           } catch {
             return // Rendered below.
           }
@@ -933,6 +958,8 @@ export function Canvas() {
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         onNodesChange={changeNodes}
+        nodesDraggable={!readOnly}
+        nodesConnectable={!readOnly}
         connectionMode={ConnectionMode.Loose}
         connectionLineComponent={FloatingConnectionLine}
         isValidConnection={isValidConnection}
@@ -989,6 +1016,7 @@ export function Canvas() {
             openAddMenu={(point) => setAddMenu(point)}
             group={() => void makeGroup().catch(() => {})}
             afterLayout={releaseLayout}
+            readOnly={readOnly}
           />
         </Panel>
         <Panel position="top-right" className="canvas-modes">
@@ -996,8 +1024,9 @@ export function Canvas() {
         </Panel>
         <Panel position="bottom-center">
           <div className="rounded-md border border-stone-800 bg-stone-950/90 px-3 py-1.5 text-[11px] text-stone-400">
-            A / right-click blank space to add · Right-click cards for actions · Ctrl+G group · Ctrl+C/V reference · Ctrl+D duplicate · Del remove from board ·
-            Middle drag to pan
+            {readOnly
+              ? 'Read-only overview of every node · Click a card to inspect it · Middle drag to pan'
+              : 'A / right-click blank space to add · Right-click cards for actions · Ctrl+G group · Ctrl+C/V reference · Ctrl+D duplicate · Del remove from board · Middle drag to pan'}
           </div>
           {error && (
             <div role="alert" className="mt-1 max-w-lg rounded bg-red-950 px-3 py-2 text-xs text-red-200">
@@ -1295,6 +1324,7 @@ function Toolbar({
   openAddMenu,
   group,
   afterLayout,
+  readOnly,
 }: {
   canUndo: boolean
   canRedo: boolean
@@ -1302,6 +1332,7 @@ function Toolbar({
   openAddMenu: (point: { x: number; y: number }) => void
   group: () => void
   afterLayout: () => void
+  readOnly: boolean
 }) {
   const autoLayout = useAutoLayout(afterLayout)
   const { data: all = [] } = useNodes()
@@ -1311,84 +1342,92 @@ function Toolbar({
   return (
     <div className="space-y-1.5">
       <BoardBar />
-      <div className="flex w-fit flex-wrap items-center gap-1.5 rounded-lg border border-stone-700/80 bg-stone-900/95 p-1.5 text-sm shadow-xl backdrop-blur">
-        <div className="relative">
+      {!readOnly && (
+        <div className="flex w-fit flex-wrap items-center gap-1.5 rounded-lg border border-stone-700/80 bg-stone-900/95 p-1.5 text-sm shadow-xl backdrop-blur">
+          <div className="relative">
+            <button
+              aria-haspopup="menu"
+              title="Add node (A or right-click canvas)"
+              className="flex items-center gap-1 rounded-md bg-amber-500 px-2.5 py-1 font-medium text-stone-950 hover:bg-amber-400"
+              onClick={(event) => {
+                const rect = event.currentTarget.getBoundingClientRect()
+                openAddMenu({ x: rect.left, y: rect.bottom + 8 })
+              }}
+            >
+              <Plus size={15} /> Add
+            </button>
+          </div>
+          <div className="mx-1 h-5 w-px bg-stone-700" />
           <button
-            aria-haspopup="menu"
-            title="Add node (A or right-click canvas)"
-            className="flex items-center gap-1 rounded-md bg-amber-500 px-2.5 py-1 font-medium text-stone-950 hover:bg-amber-400"
-            onClick={(event) => {
-              const rect = event.currentTarget.getBoundingClientRect()
-              openAddMenu({ x: rect.left, y: rect.bottom + 8 })
+            aria-label="Undo"
+            aria-keyshortcuts="Control+Z Meta+Z"
+            title="Undo (Ctrl / ⌘ Z)"
+            disabled={!canUndo}
+            className={button}
+            onClick={() => travel('undo')}
+          >
+            <Undo2 size={16} />
+          </button>
+          <button
+            aria-label="Redo"
+            aria-keyshortcuts="Control+Y Control+Shift+Z Meta+Shift+Z"
+            title="Redo (Ctrl Y / Ctrl or ⌘ Shift Z)"
+            disabled={!canRedo}
+            className={button}
+            onClick={() => travel('redo')}
+          >
+            <Redo2 size={16} />
+          </button>
+          <button
+            aria-label="Auto-layout unpinned nodes"
+            title={`Arrange visible nodes around pinned cards (${mode.label}: ${mode.hint})`}
+            disabled={autoLayout.pending}
+            className={button}
+            onClick={() => {
+              void autoLayout.run()
             }}
           >
-            <Plus size={15} /> Add
+            <LayoutGrid size={16} />
           </button>
-        </div>
-        <div className="mx-1 h-5 w-px bg-stone-700" />
-        <button
-          aria-label="Undo"
-          aria-keyshortcuts="Control+Z Meta+Z"
-          title="Undo (Ctrl / ⌘ Z)"
-          disabled={!canUndo}
-          className={button}
-          onClick={() => travel('undo')}
-        >
-          <Undo2 size={16} />
-        </button>
-        <button
-          aria-label="Redo"
-          aria-keyshortcuts="Control+Y Control+Shift+Z Meta+Shift+Z"
-          title="Redo (Ctrl Y / Ctrl or ⌘ Shift Z)"
-          disabled={!canRedo}
-          className={button}
-          onClick={() => travel('redo')}
-        >
-          <Redo2 size={16} />
-        </button>
-        <button
-          aria-label="Auto-layout unpinned nodes"
-          title={`Arrange visible nodes around pinned cards (${mode.label}: ${mode.hint})`}
-          disabled={autoLayout.pending}
-          className={button}
-          onClick={() => {
-            void autoLayout.run()
-          }}
-        >
-          <LayoutGrid size={16} />
-        </button>
-        <select
-          aria-label="Auto-layout style"
-          title={mode.hint}
-          className="-ml-1 rounded bg-stone-800 px-1 py-1 text-xs text-stone-200 outline-amber-400"
-          value={mode.mode}
-          onChange={(e) => setLayoutMode(e.target.value as typeof layoutMode)}
-        >
-          {LAYOUT_MODES.map((m) => (
-            <option key={m.mode} value={m.mode} title={m.hint}>
-              {m.label}
-            </option>
-          ))}
-        </select>
-        <button aria-label="Group selection" aria-keyshortcuts="Control+G Meta+G" title="Group selected cards (Ctrl / ⌘ G)" className={button} onClick={group}>
-          <BoxSelect size={16} />
-        </button>
-        <select
-          aria-label="Story scope"
-          className="max-w-40 rounded bg-stone-800 px-1.5 py-1 text-xs text-stone-200 outline-amber-400"
-          value={storyScope ?? ''}
-          onChange={(e) => setStoryScope(e.target.value || null)}
-        >
-          <option value="">All stories</option>
-          {all
-            .filter((n) => n.type === 'story')
-            .map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.title}
+          <select
+            aria-label="Auto-layout style"
+            title={mode.hint}
+            className="-ml-1 rounded bg-stone-800 px-1 py-1 text-xs text-stone-200 outline-amber-400"
+            value={mode.mode}
+            onChange={(e) => setLayoutMode(e.target.value as typeof layoutMode)}
+          >
+            {LAYOUT_MODES.map((m) => (
+              <option key={m.mode} value={m.mode} title={m.hint}>
+                {m.label}
               </option>
             ))}
-        </select>
-      </div>
+          </select>
+          <button
+            aria-label="Group selection"
+            aria-keyshortcuts="Control+G Meta+G"
+            title="Group selected cards (Ctrl / ⌘ G)"
+            className={button}
+            onClick={group}
+          >
+            <BoxSelect size={16} />
+          </button>
+          <select
+            aria-label="Story scope"
+            className="max-w-40 rounded bg-stone-800 px-1.5 py-1 text-xs text-stone-200 outline-amber-400"
+            value={storyScope ?? ''}
+            onChange={(e) => setStoryScope(e.target.value || null)}
+          >
+            <option value="">All stories</option>
+            {all
+              .filter((n) => n.type === 'story')
+              .map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.title}
+                </option>
+              ))}
+          </select>
+        </div>
+      )}
       {autoLayout.error && (
         <div role="alert" className="mt-2 max-w-sm rounded bg-red-950 p-2 text-xs text-red-200">
           {autoLayout.error.message}
@@ -1562,6 +1601,9 @@ function BoardBar() {
   const create = useAction(api.createBoard)
   const update = useAction(api.updateBoard)
   const remove = useAction(api.deleteBoard)
+  const reorder = useAction(api.reorderBoards)
+  const [dragged, setDragged] = useState<string | null>(null)
+  const [dropAt, setDropAt] = useState<{ id: string; after: boolean } | null>(null)
   const [editing, setEditing] = useState<'new' | 'rename' | null>(null)
   const [title, setTitle] = useState('')
   const [phasesOpen, setPhasesOpen] = useState(false)
@@ -1574,21 +1616,68 @@ function BoardBar() {
     if (editing === 'new') setBoard((await create.mutateAsync([{ title: value }])).id)
     else update.mutate([board.id, { title: value }])
   }
-  const error = create.error ?? update.error ?? remove.error
+  const error = create.error ?? update.error ?? remove.error ?? reorder.error
+  const readOnly = board.id === ALL_BOARD
+  const tab = (id: string) =>
+    clsx('shrink-0 rounded px-2 py-1 text-xs', id === board.id ? 'bg-stone-700 text-stone-50' : 'text-stone-400 hover:bg-stone-800 hover:text-stone-100')
+  const drop = (target: string, after: boolean) => {
+    if (!dragged || dragged === target) return
+    const ids = graph.boards.map((b) => b.id).filter((id) => id !== dragged)
+    ids.splice(ids.indexOf(target) + (after ? 1 : 0), 0, dragged)
+    reorder.mutate([ids])
+  }
   return (
     <div className="w-fit rounded-lg border border-stone-700/80 bg-stone-900/95 p-1 text-sm shadow-xl backdrop-blur">
       <div className="flex items-center gap-1">
         <div role="tablist" aria-label="Boards" className="flex max-w-[50vw] items-center gap-0.5 overflow-x-auto">
+          <button
+            role="tab"
+            aria-selected={readOnly}
+            onClick={() => setBoard(ALL_BOARD)}
+            title="Every node in the project (read-only)"
+            className={clsx(tab(ALL_BOARD), 'flex items-center gap-1')}
+          >
+            <Lock size={11} /> All
+          </button>
+          <div className="mx-0.5 h-4 w-px shrink-0 bg-stone-700" />
           {graph.boards.map((b) => (
             <button
               key={b.id}
               role="tab"
               aria-selected={b.id === board.id}
               onClick={() => setBoard(b.id)}
-              title={`${b.nodes?.length ?? 0} cards`}
+              title={`${b.nodes?.length ?? 0} cards · drag to reorder`}
+              draggable
+              data-board-tab={b.id}
+              onDragStart={(e) => {
+                e.dataTransfer.setData('application/x-maquest-board', b.id)
+                e.dataTransfer.effectAllowed = 'move'
+                setDragged(b.id)
+              }}
+              onDragEnd={() => {
+                setDragged(null)
+                setDropAt(null)
+              }}
+              onDragOver={(e) => {
+                if (!dragged) return
+                e.preventDefault()
+                e.stopPropagation()
+                e.dataTransfer.dropEffect = 'move'
+                const rect = e.currentTarget.getBoundingClientRect()
+                setDropAt({ id: b.id, after: e.clientX > rect.left + rect.width / 2 })
+              }}
+              onDrop={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                const rect = e.currentTarget.getBoundingClientRect()
+                drop(b.id, e.clientX > rect.left + rect.width / 2)
+                setDragged(null)
+                setDropAt(null)
+              }}
               className={clsx(
-                'shrink-0 rounded px-2 py-1 text-xs',
-                b.id === board.id ? 'bg-stone-700 text-stone-50' : 'text-stone-400 hover:bg-stone-800 hover:text-stone-100',
+                tab(b.id),
+                dragged === b.id && 'opacity-40',
+                dropAt?.id === b.id && dragged !== b.id && (dropAt.after ? 'shadow-[inset_-2px_0_0_#fbbf24]' : 'shadow-[inset_2px_0_0_#fbbf24]'),
               )}
             >
               {b.title}
@@ -1632,6 +1721,7 @@ function BoardBar() {
             <button
               aria-label="Rename board"
               title="Rename board"
+              hidden={readOnly}
               className={button}
               onClick={() => {
                 setTitle(board.title)
@@ -1645,13 +1735,14 @@ function BoardBar() {
         <button
           aria-label="Phase columns"
           aria-expanded={phasesOpen}
+          hidden={readOnly}
           title="Phase columns (acts, left to right)"
           className={clsx(button, board.phases.length && 'text-amber-300')}
           onClick={() => setPhasesOpen(!phasesOpen)}
         >
           <Columns3 size={14} />
         </button>
-        {graph.boards.length > 1 && (
+        {graph.boards.length > 1 && !readOnly && (
           <button
             aria-label="Delete board"
             title="Delete board (cards stay in the project)"
@@ -1665,7 +1756,7 @@ function BoardBar() {
           </button>
         )}
       </div>
-      {phasesOpen && <PhaseEditor key={board.id} board={board} save={(phases) => update.mutate([board.id, { phases }])} />}
+      {phasesOpen && !readOnly && <PhaseEditor key={board.id} board={board} save={(phases) => update.mutate([board.id, { phases }])} />}
       {error && (
         <div role="alert" className="mt-1 max-w-sm rounded bg-red-950 p-2 text-xs text-red-200">
           {error.message}

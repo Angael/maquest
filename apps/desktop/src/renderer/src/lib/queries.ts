@@ -1,6 +1,6 @@
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { MAIN_BOARD, type Board, type Graph } from '@maquest/core/schema'
+import { ALL_BOARD, MAIN_BOARD, type Board, type Graph, type StoryNode } from '@maquest/core/schema'
 import { api } from './api'
 import { useUI } from './store'
 
@@ -24,15 +24,23 @@ export const useConfig = () => useQuery({ queryKey: ['config'], queryFn: () => a
 /** Id of the board shown on the canvas, for imperative calls outside React. */
 export function currentBoardId() {
   const id = useUI.getState().board
+  if (id === ALL_BOARD) return id
   const boards = queryClient.getQueryData<Graph>(['graph'])?.boards
   return boards?.some((b) => b.id === id) ? id : (boards?.[0]?.id ?? MAIN_BOARD)
+}
+
+/** The built-in read-only canvas: every node except backlog ideas, laid out by the canvas itself. */
+export function allBoard(nodes: readonly StoryNode[]): Board {
+  return { id: ALL_BOARD, title: 'All', nodes: nodes.filter((n) => n.type !== 'idea').map((n) => n.id), phases: [], layout: {}, groups: [] }
 }
 
 /** The board shown on the canvas; falls back to the first board when the chosen one is gone. */
 export function useBoard(): Board | undefined {
   const { data: graph } = useGraph()
+  const { data: nodes } = useNodes()
   const id = useUI((s) => s.board)
-  return graph?.boards.find((b) => b.id === id) ?? graph?.boards[0]
+  const all = useMemo(() => (id === ALL_BOARD && nodes ? allBoard(nodes) : undefined), [id, nodes])
+  return all ?? graph?.boards.find((b) => b.id === id) ?? graph?.boards[0]
 }
 
 export function useNode(id: string | null) {

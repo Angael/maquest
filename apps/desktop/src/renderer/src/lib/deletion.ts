@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { Selection } from './store'
-import { entityOf } from '@maquest/core/schema'
+import { ALL_BOARD, entityOf } from '@maquest/core/schema'
 import { useUI } from './store'
 import { api } from './api'
 import { currentBoardId, useAction, useNodes } from './queries'
@@ -99,7 +99,7 @@ export function useDeleteShortcut() {
       const onCanvas = view === 'canvas' && !(event.target instanceof Element && event.target.closest('[data-sidebar]'))
       if (selection.kind === 'node' && onCanvas) {
         if (event.shiftKey) destroy(entities)
-        else void unplace(keys)
+        else if (currentBoardId() !== ALL_BOARD) void unplace(keys)
       } else void remove(selection, selection.kind === 'node' ? entities : [])
     }
     window.addEventListener('keydown', onKeyDown)
