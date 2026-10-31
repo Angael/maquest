@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { GRAPH_FILE, TYPE_DIRS, Graph, MaquestError, parseFrontmatter, type Board, type Edge, type Position, type Project } from '@maquest/core'
+import { GRAPH_FILE, Graph, MaquestError, parseFrontmatter, type Board, type Edge, type Position, type Project } from '@maquest/core'
 
 type Snapshot = { files: Map<string, string>; graph: Graph }
 type Change<T> = { key: string; before: T | undefined; after: T | undefined }
@@ -18,7 +18,7 @@ const LIMIT = 100
 
 function snapshot(project: Project): Snapshot {
   const files = new Map<string, string>()
-  for (const dir of new Set(Object.values(TYPE_DIRS))) {
+  for (const dir of new Set(project.types().map((t) => t.dir))) {
     const absolute = path.join(project.root, dir)
     if (!fs.existsSync(absolute)) continue
     for (const name of fs.readdirSync(absolute)) {

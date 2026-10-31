@@ -5,7 +5,7 @@ import { BookMarked, LayoutDashboard, Search } from 'lucide-react'
 import { refsOf } from '@maquest/core/schema'
 import { useBoard, useGraph, useGuidelines, useNodes } from '../lib/queries'
 import { useUI } from '../lib/store'
-import { NODE_STYLE } from '../lib/styles'
+import { useTypes } from '../lib/styles'
 import { paletteFilter } from '../lib/search'
 
 const itemClass =
@@ -16,6 +16,7 @@ export function CommandPalette() {
   const [open, setOpen] = useState(false)
   const { data: nodes = [] } = useNodes()
   const { data: graph } = useGraph()
+  const types = useTypes()
   const { data: guidelines = [] } = useGuidelines()
   const current = useBoard()
   const flow = useReactFlow()
@@ -76,7 +77,7 @@ export function CommandPalette() {
           <Command.Empty className="p-3 text-sm text-stone-500">No results.</Command.Empty>
           <Command.Group heading="Entities" className="text-[11px] text-stone-500 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1">
             {nodes.map((n) => {
-              const S = NODE_STYLE[n.type]
+              const S = types.of(n.type)
               return (
                 <Command.Item key={n.id} value={`node:${n.id}`} keywords={[n.title, S.label, ...n.tags]} onSelect={() => goNode(n.id)} className={itemClass}>
                   <S.icon size={14} style={{ color: S.color }} className="shrink-0" />

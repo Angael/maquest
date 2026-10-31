@@ -1,17 +1,33 @@
-import { BookOpen, Box, Castle, FileText, Film, Flag, Lightbulb, MapPin, Clapperboard, User, type LucideIcon } from 'lucide-react'
-import type { EdgeType, NodeType } from '@maquest/core/schema'
+import { useMemo } from 'react'
+import { icons, type LucideIcon } from 'lucide-react'
+import { projectTypes, typeInfo, type EdgeType, type NodeType, type TypeInfo } from '@maquest/core/schema'
+import { useConfig } from './queries'
 
-export const NODE_STYLE: Record<NodeType, { label: string; plural: string; icon: LucideIcon; color: string }> = {
-  story: { label: 'Story', plural: 'Stories', icon: BookOpen, color: '#f59e0b' },
-  chapter: { label: 'Chapter', plural: 'Chapters', icon: Flag, color: '#f97316' },
-  scene: { label: 'Scene', plural: 'Scenes', icon: Clapperboard, color: '#ef4444' },
-  note: { label: 'Note', plural: 'Notes', icon: FileText, color: '#a8a29e' },
-  character: { label: 'Character', plural: 'Characters', icon: User, color: '#3b82f6' },
-  location: { label: 'Location', plural: 'Locations', icon: MapPin, color: '#10b981' },
-  faction: { label: 'Faction', plural: 'Factions', icon: Castle, color: '#8b5cf6' },
-  item: { label: 'Item', plural: 'Items', icon: Box, color: '#eab308' },
-  idea: { label: 'Idea', plural: 'Backlog', icon: Lightbulb, color: '#ec4899' },
-  media: { label: 'Media', plural: 'Media', icon: Film, color: '#06b6d4' },
+const kebab = (k: string) =>
+  k
+    .replaceAll(/([a-z0-9])([A-Z])/g, '$1-$2')
+    .replaceAll(/([a-zA-Z])(\d)/g, '$1-$2')
+    .toLowerCase()
+const BY_NAME = new Map(Object.entries(icons).map(([k, icon]) => [kebab(k), icon as LucideIcon]))
+/** All lucide icon names in kebab-case (as stored in maquest.json). */
+export const ICON_NAMES = [...BY_NAME.keys()]
+const compact = (s: string) => s.replaceAll('-', '')
+const BY_COMPACT = new Map(ICON_NAMES.map((name) => [compact(name), BY_NAME.get(name)!]))
+
+export const iconFor = (name: string): LucideIcon => BY_NAME.get(name) ?? BY_COMPACT.get(compact(name)) ?? icons.Shapes
+
+export type TypeStyle = Omit<TypeInfo, 'icon'> & { icon: LucideIcon; iconName: string }
+
+const styled = (t: TypeInfo): TypeStyle => ({ ...t, icon: iconFor(t.icon), iconName: t.icon })
+
+/** The project's node types with resolved icons; `of` also covers types no longer defined. */
+export function useTypes() {
+  const { data: config } = useConfig()
+  return useMemo(() => {
+    const list = projectTypes(config ?? {}).map(styled)
+    const map = new Map(list.map((t) => [t.id, t]))
+    return { list, of: (id: NodeType): TypeStyle => map.get(id) ?? styled(typeInfo(id)) }
+  }, [config])
 }
 
 export type EdgeKind = EdgeType | 'contains'

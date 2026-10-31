@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
-import { Bot, FolderOpen, LogOut, Network, BookMarked, Lightbulb } from 'lucide-react'
+import { Bot, FolderOpen, LogOut, Network, BookMarked, Lightbulb, Shapes } from 'lucide-react'
 import { api } from '../lib/api'
 import { useCurrent, useNodes } from '../lib/queries'
 import { useUI, type View } from '../lib/store'
@@ -19,6 +19,7 @@ export function TopBar() {
     { id: 'canvas', label: 'Canvas', icon: Network },
     { id: 'backlog', label: 'Backlog', icon: Lightbulb, badge: backlog },
     { id: 'guidelines', label: 'Guidelines', icon: BookMarked },
+    { id: 'types', label: 'Types', icon: Shapes },
   ]
 
   return (

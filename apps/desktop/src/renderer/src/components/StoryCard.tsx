@@ -7,7 +7,7 @@ import type { EdgeType, NodeType, StoryNode } from '@maquest/core/schema'
 import { useUI } from '../lib/store'
 import { ClockDial } from './ClockDial'
 import { api, isVideo, mediaUrl } from '../lib/api'
-import { EDGE_STYLE, NODE_STYLE } from '../lib/styles'
+import { EDGE_STYLE, useTypes } from '../lib/styles'
 
 /** A reference edge (involves, located-at, …) drawn as a chip on its source card. */
 export type CardRef = { edge: string; type: EdgeType; id: string; title: string; nodeType: NodeType }
@@ -18,7 +18,8 @@ const sides = [Position.Top, Position.Right, Position.Bottom, Position.Left]
 
 export const StoryCard = memo(function StoryCard({ data, selected }: NodeProps<Node<CardData>>) {
   const n = data.node
-  const S = NODE_STYLE[n.type]
+  const types = useTypes()
+  const S = types.of(n.type)
   const cover = n.src ?? n.media[0]
   const isMedia = n.type === 'media'
   const update = useAction(api.updateNode)
@@ -103,7 +104,7 @@ export const StoryCard = memo(function StoryCard({ data, selected }: NodeProps<N
           {!!data.refs?.length && (
             <div className="mt-1.5 flex flex-wrap gap-1">
               {data.refs.map((r) => {
-                const T = NODE_STYLE[r.nodeType]
+                const T = types.of(r.nodeType)
                 return (
                   <button
                     key={r.edge}

@@ -50,7 +50,6 @@ import {
   CARD_SIZE,
   GROUP_HEADER,
   GROUP_PAD,
-  NODE_TYPES,
   PHASE_WIDTH,
   bounds,
   clueCounts,
@@ -77,7 +76,7 @@ import { NODE_DRAG_TYPE, importFiles, useCreateNode } from '../lib/actions'
 import { currentBoardId, queryClient, useAction, useBoard, useGraph, useNodes } from '../lib/queries'
 import { useUI } from '../lib/store'
 import { isEditingTarget as isEditing, useDeleteEverywhere, useRemoveFromBoard } from '../lib/deletion'
-import { EDGE_STYLE, NODE_STYLE, type EdgeKind } from '../lib/styles'
+import { EDGE_STYLE, useTypes, type EdgeKind, type TypeStyle } from '../lib/styles'
 import { inferConnectionType } from '../lib/connections'
 import { StoryCard, type CardData, type CardRef } from './StoryCard'
 import { FloatingConnectionLine, FloatingEdge, type FloatingFlowEdge } from './FloatingEdge'
@@ -87,19 +86,24 @@ import { LAYOUT_MODES, arrange } from '../lib/layout'
 const nodeTypes = { card: StoryCard, frame: GroupFrame }
 const edgeTypes = { floating: FloatingEdge }
 const NONE: StoryNode[] = []
-const MODES: { label: string; icon: LucideIcon; nodes: readonly NodeType[]; edges: readonly EdgeKind[] }[] = [
-  { label: 'Everything', icon: LayoutGrid, nodes: NODE_TYPES, edges: ['contains', ...EDGE_TYPES] },
-  { label: 'Story flow', icon: Route, nodes: ['story', 'chapter', 'scene', 'note'], edges: ['contains', 'leads-to', 'branches-to', 'parallel', 'foreshadows'] },
+const MODES: { label: string; icon: LucideIcon; nodes: (types: readonly TypeStyle[]) => NodeType[]; edges: readonly EdgeKind[] }[] = [
+  { label: 'Everything', icon: LayoutGrid, nodes: (types) => types.map((t) => t.id), edges: ['contains', ...EDGE_TYPES] },
+  {
+    label: 'Story flow',
+    icon: Route,
+    nodes: () => ['story', 'chapter', 'scene', 'note'],
+    edges: ['contains', 'leads-to', 'branches-to', 'parallel', 'foreshadows'],
+  },
   {
     label: 'World / entities',
     icon: Globe,
-    nodes: ['character', 'location', 'faction', 'item', 'media', 'note'],
+    nodes: (types) => [...types.filter((t) => t.entity).map((t) => t.id), 'media', 'note'],
     edges: ['link', 'involves', 'located-at', 'member-of', 'owns', 'relationship'],
   },
 ]
 
-function defaultPosition(n: StoryNode, index: number) {
-  return { x: NODE_TYPES.indexOf(n.type) * 300, y: index * 180 }
+function defaultPosition(column: number, index: number) {
+  return { x: Math.max(0, column) * 300, y: index * 180 }
 }
 
 function descendants(nodes: StoryNode[], root: string) {
@@ -159,6 +163,8 @@ export function Canvas() {
   const { data: graph } = useGraph()
   const { selection, selectedNodeIds, select, selectNodes, hiddenEdges, hiddenNodes, storyScope, connectType, edgeLabels, referenceLines } = useUI()
   const board = useBoard()
+  const types = useTypes()
+  const typeIds = useMemo(() => types.list.map((t) => t.id), [types])
   const readOnly = board?.id === ALL_BOARD
   const [hovered, setHovered] = useState<{ edge?: string; node?: string }>({})
   useEffect(() => {
@@ -384,7 +390,7 @@ export function Canvas() {
   const flowNodes = useMemo<CardFlowNode[]>(() => {
     const counters: Record<string, number> = {}
     const defaults = new Map<string, { x: number; y: number }>()
-    for (const n of all) defaults.set(n.id, defaultPosition(n, (counters[n.type] = (counters[n.type] ?? -1) + 1)))
+    for (const n of all) defaults.set(n.id, defaultPosition(typeIds.indexOf(n.type), (counters[n.type] = (counters[n.type] ?? -1) + 1)))
     const byId = new Map(all.map((n) => [n.id, n]))
     const refs = new Map<string, CardRef[]>()
     if (!referenceLines)
@@ -406,7 +412,7 @@ export function Canvas() {
       },
       selected: selectedNodeIds.includes(key),
     }))
-  }, [all, cards, graph, board, selectedNodeIds, focus, referenceLines, hiddenEdges])
+  }, [all, cards, graph, board, selectedNodeIds, focus, referenceLines, hiddenEdges, typeIds])
   // Disk (via queries) owns positions and the zustand store owns selection; React Flow only reports
   // measurements and in-flight drags, kept here until the saved layout catches up.
   const [local, setLocal] = useState<Record<string, LocalNode>>({})
@@ -534,7 +540,7 @@ export function Canvas() {
   const allLayout = useMemo(() => {
     if (!readOnly) return null
     const out = new Map<string, Position>()
-    const columns = NODE_TYPES.filter((t) => cards.some((c) => c.node.type === t))
+    const columns = [...new Set([...typeIds, ...cards.map((c) => c.node.type)])].filter((t) => cards.some((c) => c.node.type === t))
     for (const [col, type] of columns.entries()) {
       let y = 0
       for (const c of cards.filter((card) => card.node.type === type)) {
@@ -543,7 +549,7 @@ export function Canvas() {
       }
     }
     return out
-  }, [readOnly, cards, sizes])
+  }, [readOnly, cards, sizes, typeIds])
   const nodes = useMemo<AnyFlowNode[]>(
     () => [
       ...groupNodes.map((node) => {
@@ -998,7 +1004,7 @@ export function Canvas() {
           pannable
           zoomable
           ariaLabel="Graph overview — drag to pan, scroll to zoom"
-          nodeColor={(n) => (isCard(n) ? NODE_STYLE[n.data.node.type].color : 'transparent')}
+          nodeColor={(n) => (isCard(n) ? types.of(n.data.node.type).color : 'transparent')}
           nodeStrokeColor={(n) => (isCard(n) ? '#fafaf9' : GROUP_STYLE[(n as GroupFlowNode).data.group.color].border)}
           nodeStrokeWidth={2}
           nodeBorderRadius={3}
@@ -1195,6 +1201,7 @@ function AddNodeMenu({
   const [query, setQuery] = useState('')
   const missing = board ? nodes.filter((n) => !onBoard(board, n.id) && n.title.toLowerCase().includes(query.toLowerCase())).slice(0, 8) : []
   const menu = useFloatingMenu(point, close)
+  const types = useTypes()
   return (
     <div
       ref={menu}
@@ -1211,19 +1218,21 @@ function AddNodeMenu({
           <span className="text-[11px] text-stone-500">Ctrl+V</span>
         </button>
       )}
-      {NODE_TYPES.filter((type) => type !== 'media').map((type) => {
-        const style = NODE_STYLE[type]
-        return (
-          <button
-            key={type}
-            role="menuitem"
-            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-stone-800 focus:bg-stone-800 focus:outline-none"
-            onClick={() => create(type)}
-          >
-            <style.icon size={14} style={{ color: style.color }} /> {style.label}
-          </button>
-        )
-      })}
+      {types.list
+        .filter((t) => t.id !== 'media')
+        .map((style) => {
+          const type = style.id
+          return (
+            <button
+              key={type}
+              role="menuitem"
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-stone-800 focus:bg-stone-800 focus:outline-none"
+              onClick={() => create(type)}
+            >
+              <style.icon size={14} style={{ color: style.color }} /> {style.label}
+            </button>
+          )
+        })}
       <button
         role="menuitem"
         className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-stone-800 focus:bg-stone-800 focus:outline-none"
@@ -1242,7 +1251,7 @@ function AddNodeMenu({
             className="w-full rounded bg-stone-800 px-2 py-1 text-xs text-stone-100 outline-none placeholder:text-stone-500"
           />
           {missing.map((n) => {
-            const style = NODE_STYLE[n.type]
+            const style = types.of(n.type)
             return (
               <button
                 key={n.id}
@@ -1474,14 +1483,18 @@ function FilterPanel() {
   const { hiddenEdges, hiddenNodes, toggleEdge, toggleNode, connectType, setConnectType, edgeLabels, referenceLines } = useUI()
   const [advanced, setAdvanced] = useState(false)
   const connectionDescription = connectType === 'auto' ? 'Automatically choose the connection type' : EDGE_DESCRIPTIONS[connectType]
+  const types = useTypes()
+  const ids = types.list.map((t) => t.id)
   const kinds: EdgeKind[] = ['contains', ...EDGE_TYPES]
   const current = MODES.findIndex(
     (mode) =>
-      NODE_TYPES.every((t) => hiddenNodes.includes(t) === !mode.nodes.includes(t)) && kinds.every((t) => hiddenEdges.includes(t) === !mode.edges.includes(t)),
+      ids.every((t) => hiddenNodes.includes(t) === !mode.nodes(types.list).includes(t)) &&
+      kinds.every((t) => hiddenEdges.includes(t) === !mode.edges.includes(t)),
   )
   const mode = (index: number) => {
     const preset = MODES[index]
-    useUI.setState({ hiddenNodes: NODE_TYPES.filter((t) => !preset.nodes.includes(t)), hiddenEdges: kinds.filter((t) => !preset.edges.includes(t)) })
+    const shown = preset.nodes(types.list)
+    useUI.setState({ hiddenNodes: ids.filter((t) => !shown.includes(t)), hiddenEdges: kinds.filter((t) => !preset.edges.includes(t)) })
   }
   return (
     <div className="w-60 rounded-lg border border-stone-700/80 bg-stone-900/95 text-sm shadow-xl backdrop-blur">
@@ -1567,14 +1580,14 @@ function FilterPanel() {
           </div>
           <div>
             <div className="pb-1 text-[10px] tracking-wider text-stone-500 uppercase">Nodes</div>
-            {NODE_TYPES.map((t) => {
-              const S = NODE_STYLE[t]
+            {types.list.map((S) => {
+              const t = S.id
               return (
                 <button
                   key={t}
                   aria-pressed={!hiddenNodes.includes(t)}
                   onClick={(event) => {
-                    if (event.shiftKey || event.ctrlKey || event.metaKey) useUI.setState({ hiddenNodes: NODE_TYPES.filter((type) => type !== t) })
+                    if (event.shiftKey || event.ctrlKey || event.metaKey) useUI.setState({ hiddenNodes: ids.filter((type) => type !== t) })
                     else toggleNode(t)
                   }}
                   className={clsx('flex w-full items-center gap-2 rounded px-1 py-1 text-xs hover:bg-stone-800', hiddenNodes.includes(t) && 'opacity-35')}

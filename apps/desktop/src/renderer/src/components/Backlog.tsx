@@ -5,14 +5,16 @@ import type { NodeType } from '@maquest/core/schema'
 import { api } from '../lib/api'
 import { useAction, useNodes } from '../lib/queries'
 import { useUI } from '../lib/store'
-import { NODE_STYLE } from '../lib/styles'
+import { useTypes } from '../lib/styles'
 import { MarkdownPreview } from './MarkdownEditor'
 
-const PROMOTE: NodeType[] = ['note', 'scene', 'chapter', 'story', 'character', 'location', 'faction', 'item']
+const PROMOTE: NodeType[] = ['note', 'scene', 'chapter', 'story']
 
 /** The idea pile: dump anything, promote it later. */
 export function Backlog() {
   const { data: all = [] } = useNodes()
+  const types = useTypes()
+  const promote = [...PROMOTE.map(types.of), ...types.list.filter((t) => t.entity)]
   const { selection, select } = useUI()
   const create = useAction(api.createNode)
   const update = useAction(api.updateNode)
@@ -64,9 +66,9 @@ export function Backlog() {
                     onChange={(e) => update.mutate([n.id, { type: e.target.value as NodeType }])}
                   >
                     <option value="">Promote to…</option>
-                    {PROMOTE.map((t) => (
-                      <option key={t} value={t}>
-                        {NODE_STYLE[t].label}
+                    {promote.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.label}
                       </option>
                     ))}
                   </select>

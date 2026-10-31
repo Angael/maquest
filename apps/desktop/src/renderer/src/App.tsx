@@ -8,6 +8,7 @@ import { Canvas } from './components/Canvas'
 import { Inspector } from './components/Inspector'
 import { Backlog } from './components/Backlog'
 import { Guidelines } from './components/Guidelines'
+import { Types } from './components/Types'
 import { InspectorPanel } from './components/InspectorPanel'
 import { CommandPalette } from './components/CommandPalette'
 import { UpdateToast } from './components/UpdateToast'
@@ -41,8 +42,9 @@ export function App() {
             {view === 'canvas' && <Canvas />}
             {view === 'backlog' && <Backlog />}
             {view === 'guidelines' && <Guidelines />}
+            {view === 'types' && <Types />}
           </main>
-          {selection && view !== 'guidelines' && (
+          {selection && view !== 'guidelines' && view !== 'types' && (
             <InspectorPanel>
               <Inspector key={`${selection.kind}:${selection.id}`} />
             </InspectorPanel>

@@ -4,7 +4,7 @@ import type { EdgeType, NodeType } from '@maquest/core/schema'
 import { entityOf } from '@maquest/core/schema'
 import type { LayoutMode } from './layout'
 
-export type View = 'canvas' | 'backlog' | 'guidelines'
+export type View = 'canvas' | 'backlog' | 'guidelines' | 'types'
 export type Selection = { kind: 'node'; id: string } | { kind: 'edge'; id: string } | null
 
 type UI = {

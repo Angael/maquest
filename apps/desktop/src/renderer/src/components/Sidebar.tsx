@@ -6,7 +6,7 @@ import { NODE_DRAG_TYPE, useCreateNode, useRevealNode } from '../lib/actions'
 import { api } from '../lib/api'
 import { useAction, useNodes, useOutline } from '../lib/queries'
 import { useUI } from '../lib/store'
-import { NODE_STYLE } from '../lib/styles'
+import { useTypes } from '../lib/styles'
 
 /** Row being dragged in the sidebar, so siblings of the same type can show where it would land. */
 let draggedRow: { id: string; type: NodeType } | null = null
@@ -42,7 +42,7 @@ function Row({
   const [dropAt, setDropAt] = useState<'before' | 'after' | null>(null)
   const selected = useUI((s) => s.selection?.kind === 'node' && s.selection.id === id)
   const focus = useFocus()
-  const S = NODE_STYLE[type]
+  const S = useTypes().of(type)
   return (
     <div
       role="button"
@@ -198,6 +198,7 @@ export function Sidebar() {
   const { data: nodes } = useNodes()
   const of = (t: NodeType) => nodes?.filter((n) => n.type === t) ?? []
   const reorder = useAction(api.reorder)
+  const types = useTypes()
   /** Drag-and-drop within a section: rewrites the order of that type's nodes. */
   const move = (t: NodeType, target: string) => (dragged: string, after: boolean) => {
     const ids = of(t)
@@ -215,8 +216,8 @@ export function Sidebar() {
         ))}
         {!outline?.length && <div className="px-2 text-xs text-stone-600">No stories yet</div>}
       </Section>
-      {(['character', 'location', 'faction', 'item', 'note'] as const).map((t) => (
-        <Section key={t} title={NODE_STYLE[t].plural} type={t}>
+      {[...types.list.filter((t) => t.entity), types.of('note')].map(({ id: t, plural }) => (
+        <Section key={t} title={plural} type={t}>
           {of(t).map((n) => (
             <Row key={n.id} id={n.id} type={t} title={n.title} depth={0} onMove={move(t, n.id)} />
           ))}
