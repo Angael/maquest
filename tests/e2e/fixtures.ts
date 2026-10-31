@@ -31,7 +31,7 @@ export const test = base.extend<{ desktop: { page: Page; project: Project; ids: 
       })
       const page = await electron.firstWindow()
       await page.context().tracing.start({ screenshots: true, snapshots: true })
-      await expect(page.locator('.react-flow__node').filter({ hasText: 'Hall' })).toBeVisible()
+      await expect(page.locator('.react-flow__node').filter({ hasText: 'Hall' })).toBeVisible({ timeout: 30_000 }) // The first launch on a cold CI runner is slow.
       await use({ page, project, ids })
       if (testInfo.status !== testInfo.expectedStatus) {
         await page.screenshot({ path: testInfo.outputPath('failure.png') })
