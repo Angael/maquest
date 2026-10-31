@@ -1,5 +1,16 @@
 # @maquest/desktop
 
+## 0.4.0
+
+### Minor Changes
+
+- 1c30055: Reorder canvases by dragging their tabs, and reorder characters, locations, factions, items and notes by dragging them in the sidebar. A new read-only "All" canvas always shows every node. Cards are a little wider and show their full summary instead of cutting it off after two lines.
+- 947b335: Node types are now configurable per project. A new Types view lets you rename any type, change its color and pick its icon from the full Lucide set, and add your own entity types (for example "Monster") with starter fields and body. Custom types get their own folder and sidebar section, show up in the canvas filters and "Promote to…" menus, and convert to and from existing types like notes. Agents can manage types through the MCP `project` tool, and `overview` lists them.
+
+### Patch Changes
+
+- 2aa1e1d: Search palette (Ctrl+K) now ranks exact and near-exact title matches first, tolerates one-letter typos, and no longer truncates entity names in favor of their summaries.
+
 ## 0.3.0
 
 ### Minor Changes
