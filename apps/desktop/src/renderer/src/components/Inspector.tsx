@@ -6,7 +6,6 @@ import {
   EDGE_DESCRIPTIONS,
   EDGE_LABEL_MAX,
   EDGE_TYPES,
-  NODE_TYPES,
   type EdgeType,
   type NodeType,
   type Status,
@@ -19,7 +18,7 @@ import { importFiles } from '../lib/actions'
 import { useAction, useGraph, useNodes, useNode } from '../lib/queries'
 import { useUI } from '../lib/store'
 import { BEFORE_DELETE, useDeleteSelection } from '../lib/deletion'
-import { EDGE_STYLE, NODE_STYLE } from '../lib/styles'
+import { EDGE_STYLE, useTypes } from '../lib/styles'
 import { MarkdownEditor } from './MarkdownEditor'
 import { ClockDial } from './ClockDial'
 import { Button, Input, Label, Select, Textarea } from './ui'
@@ -59,6 +58,7 @@ function NodeInspector({ id }: { id: string }) {
   const node = useNode(id)
   const { data: all = [] } = useNodes()
   const { data: graph } = useGraph()
+  const types = useTypes()
   const select = useUI((s) => s.select)
   const update = useAction(api.updateNode)
   const deleteSelection = useDeleteSelection()
@@ -110,7 +110,7 @@ function NodeInspector({ id }: { id: string }) {
   }, [id, save])
 
   if (!node || !draft) return <div className="p-4 text-sm text-stone-500">Node not found.</div>
-  const S = NODE_STYLE[node.type]
+  const S = types.of(node.type)
   const change = (patch: Patch) => {
     dirty.current = true
     setDraft(applyPatch(draft, patch))
@@ -140,9 +140,9 @@ function NodeInspector({ id }: { id: string }) {
         <div>
           <Label>Type</Label>
           <Select value={node.type} onChange={(e) => update.mutate([id, { type: e.target.value as NodeType, parent: null }])}>
-            {NODE_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {NODE_STYLE[t].label}
+            {(types.list.some((t) => t.id === node.type) ? types.list : [...types.list, S]).map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.label}
               </option>
             ))}
           </Select>
