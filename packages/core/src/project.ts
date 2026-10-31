@@ -783,6 +783,16 @@ export class Project {
     return b
   }
 
+  /** Puts boards in the given order; boards not listed keep their relative order after the listed ones. */
+  reorderBoards(ids: string[]) {
+    const g = this.graph()
+    for (const id of ids) if (!g.boards.some((b) => b.id === id)) throw new MaquestError(`Board not found: ${id}`)
+    const rank = (id: string) => (ids.includes(id) ? ids.indexOf(id) : ids.length)
+    g.boards = g.boards.toSorted((a, b) => rank(a.id) - rank(b.id))
+    this.saveGraph(g)
+    return g.boards
+  }
+
   deleteBoard(id: string) {
     const g = this.graph()
     if (g.boards.length === 1 && g.boards[0].id === id) throw new MaquestError('A project needs at least one board')

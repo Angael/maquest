@@ -241,6 +241,7 @@ export const handlers = {
   deleteGroup: (board: string, id: string) => history.record(p(), () => p().deleteGroup(board, id)),
   createBoard: (input: { title: string; nodes?: string[]; phases?: string[] }) => history.record(p(), () => p().createBoard(input)),
   updateBoard: (id: string, patch: BoardPatch & { phase?: string }) => history.record(p(), () => p().updateBoard(id, patch)),
+  reorderBoards: (ids: string[]) => history.record(p(), () => p().reorderBoards(ids)),
   deleteBoard: (id: string) => history.record(p(), () => p().deleteBoard(id)),
   history: () => {
     p()
