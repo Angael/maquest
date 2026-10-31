@@ -6,6 +6,7 @@ import { refsOf } from '@maquest/core/schema'
 import { useBoard, useGraph, useGuidelines, useNodes } from '../lib/queries'
 import { useUI } from '../lib/store'
 import { NODE_STYLE } from '../lib/styles'
+import { paletteFilter } from '../lib/search'
 
 const itemClass =
   'flex h-9 cursor-pointer items-center gap-2 rounded px-2 text-sm text-stone-300 data-[selected=true]:bg-stone-800 data-[selected=true]:text-stone-100'
@@ -57,6 +58,7 @@ export function CommandPalette() {
       <Command
         label="Search"
         loop
+        filter={paletteFilter}
         className="w-[560px] overflow-hidden rounded-lg border border-stone-700 bg-stone-900 shadow-2xl"
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
@@ -78,8 +80,8 @@ export function CommandPalette() {
               return (
                 <Command.Item key={n.id} value={`node:${n.id}`} keywords={[n.title, S.label, ...n.tags]} onSelect={() => goNode(n.id)} className={itemClass}>
                   <S.icon size={14} style={{ color: S.color }} className="shrink-0" />
-                  <span className="truncate">{n.title}</span>
-                  {n.summary && <span className="truncate text-xs text-stone-500">{n.summary}</span>}
+                  <span className="max-w-[65%] shrink-0 truncate">{n.title}</span>
+                  {n.summary && <span className="min-w-0 flex-1 truncate text-xs text-stone-500">{n.summary}</span>}
                   <span className="ml-auto shrink-0 text-xs text-stone-500">{S.label}</span>
                 </Command.Item>
               )
