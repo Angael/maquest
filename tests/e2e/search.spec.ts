@@ -26,3 +26,10 @@ test('Ctrl+F opens a guideline and Escape closes the palette', async ({ desktop 
   await page.keyboard.press('Escape')
   await expect(input).toBeHidden()
 })
+
+test('Ctrl+K tolerates a one-letter typo in a title', async ({ desktop }) => {
+  const { page } = desktop
+  await page.keyboard.press('ControlOrMeta+k')
+  await page.getByPlaceholder('Search everything…').fill('cellsr')
+  await expect(page.locator('[cmdk-item][aria-selected="true"]')).toContainText('Cellar')
+})
