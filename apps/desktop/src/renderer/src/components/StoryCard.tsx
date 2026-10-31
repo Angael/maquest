@@ -30,7 +30,7 @@ export const StoryCard = memo(function StoryCard({ data, selected }: NodeProps<N
     <div
       className={clsx(
         'group relative rounded-lg border bg-stone-900 shadow-lg transition-[opacity,box-shadow]',
-        isMedia ? 'w-64' : 'w-56',
+        isMedia ? 'w-72' : 'w-64',
         selected ? 'shadow-amber-500/20 ring-2 ring-amber-400/70' : 'border-stone-800',
         data.emphasis === 'neighbor' && !selected && 'ring-1 ring-amber-200/40 shadow-amber-500/10',
         data.emphasis === 'dimmed' && 'opacity-65',
@@ -78,7 +78,7 @@ export const StoryCard = memo(function StoryCard({ data, selected }: NodeProps<N
           </div>
           <div className="mt-0.5 font-serif text-[15px] leading-snug text-stone-100">{n.title}</div>
           {(n.summary || n.fields.role) && (
-            <div className="mt-1 line-clamp-2 text-xs text-stone-400" title={n.summary || n.fields.role}>
+            <div data-card-summary className="mt-1 text-xs leading-snug break-words text-stone-400">
               {n.summary || n.fields.role}
             </div>
           )}

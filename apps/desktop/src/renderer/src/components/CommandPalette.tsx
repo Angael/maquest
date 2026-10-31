@@ -50,7 +50,7 @@ export function CommandPalette() {
     ui.select({ kind: 'node', id })
     const pos = board && board.layout[refsOf(board, id)[0]]
     // Let the canvas mount / switch boards before moving the viewport.
-    if (pos) setTimeout(() => void flow.setCenter(pos.x + 110, pos.y + 80, { zoom: 1.1, duration: 400 }), 50)
+    if (pos) setTimeout(() => void flow.setCenter(pos.x + 128, pos.y + 90, { zoom: 1.1, duration: 400 }), 50)
   }
 
   return (

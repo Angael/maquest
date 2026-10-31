@@ -17,7 +17,7 @@ export function useCreateNode() {
     const el = document.querySelector('.react-flow')?.getBoundingClientRect()
     const pos =
       opts.position ??
-      (el ? flow.screenToFlowPosition({ x: el.x + el.width / 2 - 110 + Math.random() * 60, y: el.y + el.height / 2 - 40 + Math.random() * 60 }) : undefined)
+      (el ? flow.screenToFlowPosition({ x: el.x + el.width / 2 - 128 + Math.random() * 60, y: el.y + el.height / 2 - 40 + Math.random() * 60 }) : undefined)
     const node = await api.createNode({ type, title: opts.title ?? `New ${type}`, parent: opts.parent, src: opts.src }, pos, currentBoardId(), opts.group)
     await refresh()
     select({ kind: 'node', id: node.id })
@@ -44,7 +44,7 @@ export function useRevealNode() {
     if (!onCurrent) {
       const pos = board.layout[refsOf(board, id)[0]]
       // Let the canvas switch boards before moving the viewport.
-      if (pos) setTimeout(() => void flow.setCenter(pos.x + 110, pos.y + 80, { zoom: flow.getZoom(), duration: 400 }), 50)
+      if (pos) setTimeout(() => void flow.setCenter(pos.x + 128, pos.y + 90, { zoom: flow.getZoom(), duration: 400 }), 50)
       return
     }
     const { width, height, transform } = store.getState()
@@ -53,7 +53,7 @@ export function useRevealNode() {
       const n = flow.getInternalNode(key)
       if (!n) return false
       const { x, y } = n.internals.positionAbsolute
-      const w = n.measured.width ?? 224
+      const w = n.measured.width ?? 256
       const h = n.measured.height ?? 160
       return x * zoom + tx < width && (x + w) * zoom + tx > 0 && y * zoom + ty < height && (y + h) * zoom + ty > 0
     }
@@ -62,7 +62,7 @@ export function useRevealNode() {
     const n = flow.getInternalNode(keys[0])
     const pos = n?.internals.positionAbsolute ?? board.layout[keys[0]]
     if (!pos) return
-    void flow.setCenter(pos.x + (n?.measured.width ?? 224) / 2, pos.y + (n?.measured.height ?? 160) / 2, { zoom, duration: 400 })
+    void flow.setCenter(pos.x + (n?.measured.width ?? 256) / 2, pos.y + (n?.measured.height ?? 180) / 2, { zoom, duration: 400 })
   }
 }
 

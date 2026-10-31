@@ -141,6 +141,8 @@ export const Phase = z.object({ id: z.string(), title: z.string() })
 export type Phase = z.infer<typeof Phase>
 
 export const MAIN_BOARD = 'main'
+/** Id of the built-in read-only canvas that always shows every node (never stored in graph.json). */
+export const ALL_BOARD = '@all'
 
 export const GROUP_COLORS = ['stone', 'amber', 'emerald', 'sky', 'violet', 'rose'] as const
 export const GroupColor = z.enum(GROUP_COLORS)
@@ -169,7 +171,7 @@ export type Size = { width: number; height: number }
 export const GROUP_PAD = 24
 export const GROUP_HEADER = 36
 /** Card size assumed where the real (rendered) size is unknown. */
-export const CARD_SIZE: Size = { width: 224, height: 160 }
+export const CARD_SIZE: Size = { width: 256, height: 180 }
 
 /** A canvas showing the listed nodes. `nodes` undefined only in legacy files, where it meant every node (read as such). */
 export const Board = z.object({

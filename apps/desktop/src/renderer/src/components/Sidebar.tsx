@@ -3,9 +3,13 @@ import clsx from 'clsx'
 import { ChevronRight, Plus } from 'lucide-react'
 import type { NodeType, OutlineNode } from '@maquest/core/schema'
 import { NODE_DRAG_TYPE, useCreateNode, useRevealNode } from '../lib/actions'
-import { useNodes, useOutline } from '../lib/queries'
+import { api } from '../lib/api'
+import { useAction, useNodes, useOutline } from '../lib/queries'
 import { useUI } from '../lib/store'
 import { NODE_STYLE } from '../lib/styles'
+
+/** Row being dragged in the sidebar, so siblings of the same type can show where it would land. */
+let draggedRow: { id: string; type: NodeType } | null = null
 
 const CHILD: Partial<Record<NodeType, NodeType>> = { story: 'chapter', chapter: 'scene' }
 
@@ -23,6 +27,7 @@ function Row({
   open,
   onToggle,
   onAdd,
+  onMove,
 }: {
   id: string
   type: NodeType
@@ -31,7 +36,10 @@ function Row({
   open?: boolean
   onToggle?: () => void
   onAdd?: () => void
+  /** Drop handler for reordering: moves the dragged sibling before or after this row. */
+  onMove?: (dragged: string, after: boolean) => void
 }) {
+  const [dropAt, setDropAt] = useState<'before' | 'after' | null>(null)
   const selected = useUI((s) => s.selection?.kind === 'node' && s.selection.id === id)
   const focus = useFocus()
   const S = NODE_STYLE[type]
@@ -45,12 +53,35 @@ function Row({
       className={clsx(
         'group flex h-7 cursor-pointer items-center gap-1 rounded pr-1 text-sm outline-none focus-visible:ring-1 focus-visible:ring-amber-500/60',
         selected ? 'bg-stone-800 text-stone-100' : 'text-stone-300 hover:bg-stone-900',
+        dropAt === 'before' && 'shadow-[inset_0_2px_0_#fbbf24]',
+        dropAt === 'after' && 'shadow-[inset_0_-2px_0_#fbbf24]',
       )}
+      data-row={id}
       style={{ paddingLeft: 4 + depth * 14 }}
       draggable
       onDragStart={(event) => {
         event.dataTransfer.setData(NODE_DRAG_TYPE, id)
-        event.dataTransfer.effectAllowed = 'copy'
+        event.dataTransfer.effectAllowed = 'copyMove'
+        draggedRow = { id, type }
+      }}
+      onDragEnd={() => {
+        draggedRow = null
+      }}
+      onDragOver={(event) => {
+        if (!onMove || !draggedRow || draggedRow.type !== type || draggedRow.id === id) return
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'move'
+        const rect = event.currentTarget.getBoundingClientRect()
+        setDropAt(event.clientY > rect.top + rect.height / 2 ? 'after' : 'before')
+      }}
+      onDragLeave={() => setDropAt(null)}
+      onDrop={(event) => {
+        setDropAt(null)
+        if (!onMove || !draggedRow || draggedRow.type !== type || draggedRow.id === id) return
+        event.preventDefault()
+        const rect = event.currentTarget.getBoundingClientRect()
+        onMove(draggedRow.id, event.clientY > rect.top + rect.height / 2)
+        draggedRow = null
       }}
       onClick={(event) => {
         event.currentTarget.focus()
@@ -166,6 +197,15 @@ export function Sidebar() {
   const { data: outline } = useOutline()
   const { data: nodes } = useNodes()
   const of = (t: NodeType) => nodes?.filter((n) => n.type === t) ?? []
+  const reorder = useAction(api.reorder)
+  /** Drag-and-drop within a section: rewrites the order of that type's nodes. */
+  const move = (t: NodeType, target: string) => (dragged: string, after: boolean) => {
+    const ids = of(t)
+      .map((n) => n.id)
+      .filter((id) => id !== dragged)
+    ids.splice(ids.indexOf(target) + (after ? 1 : 0), 0, dragged)
+    reorder.mutate([ids])
+  }
 
   return (
     <aside data-sidebar className="w-64 max-w-[30vw] shrink-0 overflow-y-auto border-r border-stone-800 bg-stone-950 p-2">
@@ -178,7 +218,7 @@ export function Sidebar() {
       {(['character', 'location', 'faction', 'item', 'note'] as const).map((t) => (
         <Section key={t} title={NODE_STYLE[t].plural} type={t}>
           {of(t).map((n) => (
-            <Row key={n.id} id={n.id} type={t} title={n.title} depth={0} />
+            <Row key={n.id} id={n.id} type={t} title={n.title} depth={0} onMove={move(t, n.id)} />
           ))}
         </Section>
       ))}

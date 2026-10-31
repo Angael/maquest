@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { GROUP_HEADER, GROUP_PAD, Project } from './index'
+import { CARD_SIZE, GROUP_HEADER, GROUP_PAD, Project } from './index'
 
 function fixture(t: { after: (fn: () => void) => void }) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'maquest-groups-'))
@@ -22,7 +22,12 @@ test('a group created around cards wraps them tightly', (t) => {
   const g = p.createGroup('main', { title: 'Tavern', nodes: [a.id, b.id] })
   assert.deepEqual(
     { x: g.x, y: g.y, width: g.width, height: g.height },
-    { x: -GROUP_PAD, y: -GROUP_PAD - GROUP_HEADER, width: 624 + 2 * GROUP_PAD, height: 260 + 2 * GROUP_PAD + GROUP_HEADER },
+    {
+      x: -GROUP_PAD,
+      y: -GROUP_PAD - GROUP_HEADER,
+      width: 400 + CARD_SIZE.width + 2 * GROUP_PAD,
+      height: 100 + CARD_SIZE.height + 2 * GROUP_PAD + GROUP_HEADER,
+    },
   )
 })
 

@@ -42,3 +42,15 @@ test('a board can show one node on several cards; deleting the node removes them
   assert.deepEqual(p.board().nodes, [])
   assert.deepEqual(p.board().layout, {})
 })
+
+test('boards can be reordered', () => {
+  const p = tmp()
+  p.createBoard({ title: 'Second' })
+  p.createBoard({ title: 'Third' })
+  p.reorderBoards(['third', 'main'])
+  assert.deepEqual(
+    p.boards().map((b) => b.id),
+    ['third', 'main', 'second'],
+  )
+  assert.throws(() => p.reorderBoards(['nope']))
+})
