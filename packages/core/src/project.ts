@@ -32,10 +32,14 @@ import {
   GuidelineScope,
   PHASE_WIDTH,
   Phase,
-  NODE_TYPES,
   NodeMeta,
   ProjectConfig,
   TYPE_DIRS,
+  isBuiltinType,
+  TYPE_ID,
+  projectTypes,
+  TypeDef,
+  type TypeInfo,
   type Guideline,
   type NodeType,
   type ProjectKind,
@@ -282,6 +286,68 @@ export class Project {
     return next
   }
 
+  // ---------- types ----------
+
+  /** Built-in and custom node types with their effective label, color, icon and folder. */
+  types(): TypeInfo[] {
+    return projectTypes(this.config())
+  }
+
+  type(id: NodeType): TypeInfo {
+    const t = this.types().find((x) => x.id === id)
+    if (!t)
+      throw new MaquestError(
+        `Unknown node type: ${id}. Types: ${this.types()
+          .map((x) => x.id)
+          .join(', ')}`,
+      )
+    return t
+  }
+
+  /**
+   * Adds, changes or removes node types. A def is merged into the current one (fields set to null are dropped);
+   * null resets a built-in type to its defaults or removes a custom type, which must have no nodes left.
+   */
+  setTypes(patch: Record<string, Partial<Record<keyof TypeDef, unknown>> | null>): TypeInfo[] {
+    const config = this.config()
+    const defs: Record<string, TypeDef> = { ...config.types }
+    for (const [id, change] of Object.entries(patch)) {
+      if (!TYPE_ID.test(id)) throw new MaquestError(`Invalid type id "${id}": use a lowercase slug, e.g. "monster"`)
+      if (change === null) {
+        if (!isBuiltinType(id) && defs[id]) {
+          const count = this.listNodes({ type: id }).length
+          if (count) throw new MaquestError(`Type ${id} still has ${count} node${count === 1 ? '' : 's'}; convert or delete them first`)
+        }
+        delete defs[id]
+        continue
+      }
+      const merged: Record<string, unknown> = { ...defs[id] }
+      for (const [k, v] of Object.entries(change)) {
+        if (v === null || v === undefined || v === '') delete merged[k]
+        else merged[k] = v
+      }
+      if (isBuiltinType(id) && (merged.dir || merged.fields || merged.body !== undefined)) {
+        throw new MaquestError(`Built-in type ${id}: only label, plural, color and icon can be changed`)
+      }
+      const def = TypeDef.parse(merged)
+      if (!isBuiltinType(id) && defs[id]?.dir !== def.dir && defs[id] && this.listNodes({ type: id }).length) {
+        throw new MaquestError(`Type ${id} has nodes; its folder cannot change`)
+      }
+      // An empty override of a built-in is just its defaults; custom types exist through their entry.
+      if (Object.keys(def).length || !isBuiltinType(id)) defs[id] = def
+      else delete defs[id]
+    }
+    const types = projectTypes({ types: defs })
+    const reserved = new Set([GUIDELINES_DIR, MEDIA_DIR])
+    for (const t of types) {
+      if (reserved.has(t.dir)) throw new MaquestError(`Type ${t.id}: folder "${t.dir}" is reserved`)
+      reserved.add(t.dir)
+    }
+    this.updateConfig({ types: Object.keys(defs).length ? defs : undefined })
+    for (const t of types) fs.mkdirSync(path.join(this.root, t.dir), { recursive: true })
+    return types
+  }
+
   // ---------- nodes ----------
 
   private readNodeFile(file: string): StoryNode | null {
@@ -295,16 +361,20 @@ export class Project {
     }
   }
 
-  private nodeFile(type: NodeType, id: string) {
-    return path.join(this.root, TYPE_DIRS[type], `${id}.md`)
+  private nodeFile(type: NodeType, id: string, types = this.types()) {
+    const t = types.find((x) => x.id === type)
+    if (!t) throw new MaquestError(`Unknown node type: ${type}. Types: ${types.map((x) => x.id).join(', ')}`)
+    return path.join(this.root, t.dir, `${id}.md`)
   }
 
   listNodes(filter: NodeFilter = {}): StoryNode[] {
-    const types = filter.type ? ([] as NodeType[]).concat(filter.type) : [...NODE_TYPES]
+    const all = this.types()
+    const wanted = filter.type ? ([] as NodeType[]).concat(filter.type) : null
+    const types = wanted ? all.filter((t) => wanted.includes(t.id)) : all
     const terms = filter.text === undefined ? [] : ([] as string[]).concat(filter.text).map((t) => t.toLowerCase())
     const out: StoryNode[] = []
-    for (const type of types) {
-      const dir = path.join(this.root, TYPE_DIRS[type])
+    for (const { id: type, dir: folder } of types) {
+      const dir = path.join(this.root, folder)
       if (!fs.existsSync(dir)) continue
       for (const f of fs.readdirSync(dir)) {
         if (!f.endsWith('.md')) continue
@@ -324,8 +394,8 @@ export class Project {
   }
 
   getNode(id: string): StoryNode | null {
-    for (const type of NODE_TYPES) {
-      const file = this.nodeFile(type, id)
+    for (const { dir } of this.types()) {
+      const file = path.join(this.root, dir, `${id}.md`)
       if (fs.existsSync(file)) {
         const n = this.readNodeFile(file)
         if (n) return n
@@ -363,7 +433,13 @@ export class Project {
 
   createNode(input: CreateNodeInput): StoryNode {
     this.checkParent(input.type, input.parent)
-    const tpl = input.template === false ? undefined : TEMPLATES[input.type]
+    const info = this.type(input.type)
+    const tpl =
+      input.template === false
+        ? undefined
+        : info.builtin
+          ? TEMPLATES[input.type]
+          : { fields: Object.fromEntries(info.fields.map((f) => [f, ''])), body: info.body }
     const id = this.uniqueId(input.title)
     const now = new Date().toISOString()
     const order =
@@ -398,6 +474,7 @@ export class Project {
   updateNode(id: string, patch: UpdateNodeInput): StoryNode {
     const cur = this.requireNode(id)
     const type = patch.type ?? cur.type
+    if (patch.type) this.type(type)
     const parent = patch.parent === null ? undefined : (patch.parent ?? cur.parent)
     this.checkParent(type, parent)
     if (parent === id) throw new MaquestError('A node cannot be its own parent')

@@ -1,14 +1,19 @@
 import { z } from 'zod'
 
+/** Built-in node types. Projects can add their own entity types (see `ProjectConfig.types`). */
 export const NODE_TYPES = ['story', 'chapter', 'scene', 'note', 'character', 'location', 'faction', 'item', 'idea', 'media'] as const
-export const NodeType = z.enum(NODE_TYPES)
-export type NodeType = z.infer<typeof NodeType>
+export type BuiltinType = (typeof NODE_TYPES)[number]
+export const TYPE_ID = /^[a-z][a-z0-9-]*$/
+/** A built-in or project-defined type id (lowercase slug). */
+export const NodeType = z.string().regex(TYPE_ID, 'type ids are lowercase slugs, e.g. "monster"')
+export type NodeType = string
+export const isBuiltinType = (t: string): t is BuiltinType => (NODE_TYPES as readonly string[]).includes(t)
 
-export const ENTITY_TYPES = ['character', 'location', 'faction', 'item'] as const satisfies readonly NodeType[]
-export const STRUCTURE_TYPES = ['story', 'chapter', 'scene'] as const satisfies readonly NodeType[]
+export const ENTITY_TYPES = ['character', 'location', 'faction', 'item'] as const satisfies readonly BuiltinType[]
+export const STRUCTURE_TYPES = ['story', 'chapter', 'scene'] as const satisfies readonly BuiltinType[]
 
-/** Folder (relative to project root) each node type is stored in. */
-export const TYPE_DIRS: Record<NodeType, string> = {
+/** Folder (relative to project root) each built-in node type is stored in. */
+export const TYPE_DIRS: Record<BuiltinType, string> = {
   story: 'stories',
   chapter: 'chapters',
   scene: 'scenes',
@@ -327,10 +332,101 @@ export const PROJECT_KINDS = ['novel', 'screenplay', 'rpg', 'mixed'] as const
 export const ProjectKind = z.enum(PROJECT_KINDS)
 export type ProjectKind = z.infer<typeof ProjectKind>
 
+const HEX_COLOR = /^#[0-9a-f]{6}$/i
+
+/** Look of a node type: built-in defaults; projects may override any of these and add their own types. */
+export const TypeDef = z.object({
+  label: z.string().min(1).optional(),
+  plural: z.string().min(1).optional(),
+  color: z.string().regex(HEX_COLOR, 'color must be #rrggbb').optional(),
+  /** Lucide icon name in kebab-case, e.g. "skull". */
+  icon: z
+    .string()
+    .regex(/^[a-z0-9-]+$/, 'icon must be a kebab-case lucide icon name')
+    .optional(),
+  /** Custom types only: folder the nodes live in (default: the plural of the id). */
+  dir: z.string().regex(TYPE_ID).optional(),
+  /** Custom types only: starter fields for new nodes. */
+  fields: z.array(z.string().min(1)).optional(),
+  /** Custom types only: starter body for new nodes. */
+  body: z.string().optional(),
+})
+export type TypeDef = z.infer<typeof TypeDef>
+
+export const BUILTIN_TYPE_DEFS: Record<BuiltinType, { label: string; plural: string; color: string; icon: string }> = {
+  story: { label: 'Story', plural: 'Stories', icon: 'book-open', color: '#f59e0b' },
+  chapter: { label: 'Chapter', plural: 'Chapters', icon: 'flag', color: '#f97316' },
+  scene: { label: 'Scene', plural: 'Scenes', icon: 'clapperboard', color: '#ef4444' },
+  note: { label: 'Note', plural: 'Notes', icon: 'file-text', color: '#a8a29e' },
+  character: { label: 'Character', plural: 'Characters', icon: 'user', color: '#3b82f6' },
+  location: { label: 'Location', plural: 'Locations', icon: 'map-pin', color: '#10b981' },
+  faction: { label: 'Faction', plural: 'Factions', icon: 'castle', color: '#8b5cf6' },
+  item: { label: 'Item', plural: 'Items', icon: 'box', color: '#eab308' },
+  idea: { label: 'Idea', plural: 'Backlog', icon: 'lightbulb', color: '#ec4899' },
+  media: { label: 'Media', plural: 'Media', icon: 'film', color: '#06b6d4' },
+}
+
+/** A node type as the project sees it: built-in defaults merged with overrides, or a custom type. */
+export type TypeInfo = {
+  id: NodeType
+  label: string
+  plural: string
+  color: string
+  icon: string
+  dir: string
+  builtin: boolean
+  /** Character-like things referenced from scenes (all custom types are entities). */
+  entity: boolean
+  fields: string[]
+  body: string
+}
+
+const titleCase = (s: string) => s.replaceAll('-', ' ').replace(/^./, (c) => c.toUpperCase())
+const pluralOf = (s: string) => (/(s|x|ch|sh)$/.test(s) ? `${s}es` : /[^aeiou]y$/.test(s) ? `${s.slice(0, -1)}ies` : `${s}s`)
+
+export function typeInfo(id: NodeType, def: TypeDef = {}): TypeInfo {
+  if (isBuiltinType(id)) {
+    const base = BUILTIN_TYPE_DEFS[id]
+    return {
+      id,
+      label: def.label ?? base.label,
+      plural: def.plural ?? base.plural,
+      color: def.color ?? base.color,
+      icon: def.icon ?? base.icon,
+      dir: TYPE_DIRS[id],
+      builtin: true,
+      entity: (ENTITY_TYPES as readonly string[]).includes(id),
+      fields: [],
+      body: '',
+    }
+  }
+  const label = def.label ?? titleCase(id)
+  return {
+    id,
+    label,
+    plural: def.plural ?? pluralOf(label),
+    color: def.color ?? '#94a3b8',
+    icon: def.icon ?? 'shapes',
+    dir: def.dir ?? pluralOf(id),
+    builtin: false,
+    entity: true,
+    fields: def.fields ?? [],
+    body: def.body ?? '',
+  }
+}
+
+/** Every type of a project: built-ins first (in their usual order), then custom types in config order. */
+export function projectTypes(config: { types?: Record<string, TypeDef> }): TypeInfo[] {
+  const defs = config.types ?? {}
+  return [...NODE_TYPES, ...Object.keys(defs).filter((id) => !isBuiltinType(id))].map((id) => typeInfo(id, defs[id]))
+}
+
 export const ProjectConfig = z.object({
   name: z.string(),
   kind: ProjectKind.default('mixed'),
   description: z.string().optional(),
+  /** Overrides for built-in types and definitions of custom ones, keyed by type id. */
+  types: z.record(NodeType, TypeDef).optional(),
   version: z.literal(1).default(1),
 })
 export type ProjectConfig = z.infer<typeof ProjectConfig>

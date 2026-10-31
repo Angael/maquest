@@ -19,12 +19,13 @@ import {
   GroupColor,
   type Board,
   EDGE_TYPES,
-  ENTITY_TYPES,
+  TypeDef,
   EdgeType,
   EdgeHandle,
   GuidelineScope,
   STYLE_GUIDELINE_ID,
   NodeType,
+  NODE_TYPES,
   Project,
   ProjectKind,
   Status,
@@ -209,7 +210,16 @@ server.registerTool(
     return [
       `# ${c.name} (${c.kind})${c.description ? `\n${c.description}` : ''}`,
       `## Outline\n${outlineText(p.outline()) || '(no stories yet)'}`,
-      ...ENTITY_TYPES.map((t) => section(`${t[0].toUpperCase()}${t.slice(1)}s`, byType(t))),
+      (() => {
+        const custom = p.types().filter((t) => !t.builtin)
+        return custom.length
+          ? `## Custom types\n${custom.map((t) => `- ${t.id}: ${t.label}${t.fields.length ? ` (fields: ${t.fields.join(', ')})` : ''}`).join('\n')}`
+          : ''
+      })(),
+      ...p
+        .types()
+        .filter((t) => t.entity)
+        .map((t) => section(t.plural, byType(t.id))),
       section('Notes', byType('note')),
       section('Backlog', byType('idea')),
       section('Media nodes', byType('media')),
@@ -293,7 +303,9 @@ const warn = (n: StoryNode) =>
 const WriteItem = z.object({
   id: z.string().optional().describe('Existing node id to update. Omit to create a new node.'),
   newId: z.string().optional().describe('On update: rename the node id. Children, connections, board cards and [[links]] in other nodes follow.'),
-  type: NodeType.optional().describe('Required when creating. Changing it on update converts the node.'),
+  type: NodeType.optional().describe(
+    `Required when creating: ${NODE_TYPES.join(', ')} or a custom type listed in overview. Changing it on update converts the node.`,
+  ),
   title: z.string().optional().describe('Required when creating. A short complete phrase; never cut off with "…"'),
   parent: z.string().nullable().optional().describe('chapter→story, scene→chapter, note→story/chapter/scene. null detaches.'),
   order: z.number().optional().describe('Position among siblings'),
@@ -596,15 +608,21 @@ server.registerTool(
   {
     title: 'Project settings',
     description:
-      'Update project settings (name, kind: novel|screenplay|rpg|mixed, description; kind selects which guidelines apply), or init a new project in the current directory.',
+      'Update project settings (name, kind: novel|screenplay|rpg|mixed, description; kind selects which guidelines apply), add/edit node types, or init a new project in the current directory.',
     inputSchema: {
       action: z.enum(['update', 'init']),
       name: z.string().optional(),
       kind: ProjectKind.optional(),
       description: z.string().optional(),
+      types: z
+        .record(z.string(), TypeDef.partial().nullable())
+        .optional()
+        .describe(
+          'Add or change node types by id, e.g. {"monster": {"label": "Monster", "icon": "skull", "color": "#dc2626", "fields": ["threat", "habitat"]}}. Custom types are entities stored in their own folder. Built-ins accept label/plural/color/icon only. null resets a built-in or removes an empty custom type.',
+        ),
     },
   },
-  safe(({ action, name, kind, description }) => {
+  safe(({ action, name, kind, description, types }) => {
     if (action === 'init') {
       const root = path.resolve(startDir)
       const p = Project.init(root, {
@@ -619,8 +637,10 @@ server.registerTool(
       })
       return `initialized ${p.config().name} at ${p.root}`
     }
-    const c = project().updateConfig({ name, kind, description })
-    return `project: ${c.name} (${c.kind})`
+    const p = project()
+    const all = types ? p.setTypes(types) : undefined
+    const c = name || kind || description !== undefined ? p.updateConfig({ name, kind, description }) : p.config()
+    return `project: ${c.name} (${c.kind})${all ? `\ntypes: ${all.map((t) => t.id).join(', ')}` : ''}`
   }),
 )
 
