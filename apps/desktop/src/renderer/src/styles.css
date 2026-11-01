@@ -169,7 +169,7 @@ body {
   @apply rounded bg-stone-800 px-1 font-mono text-[13px];
 }
 .cm-md-link {
-  @apply text-amber-400 underline;
+  @apply cursor-pointer text-amber-400 underline;
 }
 .cm-md-quote {
   @apply border-l-2 border-amber-500/60 pl-3! text-stone-400 italic;
@@ -194,4 +194,17 @@ body {
 }
 .cm-placeholder {
   @apply text-stone-600;
+}
+.cm-md-table {
+  @apply my-2 overflow-x-auto;
+}
+.cm-md-table table {
+  @apply border-collapse text-sm;
+}
+.cm-md-table th,
+.cm-md-table td {
+  @apply border border-stone-700 px-2 py-1 align-top;
+}
+.cm-md-table th {
+  @apply bg-stone-800/60 font-semibold;
 }

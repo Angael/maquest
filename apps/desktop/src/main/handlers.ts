@@ -144,6 +144,8 @@ export const handlers = {
   // ---- project ----
   config: () => p().config(),
   updateConfig: (patch: Partial<ProjectConfig>) => p().updateConfig(patch),
+  liveNotes: () => p().liveNotes(),
+  setLiveNotes: (text: string) => p().setLiveNotes(text),
   types: () => p().types(),
   setTypes: (patch: Parameters<Project['setTypes']>[0]) => p().setTypes(patch),
   listNodes: (filter?: NodeFilter) => p().listNodes(filter),

@@ -58,6 +58,8 @@ export const CONFIG_FILE = 'maquest.json'
 export const GRAPH_FILE = 'graph.json'
 export const GUIDELINES_DIR = 'guidelines'
 export const GUIDELINE_USAGE_FILE = 'usage.json'
+/** Scratch notes the author jots down mid-session for the agent to pick up. */
+export const LIVE_NOTES_FILE = 'live-notes.md'
 export const MEDIA_DIR = 'media'
 
 export class MaquestError extends Error {}
@@ -1070,6 +1072,23 @@ export class Project {
   /** Removes the project override, restoring the built-in default (or deleting a custom guideline). */
   resetGuideline(id: string) {
     fs.rmSync(path.join(this.root, GUIDELINES_DIR, `${id}.md`), { force: true })
+  }
+
+  // ---------- live notes ----------
+
+  /** The author's live notes (live-notes.md); empty when there are none. */
+  liveNotes(): string {
+    try {
+      return fs.readFileSync(path.join(this.root, LIVE_NOTES_FILE), 'utf8')
+    } catch {
+      return ''
+    }
+  }
+
+  setLiveNotes(text: string) {
+    const file = path.join(this.root, LIVE_NOTES_FILE)
+    if (!text.trim()) fs.rmSync(file, { force: true })
+    else writeAtomic(file, text)
   }
 
   // ---------- media ----------

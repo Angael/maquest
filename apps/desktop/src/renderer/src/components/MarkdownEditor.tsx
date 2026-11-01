@@ -39,7 +39,8 @@ const editorTheme = EditorView.theme(
   {
     '&': { backgroundColor: 'transparent' },
     '.cm-gutters': { display: 'none' },
-    '.cm-content': { padding: '8px 0', caretColor: '#fbbf24' },
+    // A little left padding keeps the caret at column 0 from being clipped by the scroller.
+    '.cm-content': { padding: '8px 0 8px 2px', caretColor: '#fbbf24' },
     '.cm-cursor': { borderLeftColor: '#fbbf24' },
     '&.cm-focused': { outline: 'none' },
     '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': { backgroundColor: 'rgba(251, 191, 36, 0.2) !important' },
@@ -91,7 +92,21 @@ export function MarkdownPreview({ source }: { source: string }) {
   )
 }
 
-export function MarkdownEditor({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+export function MarkdownEditor({
+  value,
+  onChange,
+  label = 'Body',
+  placeholder = 'Write here…',
+  minHeight = '240px',
+  hint = true,
+}: {
+  value: string
+  onChange: (v: string) => void
+  label?: string
+  placeholder?: string
+  minHeight?: string
+  hint?: boolean
+}) {
   const { data: nodes = [] } = useNodes()
   const select = useUI((s) => s.select)
   const onChangeRef = useRef(onChange)
@@ -123,15 +138,17 @@ export function MarkdownEditor({ value, onChange }: { value: string; onChange: (
           theme="none"
           extensions={extensions}
           basicSetup={basicSetup}
-          minHeight="240px"
-          placeholder="Write here…"
-          aria-label="Body"
+          minHeight={minHeight}
+          placeholder={placeholder}
+          aria-label={label}
           onCreateEditor={setView}
         />
       </div>
-      <div className="border-t border-stone-800 px-3 py-1 text-right text-xs text-stone-600">
-        drop or paste images/videos · [[node-id]] links · Ctrl+click opens links
-      </div>
+      {hint && (
+        <div className="border-t border-stone-800 px-3 py-1 text-right text-xs text-stone-600">
+          drop or paste images/videos · [[node-id]] links · click a link to open (Ctrl+click while editing its line)
+        </div>
+      )}
     </div>
   )
 }

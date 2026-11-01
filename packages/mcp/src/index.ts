@@ -30,6 +30,7 @@ import {
   NODE_TYPES,
   Project,
   ProjectKind,
+  LIVE_NOTES_FILE,
   Status,
   type OutlineNode,
   type StoryNode,
@@ -54,10 +55,27 @@ function project(): Project {
 const text = (s: string) => ({ content: [{ type: 'text' as const, text: s }] })
 
 /** Wraps a handler so errors come back to the agent as readable tool errors. */
+let seenLiveNotes = ''
+
+/** The author's live notes when they changed since this agent last saw them, as a priority notice. */
+function liveNotesNotice(): string {
+  let notes: string
+  try {
+    notes = project().liveNotes().trim()
+  } catch {
+    return ''
+  }
+  if (notes === seenLiveNotes) return ''
+  seenLiveNotes = notes
+  if (!notes) return ''
+  return `IMPORTANT: the author updated their live notes (${LIVE_NOTES_FILE}, written mid-session in the Maquest app). Deal with them before continuing: fold them into the project (write/connect, backlog for loose ideas) or ask about anything unclear, then say what you did.\n<live-notes>\n${notes}\n</live-notes>\n\n`
+}
+
 function safe<A>(fn: (a: A) => string | Promise<string>) {
   return async (a: A) => {
     try {
-      return text(await fn(a))
+      const out = await fn(a)
+      return text(liveNotesNotice() + out)
     } catch (e) {
       return { ...text(`Error: ${(e as Error).message}`), isError: true }
     }
@@ -199,7 +217,8 @@ Workflow: call "overview" first. Read "guidelines" before creative work and foll
 Capture structure eagerly: turn what the author says into project changes right away (write/connect), then briefly report what changed. Put loose ideas in the backlog (type "idea"). Keep connections in sync (involves, located-at, foreshadows, leads-to...). Story prose is the author's: write or rewrite it only when asked; otherwise suggest.
 Connection labels are short names for the relationship (max ${EDGE_LABEL_MAX} chars). Never put status or TODOs in labels; use the node's status, tags or body.
 Boards are separate canvases (e.g. one per arc or investigation); each shows only the nodes placed on it.
-Edits apply immediately to markdown files on disk, and the Maquest app updates live.`,
+Edits apply immediately to markdown files on disk, and the Maquest app updates live.
+The author keeps quick live notes in the app during sessions. When they change, tool results start with an IMPORTANT live-notes notice: treat it as top priority.`,
   },
 )
 
@@ -224,6 +243,11 @@ server.registerTool(
       .join(', ')
     return [
       `# ${c.name} (${c.kind})${c.description ? `\n${c.description}` : ''}`,
+      (() => {
+        const notes = p.liveNotes().trim()
+        if (!notes || notes !== seenLiveNotes) return '' // A changed note is already shown as the notice above.
+        return `## Live notes (from the author, ${LIVE_NOTES_FILE})\n${notes}`
+      })(),
       `## Outline\n${outlineText(p.outline()) || '(no stories yet)'}`,
       (() => {
         const custom = p.types().filter((t) => !t.builtin)

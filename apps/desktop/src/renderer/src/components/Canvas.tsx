@@ -70,6 +70,7 @@ import {
   type Rect,
   type Size,
   type StoryNode,
+  refsOf,
 } from '@maquest/core/schema'
 import { api } from '../lib/api'
 import { NODE_DRAG_TYPE, importFiles, useCreateNode } from '../lib/actions'
@@ -287,6 +288,7 @@ export function Canvas() {
   useEffect(() => {
     const handle = (event: KeyboardEvent) => {
       if (
+        useUI.getState().view !== 'canvas' ||
         (event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), .cm-editor')) ||
         !(event.ctrlKey || event.metaKey) ||
         event.altKey
@@ -644,6 +646,21 @@ export function Canvas() {
     [selectNodes],
   )
   const fitted = useRef<string | null>(null)
+  const pendingFocus = useUI((s) => s.pendingFocus)
+  // Center on a node requested from elsewhere (search, inspector) once its board has rendered it.
+  useEffect(() => {
+    if (!pendingFocus || !board) return
+    const key = refsOf(board, pendingFocus)[0] ?? pendingFocus
+    if (!flowNodes.some((n) => n.id === key)) return
+    fitted.current = board.id
+    useUI.setState({ pendingFocus: null })
+    requestAnimationFrame(() => {
+      const node = flow.getInternalNode(key)
+      if (!node) return
+      const { x, y } = node.internals.positionAbsolute
+      void flow.setCenter(x + (node.measured.width ?? 256) / 2, y + (node.measured.height ?? 120) / 2, { zoom: Math.max(flow.getZoom(), 1), duration: 400 })
+    })
+  }, [pendingFocus, board, flowNodes, flow])
   useEffect(() => {
     if (board && fitted.current !== board.id && flowNodes.length) {
       fitted.current = board.id
@@ -864,7 +881,7 @@ export function Canvas() {
   )
   useEffect(() => {
     const handle = (event: KeyboardEvent) => {
-      if (event.repeat || event.defaultPrevented || isEditing(event.target)) return
+      if (event.repeat || event.defaultPrevented || isEditing(event.target) || useUI.getState().view !== 'canvas') return
       if (event.key === 'Delete' && selectedGroup && board) {
         event.preventDefault()
         setSelectedGroup(null)

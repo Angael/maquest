@@ -14,6 +14,7 @@ import { CommandPalette } from './components/CommandPalette'
 import { UpdateToast } from './components/UpdateToast'
 import { ImageViewer } from './components/Lightbox'
 import { useDeleteShortcut } from './lib/deletion'
+import { LiveNotesPanel } from './components/LiveNotes'
 
 export function App() {
   useLiveProject()
@@ -41,10 +42,14 @@ export function App() {
         <div className="flex min-h-0 flex-1">
           <Sidebar />
           <main className="relative min-w-0 flex-1">
-            {view === 'canvas' && <Canvas />}
+            {/* The canvas stays mounted so other views keep its viewport. */}
+            <div className={view === 'canvas' ? 'absolute inset-0' : 'invisible absolute inset-0'} aria-hidden={view !== 'canvas'}>
+              <Canvas />
+            </div>
             {view === 'backlog' && <Backlog />}
             {view === 'guidelines' && <Guidelines />}
             {view === 'types' && <Types />}
+            <LiveNotesPanel />
           </main>
           {selection && view !== 'guidelines' && view !== 'types' && (
             <InspectorPanel>
