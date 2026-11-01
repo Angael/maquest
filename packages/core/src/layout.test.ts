@@ -67,3 +67,57 @@ test('smart and grid layouts of unlinked cards follow the screen shape instead o
       for (const b of ids.slice(i + 1)) assert.ok(!overlaps({ ...positions[a], ...size }, { ...positions[b], ...size }), `${a} ${b}`)
   }
 })
+
+const readingOrder = (positions: Record<string, { x: number; y: number }>, ids: string[]) =>
+  ids.toSorted((a, b) => positions[a].y - positions[b].y || positions[a].x - positions[b].x)
+
+for (const mode of LAYOUT_MODES.map((m) => m.mode))
+  test(`${mode}: cards keep their phase column and their top-to-bottom order within it`, async () => {
+    const ids = ['m0', 'm1', 'm2', 'm3', 'm4', 'm5']
+    const board = Board.parse({
+      id: 'main',
+      title: 'Main',
+      phases: [
+        { id: 'p1', title: 'One' },
+        { id: 'p2', title: 'Two' },
+      ],
+      layout: Object.fromEntries(ids.map((id, i) => [id, { x: 40, y: i * 300 }])),
+    })
+    const cards: LayoutCard[] = ids.map((id) => ({ id, position: board.layout[id], size }))
+    // Links that a flow layout would like to reorder.
+    const edges = [
+      { source: 'm5', target: 'm0' },
+      { source: 'm4', target: 'm1' },
+    ]
+    const { positions } = await arrange(board, cards, edges, { mode })
+    for (const id of ids) assert.ok(positions[id].x < 600, `${id} left its column`)
+    assert.deepEqual(readingOrder(positions, ids), ids)
+  })
+
+for (const mode of ['smart', 'grid'] as const)
+  test(`${mode}: packed groups keep their reading order`, async () => {
+    // Mixed sizes in one row: compaction used to tuck small groups under bigger ones, out of sequence.
+    const sizes = [
+      [300, 400],
+      [500, 120],
+      [240, 300],
+      [400, 120],
+      [240, 500],
+      [600, 200],
+      [240, 120],
+      [300, 260],
+      [450, 330],
+    ]
+    const groupIds = sizes.map((_, i) => `g${i}`)
+    const layout: Record<string, { x: number; y: number }> = {}
+    const cards: LayoutCard[] = []
+    const groups = sizes.map(([width, height], i) => {
+      layout[`c${i}`] = { x: i * 700 + 10, y: 50 }
+      cards.push({ id: `c${i}`, position: layout[`c${i}`], size: { width: width - 30, height: height - 80 } })
+      return { id: `g${i}`, title: `G${i}`, nodes: [`c${i}`], x: i * 700, y: 0, width, height }
+    })
+    const board = Board.parse({ id: 'main', title: 'Main', layout, groups })
+    const { groups: rects } = await arrange(board, cards, [], { mode })
+    assert.deepEqual(readingOrder(rects, groupIds), groupIds)
+    for (const [i, a] of groupIds.entries()) for (const b of groupIds.slice(i + 1)) assert.ok(!overlaps(rects[a], rects[b]), `${a} ${b}`)
+  })

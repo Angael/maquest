@@ -38,7 +38,7 @@ async function place(items: Box[], links: [string, string][], mode: LayoutMode, 
     'elk.padding': '[top=0,left=0,bottom=0,right=0]',
   }
   const options: LayoutOptions = packed
-    ? { ...common, 'elk.algorithm': 'rectpacking' }
+    ? { ...common, 'elk.algorithm': 'rectpacking', 'elk.rectpacking.packing.strategy': 'SIMPLE' }
     : {
         ...common,
         'elk.algorithm': 'layered',
@@ -121,7 +121,7 @@ export async function arrange(
       ...childGroups(container).map((id) => ({ key: key(id, true), id, group: true, fixed: hasPinned(id), box: () => rect.get(id)! })),
     ]
     if (items.length) {
-      // Feed items in reading order so packed layouts keep the user's rough arrangement.
+      // Feed items in reading order; packed layouts fill strict rows in that order, so they keep the user's sequence.
       items.sort((a, b) => a.box().y - b.box().y || a.box().x - b.box().x || a.key.localeCompare(b.key))
       const links = new Map<string, [string, string]>()
       for (const e of edges) {
@@ -146,7 +146,7 @@ export async function arrange(
       const occupied = items.filter((item) => item.fixed).map((item) => item.box())
       const targets = new Map<Item, Position>()
       if (container === undefined && board.phases.length) {
-        // Keep every item in its phase column; pack each column into two lanes, in layout order.
+        // Keep every item in its phase column and its current top-to-bottom order; pack each column into two lanes.
         const columns = new Map<number, Item[]>()
         for (const item of movable) {
           const x = item.box().x
@@ -155,7 +155,7 @@ export async function arrange(
           columns.set(column, [...(columns.get(column) ?? []), item])
         }
         for (const [column, list] of columns) {
-          list.sort((a, b) => topLeft(a).y - topLeft(b).y || a.key.localeCompare(b.key))
+          list.sort((a, b) => a.box().y - b.box().y || a.box().x - b.box().x || a.key.localeCompare(b.key))
           const lanes = [0, 0]
           for (const item of list) {
             const { width, height } = item.box()
