@@ -1,14 +1,14 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useLayoutEffect, useEffect, useMemo, useRef, useState } from 'react'
 import CodeMirror, { EditorView } from '@uiw/react-codemirror'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import clsx from 'clsx'
 import { importFiles } from '../lib/actions'
 import { isVideo, mediaUrl } from '../lib/api'
 import { useNodes } from '../lib/queries'
 import { useUI } from '../lib/store'
+import { livePreview, setNodeTitles } from '../lib/livePreview'
 
 const embed = (paths: string[]) => paths.map((p) => `![${p.split('/').pop()}](${p})`).join('\n')
 
@@ -34,14 +34,19 @@ const mediaHandlers = EditorView.domEventHandlers({
   },
 })
 
-const editorTheme = EditorView.theme({
-  '&': { backgroundColor: 'transparent', fontSize: '14px' },
-  '.cm-gutters': { display: 'none' },
-  '.cm-content': { fontFamily: 'var(--font-serif)', lineHeight: '1.7', padding: '8px 0' },
-  '&.cm-focused': { outline: 'none' },
-})
+const editorTheme = EditorView.theme(
+  {
+    '&': { backgroundColor: 'transparent' },
+    '.cm-gutters': { display: 'none' },
+    '.cm-content': { padding: '8px 0', caretColor: '#fbbf24' },
+    '.cm-cursor': { borderLeftColor: '#fbbf24' },
+    '&.cm-focused': { outline: 'none' },
+    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': { backgroundColor: 'rgba(251, 191, 36, 0.2) !important' },
+  },
+  { dark: true },
+)
 
-const basicSetup = { lineNumbers: false, foldGutter: false, highlightActiveLine: false }
+const basicSetup = { lineNumbers: false, foldGutter: false, highlightActiveLine: false, highlightActiveLineGutter: false, syntaxHighlighting: false }
 
 export function MarkdownPreview({ source }: { source: string }) {
   const { data: nodes = [] } = useNodes()
@@ -81,37 +86,45 @@ export function MarkdownPreview({ source }: { source: string }) {
 }
 
 export function MarkdownEditor({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const [mode, setMode] = useState<'write' | 'preview'>(value.trim() ? 'preview' : 'write')
-  const extensions = useMemo(() => [markdown({ base: markdownLanguage, codeLanguages: languages }), EditorView.lineWrapping, mediaHandlers, editorTheme], [])
+  const { data: nodes = [] } = useNodes()
+  const select = useUI((s) => s.select)
   const onChangeRef = useRef(onChange)
   useLayoutEffect(() => {
     onChangeRef.current = onChange
   })
+  const [view, setView] = useState<EditorView>()
+  const titles = useMemo(() => new Map(nodes.map((n) => [n.id, n.title])), [nodes])
+  useEffect(() => view?.dispatch({ effects: setNodeTitles.of(titles) }), [view, titles])
+  const extensions = useMemo(
+    () => [
+      markdown({ base: markdownLanguage, codeLanguages: languages }),
+      EditorView.lineWrapping,
+      mediaHandlers,
+      editorTheme,
+      livePreview({ open: (id) => select({ kind: 'node', id }) }),
+    ],
+    [select],
+  )
   // Keep CodeMirror's listener/configuration stable while the controlled draft
   // updates. External value changes are already annotated by react-codemirror.
   const handleChange = useCallback((next: string) => onChangeRef.current(next), [])
   return (
     <div className="rounded-md border border-stone-800 bg-stone-900/50">
-      <div className="flex gap-1 border-b border-stone-800 px-2 py-1 text-xs">
-        {(['write', 'preview'] as const).map((m) => (
-          <button
-            key={m}
-            onClick={() => setMode(m)}
-            className={clsx('rounded px-2 py-0.5 capitalize', mode === m ? 'bg-stone-800 text-stone-100' : 'text-stone-500 hover:text-stone-300')}
-          >
-            {m}
-          </button>
-        ))}
-        <span className="ml-auto self-center text-stone-600">drop or paste images/videos · [[node-id]] links</span>
-      </div>
       <div className="px-3">
-        {mode === 'write' ? (
-          <CodeMirror value={value} onChange={handleChange} theme="dark" extensions={extensions} basicSetup={basicSetup} minHeight="240px" />
-        ) : (
-          <div className="min-h-[240px] py-2" onDoubleClick={() => setMode('write')}>
-            {value.trim() ? <MarkdownPreview source={value} /> : <div className="text-sm text-stone-600">Empty. Double-click to write.</div>}
-          </div>
-        )}
+        <CodeMirror
+          value={value}
+          onChange={handleChange}
+          theme="none"
+          extensions={extensions}
+          basicSetup={basicSetup}
+          minHeight="240px"
+          placeholder="Write here…"
+          aria-label="Body"
+          onCreateEditor={setView}
+        />
+      </div>
+      <div className="border-t border-stone-800 px-3 py-1 text-right text-xs text-stone-600">
+        drop or paste images/videos · [[node-id]] links · Ctrl+click opens links
       </div>
     </div>
   )
