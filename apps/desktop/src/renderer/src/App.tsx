@@ -13,12 +13,23 @@ import { InspectorPanel } from './components/InspectorPanel'
 import { CommandPalette } from './components/CommandPalette'
 import { UpdateToast } from './components/UpdateToast'
 import { SyncToast } from './components/SyncToast'
+import { Toaster } from 'sonner'
 import { ImageViewer } from './components/Lightbox'
 import { useDeleteShortcut } from './lib/deletion'
 import { LiveNotesPanel } from './components/LiveNotes'
 import { InspectorTabs } from './components/InspectorTabs'
 
 export function App() {
+  return (
+    <>
+      <UpdateToast />
+      <Toaster theme="dark" position="bottom-right" />
+      <Main />
+    </>
+  )
+}
+
+function Main() {
   useLiveProject()
   useDeleteShortcut()
   const { data: current, isLoading } = useCurrent()
@@ -26,17 +37,10 @@ export function App() {
   const selection = useUI((s) => s.selection)
 
   if (isLoading) return null
-  if (!current)
-    return (
-      <>
-        <StartScreen />
-        <UpdateToast />
-      </>
-    )
+  if (!current) return <StartScreen />
 
   return (
     <ReactFlowProvider>
-      <UpdateToast />
       <SyncToast root={current.root} />
       <ImageViewer />
       <div className="flex h-full flex-col">

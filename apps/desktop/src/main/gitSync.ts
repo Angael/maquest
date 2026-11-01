@@ -136,8 +136,11 @@ async function doSync(root: string): Promise<SyncResult> {
   }
 
   try {
-    if (ahead) await git(top, ['merge', '--no-edit', '--no-verify', '--no-autostash', upstream], 60_000)
-    else await git(top, ['merge', '--ff-only', '--no-autostash', upstream], 60_000)
+    if (ahead) {
+      // A merge commit needs an identity; fall back to a neutral one rather than failing for users who never set it.
+      const ident = (await tryGit(top, ['config', 'user.email'])) ? [] : ['-c', 'user.name=Maquest', '-c', 'user.email=maquest@localhost']
+      await git(top, [...ident, 'merge', '--no-edit', '--no-verify', '--no-autostash', upstream], 60_000)
+    } else await git(top, ['merge', '--ff-only', '--no-autostash', upstream], 60_000)
   } catch (err) {
     // Leave the repo as we found it if git got as far as starting a merge.
     const mergeHead = await tryGit(top, ['rev-parse', '--git-path', 'MERGE_HEAD'])
