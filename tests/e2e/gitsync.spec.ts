@@ -36,3 +36,34 @@ test.describe('git sync on open', () => {
     await expect(page.locator('.react-flow__node').filter({ hasText: 'Attic' })).toBeVisible()
   })
 })
+
+test.describe('git push on open', () => {
+  test.use({
+    prepare: {
+      run: (project) => {
+        // Publish the project, then make a local commit the remote does not have yet.
+        const remote = `${project.root}.git`
+        git(project.root, 'init', '-q', '-b', 'main')
+        git(project.root, 'add', '-A')
+        git(project.root, 'commit', '-qm', 'init')
+        git(path.dirname(remote), 'clone', '-q', '--bare', project.root, remote)
+        git(project.root, 'remote', 'add', 'origin', remote)
+        git(project.root, 'fetch', '-q', 'origin')
+        git(project.root, 'branch', '-q', '--set-upstream-to=origin/main')
+        const cellar = project.listNodes().find((n) => n.title === 'Cellar')!
+        project.updateNode(cellar.id, { title: 'Vault' })
+        git(project.root, 'add', '-A')
+        git(project.root, 'commit', '-qm', 'rename')
+      },
+    },
+  })
+
+  test('pushes local commits and shows a toast', async ({ desktop: { page, project } }) => {
+    await expect(page.locator('[data-sonner-toast]')).toContainText('Local changes pushed to remote')
+    const remoteHead = execFileSync('git', ['rev-parse', 'main'], { cwd: `${project.root}.git` })
+      .toString()
+      .trim()
+    const localHead = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: project.root }).toString().trim()
+    expect(remoteHead).toBe(localHead)
+  })
+})

@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { execFile } from 'node:child_process'
 
-export type SyncResult =
+export type PullResult =
   /** Pulled new commits from the upstream branch. */
   | { status: 'updated'; branch: string; upstream: string; commits: number }
   /** Nothing to report: not a repo, no upstream, already up to date, git missing, ... */
@@ -11,6 +11,15 @@ export type SyncResult =
   | { status: 'blocked'; reason: string }
   /** Something went wrong talking to git or the remote. */
   | { status: 'failed'; reason: string }
+
+export type PushResult =
+  /** Sent local commits to the upstream branch. */
+  | { status: 'pushed'; upstream: string; commits: number }
+  /** The push was attempted (it looked safe) but git or the remote refused it. */
+  | { status: 'failed'; reason: string }
+
+/** The pull outcome, plus the push outcome when local commits were safe to publish afterwards. */
+export type SyncResult = PullResult & { push?: PushResult }
 
 class GitError extends Error {
   constructor(
@@ -92,6 +101,43 @@ export function syncFromRemote(root: string): Promise<SyncResult> {
 }
 
 async function doSync(root: string): Promise<SyncResult> {
+  const pull = await doPull(root)
+  if (!('ctx' in pull)) return pull
+  const { ctx, ...result } = pull
+  const push = await doPush(ctx)
+  return push ? { ...result, push } : result
+}
+
+interface PushContext {
+  top: string
+  remote: string
+  upstream: string
+  /** Full ref of the upstream branch on the remote, e.g. refs/heads/main. */
+  mergeRef: string
+}
+
+/**
+ * Pushes local commits when that is a plain fast-forward of the upstream branch: the pull just left us
+ * strictly ahead (never behind), so the remote accepts it without force. Anything else is left alone.
+ */
+async function doPush({ top, remote, upstream, mergeRef }: PushContext): Promise<PushResult | undefined> {
+  const counts = await tryGit(top, ['rev-list', '--left-right', '--count', `HEAD...${upstream}`])
+  if (!counts) return undefined
+  const [ahead, behind] = counts.split(/\s+/).map(Number)
+  if (!ahead || behind) return undefined
+  try {
+    await git(top, ['push', '--quiet', '--no-recurse-submodules', remote, `HEAD:${mergeRef}`], 60_000)
+  } catch (err) {
+    const stderr = err instanceof GitError ? err.stderr : ''
+    if (/rejected|non-fast-forward|fetch first/i.test(stderr)) return { status: 'failed', reason: 'The remote got new commits meanwhile; try again later' }
+    if (/protected branch|pre-receive hook declined|GH006/i.test(stderr))
+      return { status: 'failed', reason: 'The remote does not allow pushing to this branch' }
+    return { status: 'failed', reason: fetchReason(err) }
+  }
+  return { status: 'pushed', upstream, commits: ahead }
+}
+
+async function doPull(root: string): Promise<PullResult | (PullResult & { ctx: PushContext })> {
   if (!fs.existsSync(root)) return { status: 'skipped', reason: 'Project folder is missing' }
   const top = await git(root, ['rev-parse', '--show-toplevel']).catch((err: unknown) => {
     if (err instanceof GitError && err.missing) throw err
@@ -124,7 +170,11 @@ async function doSync(root: string): Promise<SyncResult> {
 
   const counts = await git(top, ['rev-list', '--left-right', '--count', `HEAD...${upstream}`])
   const [ahead, behind] = counts.split(/\s+/).map(Number)
-  if (!behind) return { status: 'skipped', reason: 'Already up to date' }
+  const mergeRef = await tryGit(top, ['config', `branch.${branch}.merge`])
+  // Pushing only makes sense to a real remote branch we just fetched.
+  const ctx = remote && remote !== '.' && mergeRef?.startsWith('refs/heads/') ? { top, remote, upstream, mergeRef } : undefined
+  const withCtx = (r: PullResult) => (ctx ? { ...r, ctx } : r)
+  if (!behind) return withCtx({ status: 'skipped', reason: 'Already up to date' })
 
   if (ahead) {
     // Diverged: only merge when git can prove the result has no conflicts (merge-tree exits 1 on conflict).
@@ -150,5 +200,5 @@ async function doSync(root: string): Promise<SyncResult> {
       return { status: 'blocked', reason: 'Uncommitted local changes touch the same files as the remote update' }
     return { status: 'failed', reason: err instanceof Error ? err.message : 'Updating failed' }
   }
-  return { status: 'updated', branch, upstream, commits: behind }
+  return withCtx({ status: 'updated', branch, upstream, commits: behind })
 }
