@@ -130,6 +130,7 @@ function NodeInspector({ id }: { id: string }) {
           <span className="ml-1 font-mono text-stone-600 normal-case">{node.id}</span>
         </div>
         <input
+          aria-label="Title"
           className="mt-1 w-full bg-transparent font-serif text-2xl text-stone-100 outline-none"
           value={draft.title}
           onChange={(e) => change({ title: e.target.value })}

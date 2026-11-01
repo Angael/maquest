@@ -136,3 +136,62 @@ body {
   position: absolute;
   inset: -4px;
 }
+
+/* Live-preview markdown editor: shares typography with .prose-md. */
+.cm-md-live {
+  @apply font-serif text-[15px] leading-7 text-stone-300;
+}
+.cm-md-live .cm-line {
+  @apply px-0;
+}
+.cm-md-h1 {
+  @apply pt-3 pb-1 text-2xl font-semibold text-stone-100;
+}
+.cm-md-h2 {
+  @apply pt-3 pb-1 text-xl font-semibold text-stone-100;
+}
+.cm-md-h3 {
+  @apply pt-2 text-lg font-semibold text-stone-100;
+}
+.cm-md-h4 {
+  @apply font-semibold text-stone-100;
+}
+.cm-md-strong {
+  @apply font-semibold text-stone-100;
+}
+.cm-md-em {
+  @apply italic;
+}
+.cm-md-strike {
+  @apply text-stone-500 line-through;
+}
+.cm-md-code {
+  @apply rounded bg-stone-800 px-1 font-mono text-[13px];
+}
+.cm-md-link {
+  @apply text-amber-400 underline;
+}
+.cm-md-quote {
+  @apply border-l-2 border-amber-500/60 pl-3! text-stone-400 italic;
+}
+.cm-md-codeblock {
+  @apply bg-stone-800/60 px-2! font-mono text-[13px];
+}
+.cm-md-bullet {
+  @apply inline-block w-3 text-stone-500;
+}
+.cm-md-task {
+  @apply mr-1 cursor-pointer align-middle accent-amber-500;
+}
+.cm-md-hr {
+  @apply my-3 inline-block w-full border-t border-stone-700 align-middle;
+}
+.cm-md-media {
+  @apply my-2 block max-h-96 rounded-md;
+}
+.cm-md-node {
+  @apply cursor-pointer rounded bg-amber-500/15 px-1 text-amber-300 hover:bg-amber-500/25;
+}
+.cm-placeholder {
+  @apply text-stone-600;
+}

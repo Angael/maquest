@@ -1,6 +1,6 @@
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { app, BrowserWindow, ipcMain, net, protocol } from 'electron'
+import { app, BrowserWindow, ipcMain, net, protocol, shell } from 'electron'
 import { Project } from '@maquest/core'
 import { handlers, mediaPath } from './handlers'
 import { setupUpdates } from './updater'
@@ -21,6 +21,11 @@ function createWindow() {
       preload: path.join(import.meta.dirname, '../preload/index.mjs'),
       sandbox: false,
     },
+  })
+  // Links from notes open in the system browser, never in an app window.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^(https?|mailto):/i.test(url)) void shell.openExternal(url)
+    return { action: 'deny' }
   })
   if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL)
   else void win.loadFile(path.join(import.meta.dirname, '../renderer/index.html'))
