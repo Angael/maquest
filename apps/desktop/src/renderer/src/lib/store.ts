@@ -26,6 +26,15 @@ type UI = {
   referenceLines: boolean
   /** Algorithm the auto-layout button runs. */
   layoutMode: LayoutMode
+  /** Node the canvas should center on once it is rendered. */
+  pendingFocus: string | null
+  /** Selection each view had when it was left, restored on return. */
+  viewSelections: Partial<Record<View, { selection: Selection; selectedNodeIds: string[] }>>
+  /** Live notes panel open. */
+  liveNotesOpen: boolean
+  setLiveNotesOpen: (open: boolean) => void
+  /** Shows a node on the canvas: switches to `board` (when given), selects and centers it. */
+  focusNode: (id: string, board?: string) => void
   setView: (v: View) => void
   select: (s: Selection) => void
   selectNodes: (ids: string[]) => void
@@ -55,7 +64,30 @@ export const useUI = create<UI>()(
       edgeLabels: 'focus',
       referenceLines: false,
       layoutMode: 'smart',
-      setView: (view) => set({ view }),
+      pendingFocus: null,
+      viewSelections: {},
+      liveNotesOpen: false,
+      setLiveNotesOpen: (liveNotesOpen) => set({ liveNotesOpen }),
+      setView: (view) =>
+        set((s) =>
+          s.view === view
+            ? {}
+            : {
+                view,
+                viewSelections: { ...s.viewSelections, [s.view]: { selection: s.selection, selectedNodeIds: s.selectedNodeIds } },
+                ...(s.viewSelections[view] ?? { selection: null, selectedNodeIds: [] }),
+              },
+        ),
+      focusNode: (id, board) =>
+        set((s) => ({
+          ...(s.view === 'canvas'
+            ? {}
+            : { view: 'canvas' as const, viewSelections: { ...s.viewSelections, [s.view]: { selection: s.selection, selectedNodeIds: s.selectedNodeIds } } }),
+          ...(board ? { board } : {}),
+          selection: { kind: 'node' as const, id },
+          selectedNodeIds: [id],
+          pendingFocus: id,
+        })),
       select: (selection) => set({ selection, selectedNodeIds: selection?.kind === 'node' ? [selection.id] : [] }),
       selectNodes: (selectedNodeIds) =>
         set((s) => {
@@ -87,9 +119,11 @@ export const useUI = create<UI>()(
           edgeLabels: 'focus' as const,
           referenceLines: false,
           layoutMode: 'smart' as const,
+          liveNotesOpen: saved.liveNotesOpen ?? false,
         }
       },
-      partialize: ({ hiddenEdges, hiddenNodes, connectType, edgeLabels, referenceLines, layoutMode }) => ({
+      partialize: ({ hiddenEdges, hiddenNodes, connectType, edgeLabels, referenceLines, layoutMode, liveNotesOpen }) => ({
+        liveNotesOpen,
         hiddenEdges,
         hiddenNodes,
         connectType,

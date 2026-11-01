@@ -6,6 +6,7 @@ import { api } from '../lib/api'
 import { useCurrent, useNodes } from '../lib/queries'
 import { useUI, type View } from '../lib/store'
 import { Button } from './ui'
+import { LiveNotesButton } from './LiveNotes'
 
 export function TopBar() {
   const qc = useQueryClient()
@@ -43,6 +44,7 @@ export function TopBar() {
         ))}
       </nav>
       <div className="ml-auto flex items-center gap-1">
+        <LiveNotesButton />
         <div className="relative">
           <Button onClick={() => setAgentOpen((o) => !o)}>
             <Bot size={16} /> Agent

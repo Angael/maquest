@@ -169,7 +169,7 @@ body {
   @apply rounded bg-stone-800 px-1 font-mono text-[13px];
 }
 .cm-md-link {
-  @apply text-amber-400 underline;
+  @apply cursor-pointer text-amber-400 underline;
 }
 .cm-md-quote {
   @apply border-l-2 border-amber-500/60 pl-3! text-stone-400 italic;

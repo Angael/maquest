@@ -4,6 +4,8 @@ import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate
 import { isVideo, mediaUrl } from './api'
 import { openImage } from '../components/Lightbox'
 
+type SyntaxNode = ReturnType<typeof syntaxTree>['topNode']
+
 /**
  * Obsidian-style live preview for CodeMirror markdown: styles the common
  * subset in place and hides its markup except on lines holding the cursor.
@@ -242,21 +244,54 @@ function build(view: EditorView, opts: LivePreviewOptions): DecorationSet {
   return Decoration.set(decos, true)
 }
 
-/** Ctrl/Cmd-click on a rendered markdown link opens it externally. */
-const linkClick = EditorView.domEventHandlers({
-  mousedown(e, view) {
-    if (!(e.metaKey || e.ctrlKey) || e.button !== 0) return false
-    const pos = view.posAtCoords({ x: e.clientX, y: e.clientY })
-    if (pos == null) return false
-    let node = syntaxTree(view.state).resolveInner(pos, 1) as ReturnType<typeof syntaxTree>['topNode'] | null
-    while (node && node.name !== 'Link') node = node.parent
-    const url = node?.getChild('URL')
-    if (!url) return false
-    e.preventDefault()
-    window.open(view.state.sliceDoc(url.from, url.to), '_blank', 'noreferrer')
-    return true
-  },
-})
+/** The link under `pos`: a `[[node-id]]` wiki link, a markdown link, or a bare URL. */
+function linkAt(view: EditorView, pos: number): { node: string } | { url: string } | null {
+  const line = view.state.doc.lineAt(pos)
+  for (const m of line.text.matchAll(WIKI)) {
+    const start = line.from + m.index
+    if (pos >= start && pos <= start + m[0].length) return { node: m[1].trim() }
+  }
+  const tree = syntaxTree(view.state)
+  for (const side of [1, -1] as const) {
+    for (let node: SyntaxNode | null = tree.resolveInner(pos, side); node; node = node.parent) {
+      if (node.name === 'Image') return null
+      if (node.name === 'Link') {
+        const url = node.getChild('URL')
+        return url ? { url: view.state.sliceDoc(url.from, url.to) } : null
+      }
+      if (node.name === 'URL' || node.name === 'Autolink') {
+        const url = node.name === 'URL' ? node : node.getChild('URL')
+        if (url) return { url: view.state.sliceDoc(url.from, url.to) }
+      }
+    }
+  }
+  return null
+}
+
+const lineActive = (view: EditorView, pos: number) => {
+  if (!view.hasFocus) return false
+  const n = view.state.doc.lineAt(pos).number
+  return view.state.selection.ranges.some((r) => view.state.doc.lineAt(r.from).number <= n && n <= view.state.doc.lineAt(r.to).number)
+}
+
+/** Click opens a rendered link; on the line being edited (raw markup shown) it takes Ctrl/Cmd+click. */
+const linkClick = (opts: LivePreviewOptions) =>
+  EditorView.domEventHandlers({
+    mousedown(e, view) {
+      if (e.button !== 0 || e.shiftKey || e.altKey) return false
+      const pos = view.posAtCoords({ x: e.clientX, y: e.clientY })
+      if (pos == null) return false
+      if (!(e.metaKey || e.ctrlKey) && lineActive(view, pos)) return false
+      const link = linkAt(view, pos)
+      if (!link) return false
+      e.preventDefault()
+      if ('node' in link) opts.open(link.node)
+      else if (link.url.startsWith('media/')) openImage(mediaUrl(link.url))
+      else if (/^[a-z][a-z0-9+.-]*:/i.test(link.url)) window.open(link.url, '_blank', 'noreferrer')
+      else opts.open(link.url.replace(/^#?(node:)?/, ''))
+      return true
+    },
+  })
 
 export function livePreview(opts: LivePreviewOptions): Extension {
   const plugin = ViewPlugin.fromClass(
@@ -280,5 +315,5 @@ export function livePreview(opts: LivePreviewOptions): Extension {
     },
     { decorations: (v) => v.decorations },
   )
-  return [nodeTitles, plugin, linkClick, EditorView.contentAttributes.of({ class: 'cm-md-live' })]
+  return [nodeTitles, plugin, linkClick(opts), EditorView.contentAttributes.of({ class: 'cm-md-live' })]
 }

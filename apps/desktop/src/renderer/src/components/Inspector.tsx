@@ -360,6 +360,7 @@ function ClockEditor({ node }: { node: StoryNode }) {
 function BoardMembership({ id }: { id: string }) {
   const { data: graph } = useGraph()
   const update = useAction(api.updateBoard)
+  const focusNode = useUI((s) => s.focusNode)
   const boards = graph?.boards ?? []
   if (!boards.length) return null
   return (
@@ -368,19 +369,28 @@ function BoardMembership({ id }: { id: string }) {
       <div className="flex flex-wrap gap-1">
         {boards.map((b) => {
           const on = onBoard(b, id)
-          return (
+          return on ? (
+            <span key={b.id} className="flex items-center rounded-full bg-amber-500/20 text-xs text-amber-200">
+              <button title={`Show on ${b.title}`} className="rounded-l-full py-0.5 pl-2 hover:text-amber-50" onClick={() => focusNode(id, b.id)}>
+                {b.title}
+              </button>
+              <button
+                aria-label={`Remove from ${b.title}`}
+                title={`Remove from ${b.title}`}
+                className="rounded-r-full px-1.5 py-0.5 text-amber-200/60 hover:text-red-300"
+                onClick={() => update.mutate([b.id, { removeNodes: refsOf(b, id) }])}
+              >
+                <X size={11} />
+              </button>
+            </span>
+          ) : (
             <button
               key={b.id}
-              aria-pressed={on}
-              title={on ? `Remove from ${b.title}` : `Place on ${b.title}`}
-              className={
-                on
-                  ? 'rounded-full bg-amber-500/20 px-2 py-0.5 text-xs text-amber-200'
-                  : 'rounded-full border border-dashed border-stone-700 px-2 py-0.5 text-xs text-stone-500 hover:text-stone-200'
-              }
-              onClick={() => update.mutate([b.id, on ? { removeNodes: refsOf(b, id) } : { addNodes: [id] }])}
+              title={`Place on ${b.title}`}
+              className="rounded-full border border-dashed border-stone-700 px-2 py-0.5 text-xs text-stone-500 hover:text-stone-200"
+              onClick={() => update.mutate([b.id, { addNodes: [id] }])}
             >
-              {b.title}
+              + {b.title}
             </button>
           )
         })}
