@@ -1,5 +1,6 @@
 import { useCallback, useLayoutEffect, useEffect, useMemo, useRef, useState } from 'react'
 import CodeMirror, { EditorView } from '@uiw/react-codemirror'
+import { openImage } from './Lightbox'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
@@ -66,7 +67,12 @@ export function MarkdownPreview({ source }: { source: string }) {
         remarkPlugins={[remarkGfm]}
         urlTransform={(url) => (url.startsWith('media/') ? mediaUrl(url) : defaultUrlTransform(url))}
         components={{
-          img: ({ src, alt }) => (typeof src === 'string' && isVideo(src) ? <video src={src} controls /> : <img src={src as string} alt={alt} />),
+          img: ({ src, alt }) =>
+            typeof src === 'string' && isVideo(src) ? (
+              <video src={src} controls />
+            ) : (
+              <img src={src as string} alt={alt} className="cursor-zoom-in" title="View full size" onClick={() => openImage(src as string)} />
+            ),
           a: ({ href, children }) =>
             href?.startsWith('#node:') ? (
               <a href="#" onClick={(e) => (e.preventDefault(), select({ kind: 'node', id: href.slice(6) }))}>

@@ -12,6 +12,7 @@ import { Types } from './components/Types'
 import { InspectorPanel } from './components/InspectorPanel'
 import { CommandPalette } from './components/CommandPalette'
 import { UpdateToast } from './components/UpdateToast'
+import { ImageViewer } from './components/Lightbox'
 import { useDeleteShortcut } from './lib/deletion'
 
 export function App() {
@@ -33,6 +34,7 @@ export function App() {
   return (
     <ReactFlowProvider>
       <UpdateToast />
+      <ImageViewer />
       <div className="flex h-full flex-col">
         <CommandPalette />
         <TopBar />

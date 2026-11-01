@@ -1,3 +1,5 @@
+import fs from 'node:fs'
+import path from 'node:path'
 import { test, expect } from './fixtures'
 
 test('long summaries wrap in the inspector and stay on one line when edited', async ({ desktop }) => {
@@ -43,4 +45,18 @@ test('the body editor renders markdown inline and reveals syntax on the cursor l
 
   await chip.click()
   await expect(page.getByRole('textbox', { name: 'Title' })).toHaveValue('Hall')
+})
+
+test('media opens full size in a zoomable viewer', async ({ desktop }) => {
+  const { page, project, ids } = desktop
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
+  fs.mkdirSync(path.join(project.root, 'media'), { recursive: true })
+  fs.writeFileSync(path.join(project.root, 'media', 'map.png'), png)
+  project.updateNode(ids[1], { media: ['media/map.png'] })
+  await page.locator(`.react-flow__node[data-id="${ids[1]}"]`).click()
+  await page.getByTitle('View full size').first().click()
+  const viewer = page.locator('.yarl__root')
+  await expect(viewer.locator('img.yarl__slide_image')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(viewer).toBeHidden()
 })
