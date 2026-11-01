@@ -110,4 +110,11 @@ jobs:
           cd release
           sha256sum * > SHA256SUMS
           cd ..
-          gh release create "v$VERSION" release/* --target "$COMMIT" --title "Maquest $VERSION" --generate-notes
+          # Prepended to the generated notes: only the AppImage can update itself on Linux.
+          cat > notes.md <<NOTES
+          ## Downloads
+
+          - **Linux:** \`Maquest-$VERSION-linux-x86_64.AppImage\` (recommended). It updates itself automatically; \`chmod +x\` it and run it from a fixed path. The \`.tar.gz\` does not auto-update and must be replaced by hand for every release.
+          - **Windows:** \`Maquest-$VERSION-win-x64.exe\` installer, updates itself automatically.
+          NOTES
+          gh release create "v$VERSION" release/* --target "$COMMIT" --title "Maquest $VERSION" --generate-notes --notes-file notes.md

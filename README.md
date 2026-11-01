@@ -63,4 +63,6 @@ Each test creates a temporary project and isolated user profile, closes Electron
 
 Download Windows x64 installers or Linux x64 AppImage/tarballs from [GitHub Releases](https://github.com/Angael/maquest/releases). Builds are unsigned.
 
+On Linux, use the AppImage: it is the only Linux build that updates itself. Keep it at a fixed path (e.g. `~/.local/opt/maquest/Maquest.AppImage`) and point your launcher there; updates download in the background with a progress toast and install on restart. The tarball never auto-updates.
+
 For releasable changes, run `pnpm changeset` and select `@maquest/desktop`. Changes merged to `main` accumulate in an automated **Version Packages** PR. Merge that PR when ready to bump the version and publish downloads after both platform builds pass. Ordinary changes do not publish releases. See [.changeset/README.md](.changeset/README.md) for setup and retries.
