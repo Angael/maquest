@@ -1,5 +1,16 @@
 # @maquest/desktop
 
+## 0.8.0
+
+### Minor Changes
+
+- 09f5814: Opening a project in a git repository now also pushes your local commits to the upstream branch when that is a plain fast-forward (after the safe pull, nothing on the remote is missing locally). A toast reports whether the push succeeded or why it failed.
+- d747d88: Opening a project that lives in a git repository now pulls the latest changes from its upstream branch when that is conflict-free (a fast-forward, or a merge git proves clean), and shows a toast when the project was updated. Local edits that would be overwritten, conflicting history, in-progress git operations, offline remotes and missing credentials are detected and reported instead of touching your files.
+
+### Patch Changes
+
+- d747d88: Toasts now use a shared stacked notification style; git sync on open no longer fails to merge when git has no user identity configured.
+
 ## 0.7.0
 
 ### Minor Changes
