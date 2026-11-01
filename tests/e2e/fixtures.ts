@@ -8,12 +8,15 @@ import { Project } from '../../packages/core/src/index'
 
 const require = createRequire(path.resolve('apps/desktop/package.json'))
 
-export const test = base.extend<{ desktop: { page: Page; project: Project; ids: string[] } }>({
-  desktop: async ({ playwright }, use, testInfo) => {
+export const test = base.extend<{ desktop: { page: Page; project: Project; ids: string[] }; prepare: { run: (project: Project) => void } | undefined }>({
+  /** Runs against the fixture project before the app launches. */
+  prepare: [undefined, { option: true }],
+  desktop: async ({ playwright, prepare }, use, testInfo) => {
     const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'maquest-e2e-'))
     const project = Project.init(path.join(temporary, 'project'), { name: 'Playwright fixture' })
     const ids = ['Hall', 'Cellar'].map((title) => project.createNode({ type: 'location', title }).id)
     project.setLayout({ [ids[0]]: { x: 100, y: 100 }, [ids[1]]: { x: 450, y: 100 } })
+    prepare?.run(project)
     const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined))
     delete env.ELECTRON_RUN_AS_NODE
     delete env.ELECTRON_RENDERER_URL
