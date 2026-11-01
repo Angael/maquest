@@ -1,9 +1,68 @@
 @import 'tailwindcss';
 @import '@xyflow/react/dist/style.css';
 
+/*
+ * Design tokens. Use these semantic utilities (bg-panel, text-fg-muted, border-line, bg-accent…)
+ * instead of raw stone/amber shades. Contrast (WCAG 2) on bg-panel: fg 16:1, fg-muted 9.9:1,
+ * fg-subtle 6.4:1, fg-faint 4.5:1 (placeholders / disabled only), accent 7.6:1.
+ */
 @theme {
-  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
-  --font-serif: 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-serif: 'Literata Variable', 'Iowan Old Style', Georgia, serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+
+  /* Type scale: 11 / 12 / 13 (UI base) / 14 / 16 (prose) / 18 / 20 / 24. */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 0.875rem;
+  --text-base--line-height: 1.375rem;
+  --text-prose: 1rem;
+  --text-prose--line-height: 1.7;
+
+  /* Surfaces, darkest to lightest. Elevation reads as lighter surface + hairline, not heavy shadow. */
+  --color-app: oklch(0.165 0.005 60);
+  --color-panel: oklch(0.19 0.006 60);
+  --color-surface: oklch(0.22 0.007 60);
+  --color-raised: oklch(0.25 0.008 60);
+  --color-hover: oklch(1 0 0 / 0.055);
+  --color-active: oklch(1 0 0 / 0.09);
+  --color-line: oklch(1 0 0 / 0.075);
+  --color-line-strong: oklch(1 0 0 / 0.13);
+
+  /* Text. */
+  --color-fg: oklch(0.95 0.006 80);
+  --color-fg-muted: oklch(0.8 0.01 75);
+  --color-fg-subtle: oklch(0.68 0.012 70);
+  --color-fg-faint: oklch(0.6 0.012 70);
+
+  /* Brand orange. accent-text is the lighter tint for text/icons on dark surfaces. */
+  --color-accent: oklch(0.74 0.16 52);
+  --color-accent-hover: oklch(0.78 0.15 55);
+  --color-accent-fg: oklch(0.22 0.04 50);
+  --color-accent-text: oklch(0.8 0.13 60);
+  --color-accent-soft: oklch(0.74 0.16 52 / 0.14);
+
+  --color-danger: oklch(0.7 0.17 25);
+  --color-danger-soft: oklch(0.7 0.17 25 / 0.14);
+  --color-success: oklch(0.75 0.14 160);
+  --color-warning: oklch(0.82 0.14 85);
+
+  /* Motion (Emil Kowalski's curves). Never ease-in for UI; keep everything under 300ms. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+
+  --shadow-popover: 0 0 0 1px oklch(1 0 0 / 0.08), 0 8px 24px -4px oklch(0 0 0 / 0.5), 0 2px 6px -2px oklch(0 0 0 / 0.4);
+  --shadow-float: 0 0 0 1px oklch(1 0 0 / 0.07), 0 4px 16px -4px oklch(0 0 0 / 0.45);
+}
+
+:root {
+  color-scheme: dark;
+  --titlebar-height: 40px;
 }
 
 html,
@@ -12,7 +71,84 @@ body,
   height: 100%;
 }
 body {
-  @apply bg-stone-950 text-stone-200 antialiased;
+  @apply bg-app font-sans text-sm text-fg antialiased;
+  font-feature-settings: 'cv11', 'ss01', 'ss03';
+  font-optical-sizing: auto;
+}
+/* Chrome is not text: no accidental selection or I-beam outside fields and documents. */
+button,
+[role='button'],
+[role='tab'],
+[role='menuitem'],
+label {
+  user-select: none;
+}
+::selection {
+  background: oklch(0.74 0.16 52 / 0.35);
+}
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+input::placeholder,
+textarea::placeholder {
+  color: var(--color-fg-faint);
+}
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Thin, quiet scrollbars that only darken on hover. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: oklch(1 0 0 / 0.12) transparent;
+}
+*:hover {
+  scrollbar-color: oklch(1 0 0 / 0.22) transparent;
+}
+
+/* Electron window drag regions for the integrated title bar. */
+.app-drag {
+  -webkit-app-region: drag;
+}
+.app-drag :is(button, a, input, select, textarea, [role='button'], [role='tab'], [role='menuitem'], .app-no-drag) {
+  -webkit-app-region: no-drag;
+}
+
+/* Popups (Base UI): scale from their trigger; exits are faster than enters. */
+.popup-motion {
+  transform-origin: var(--transform-origin);
+  transition:
+    opacity 140ms var(--ease-out),
+    transform 140ms var(--ease-out);
+}
+.popup-motion[data-starting-style],
+.popup-motion[data-ending-style] {
+  opacity: 0;
+  transform: scale(0.97);
+}
+.popup-motion[data-ending-style] {
+  transition-duration: 90ms;
+}
+.tooltip-motion {
+  transition: opacity 120ms var(--ease-out);
+}
+.tooltip-motion[data-starting-style],
+.tooltip-motion[data-ending-style] {
+  opacity: 0;
+}
+/* Once one tooltip is open, neighbours appear instantly. */
+.tooltip-motion[data-instant] {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 1ms !important;
+    animation-duration: 1ms !important;
+  }
 }
 
 .react-flow {

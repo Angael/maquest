@@ -6,6 +6,7 @@ import { api } from '../lib/api'
 import { useCurrent, useNodes } from '../lib/queries'
 import { useUI, type View } from '../lib/store'
 import { Button } from './ui'
+import { TitleBar } from './TitleBar'
 import { LiveNotesButton } from './LiveNotes'
 
 export function TopBar() {
@@ -24,7 +25,7 @@ export function TopBar() {
   ]
 
   return (
-    <header className="flex h-11 shrink-0 items-center gap-3 border-b border-stone-800 bg-stone-950 px-3">
+    <TitleBar>
       <div className="font-serif text-lg text-amber-400">Maquest</div>
       <div className="text-sm text-stone-400">{current?.config.name}</div>
       <nav className="ml-4 flex gap-1">
@@ -79,6 +80,6 @@ export function TopBar() {
           <LogOut size={16} />
         </Button>
       </div>
-    </header>
+    </TitleBar>
   )
 }

@@ -11,6 +11,12 @@ Principles:
 - Prefer established libraries over hand-rolled code.
 - Agent edits must show up live. Whatever an agent can change through MCP (notes, documents, graph, media, guidelines, any other data model), the app must refresh open views of it right away. The user should never have to reload or reopen anything. Any new MCP-editable data needs this live refresh too.
 
+UI and design:
+
+- Before changing the renderer UI, read `.claude/skills/maquest-design/SKILL.md` (tokens, type scale, primitives, motion, layout, performance rules). It builds on the vendored design skills in `.claude/skills/`: `emil-design-eng`, `review-animations`, `web-interface-guidelines`, `baseline-ui`, `fixing-accessibility`, `fixing-motion-performance`.
+- Use the semantic tokens and `components/ui.tsx` primitives; don't introduce raw colors or hand-rolled popovers.
+- `pnpm screenshots` captures the main UI states of the built app into `.screenshots/` for visual review.
+
 Layout:
 
 - packages/core: domain model, file I/O, graph, guidelines, templates

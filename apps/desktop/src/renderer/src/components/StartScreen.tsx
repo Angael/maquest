@@ -5,6 +5,7 @@ import { PROJECT_KINDS, type ProjectKind } from '@maquest/core/schema'
 import { api } from '../lib/api'
 import { useRecent } from '../lib/queries'
 import { Button, Input, Label, Select } from './ui'
+import { TitleBar } from './TitleBar'
 
 export function StartScreen() {
   const qc = useQueryClient()
@@ -29,77 +30,83 @@ export function StartScreen() {
   const done = (r: unknown) => r && qc.invalidateQueries()
 
   return (
-    <div className="flex h-full items-center justify-center bg-[radial-gradient(ellipse_at_top,#292524_0%,#0c0a09_60%)]">
-      <div className="w-[520px] space-y-8">
-        <div>
-          <div className="flex items-center gap-2 text-amber-400">
-            <Sparkles size={22} />
-            <h1 className="font-serif text-4xl text-stone-100">Maquest</h1>
-          </div>
-          <p className="mt-2 text-sm text-stone-400">
-            Stories, campaigns and worlds as plain markdown. Talk to your agent in the project folder and it edits the project through MCP while you watch.
-          </p>
-        </div>
-
-        <div className="space-y-3 rounded-xl border border-stone-800 bg-stone-900/60 p-5">
-          <Label>New project</Label>
-          <div className="flex gap-2">
-            <Input placeholder="Project name" value={name} onChange={(e) => setName(e.target.value)} />
-            <Select className="w-36" value={kind} onChange={(e) => setKind(e.target.value as ProjectKind)}>
-              {PROJECT_KINDS.map((k) => (
-                <option key={k}>{k}</option>
-              ))}
-            </Select>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="primary" disabled={!name.trim()} onClick={async () => done(await api.pickFolder({ name: name.trim(), kind }))}>
-              <Plus size={16} /> Create in folder…
-            </Button>
-            <Button onClick={async () => done(await api.pickFolder())}>
-              <FolderOpen size={16} /> Open existing folder
-            </Button>
-          </div>
-        </div>
-
-        {error && (
-          <p role="alert" className="text-sm text-red-400">
-            {error}
-          </p>
-        )}
-
-        {!!recent?.length && (
+    <div className="flex h-full flex-col">
+      <TitleBar />
+      <div className="flex min-h-0 flex-1 items-center justify-center bg-[radial-gradient(ellipse_at_top,#292524_0%,#0c0a09_60%)]">
+        <div className="w-[520px] space-y-8">
           <div>
-            <Label>Recent</Label>
-            <div className="space-y-1">
-              {recent.map((r) => (
-                <div key={r.root} className="group flex items-center rounded-md hover:bg-stone-900">
-                  <button onClick={async () => done(await api.open(r.root))} className="flex min-w-0 flex-1 items-baseline justify-between px-3 py-2 text-left">
-                    <span className="text-stone-200">{r.config.name}</span>
-                    <span className="truncate pl-4 text-xs text-stone-500">{r.root}</span>
-                  </button>
-                  <button
-                    title="Move project to trash"
-                    aria-label={`Move ${r.config.name} to trash`}
-                    disabled={busy !== null}
-                    className="px-2 text-stone-500 hover:text-red-400 disabled:opacity-40"
-                    onClick={() => void updateRecent(r.root, true)}
-                  >
-                    <Trash2 size={15} />
-                  </button>
-                  <button
-                    title="Remove from recent (keep project files)"
-                    aria-label={`Remove ${r.config.name} from recent`}
-                    disabled={busy !== null}
-                    className="px-2 text-stone-500 hover:text-stone-200 disabled:opacity-40"
-                    onClick={() => void updateRecent(r.root, false)}
-                  >
-                    <X size={15} />
-                  </button>
-                </div>
-              ))}
+            <div className="flex items-center gap-2 text-amber-400">
+              <Sparkles size={22} />
+              <h1 className="font-serif text-4xl text-stone-100">Maquest</h1>
+            </div>
+            <p className="mt-2 text-sm text-stone-400">
+              Stories, campaigns and worlds as plain markdown. Talk to your agent in the project folder and it edits the project through MCP while you watch.
+            </p>
+          </div>
+
+          <div className="space-y-3 rounded-xl border border-stone-800 bg-stone-900/60 p-5">
+            <Label>New project</Label>
+            <div className="flex gap-2">
+              <Input placeholder="Project name" value={name} onChange={(e) => setName(e.target.value)} />
+              <Select className="w-36" value={kind} onChange={(e) => setKind(e.target.value as ProjectKind)}>
+                {PROJECT_KINDS.map((k) => (
+                  <option key={k}>{k}</option>
+                ))}
+              </Select>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="primary" disabled={!name.trim()} onClick={async () => done(await api.pickFolder({ name: name.trim(), kind }))}>
+                <Plus size={16} /> Create in folder…
+              </Button>
+              <Button onClick={async () => done(await api.pickFolder())}>
+                <FolderOpen size={16} /> Open existing folder
+              </Button>
             </div>
           </div>
-        )}
+
+          {error && (
+            <p role="alert" className="text-sm text-red-400">
+              {error}
+            </p>
+          )}
+
+          {!!recent?.length && (
+            <div>
+              <Label>Recent</Label>
+              <div className="space-y-1">
+                {recent.map((r) => (
+                  <div key={r.root} className="group flex items-center rounded-md hover:bg-stone-900">
+                    <button
+                      onClick={async () => done(await api.open(r.root))}
+                      className="flex min-w-0 flex-1 items-baseline justify-between px-3 py-2 text-left"
+                    >
+                      <span className="text-stone-200">{r.config.name}</span>
+                      <span className="truncate pl-4 text-xs text-stone-500">{r.root}</span>
+                    </button>
+                    <button
+                      title="Move project to trash"
+                      aria-label={`Move ${r.config.name} to trash`}
+                      disabled={busy !== null}
+                      className="px-2 text-stone-500 hover:text-red-400 disabled:opacity-40"
+                      onClick={() => void updateRecent(r.root, true)}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                    <button
+                      title="Remove from recent (keep project files)"
+                      aria-label={`Remove ${r.config.name} from recent`}
+                      disabled={busy !== null}
+                      className="px-2 text-stone-500 hover:text-stone-200 disabled:opacity-40"
+                      onClick={() => void updateRecent(r.root, false)}
+                    >
+                      <X size={15} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

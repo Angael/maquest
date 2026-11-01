@@ -13,9 +13,12 @@ function createWindow() {
     height: 900,
     minWidth: 900,
     minHeight: 600,
-    backgroundColor: '#0c0a09',
+    backgroundColor: '#161311',
     title: 'Maquest',
     autoHideMenuBar: true,
+    // The renderer draws the title bar (app-integrated); macOS keeps its traffic lights inset into it.
+    titleBarStyle: 'hidden',
+    ...(process.platform === 'darwin' ? { trafficLightPosition: { x: 14, y: 13 } } : {}),
     icon: path.join(import.meta.dirname, '../../resources/icon.png'),
     webPreferences: {
       preload: path.join(import.meta.dirname, '../preload/index.mjs'),
@@ -27,6 +30,11 @@ function createWindow() {
     if (/^(https?|mailto):/i.test(url)) void shell.openExternal(url)
     return { action: 'deny' }
   })
+  const sendMaximized = () => win.webContents.send('window:maximized', win.isMaximized())
+  win.on('maximize', sendMaximized)
+  win.on('unmaximize', sendMaximized)
+  win.on('enter-full-screen', sendMaximized)
+  win.on('leave-full-screen', sendMaximized)
   if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL)
   else void win.loadFile(path.join(import.meta.dirname, '../renderer/index.html'))
 }
@@ -40,6 +48,17 @@ app.whenReady().then(() => {
     } catch {
       return new Response('not found', { status: 404 })
     }
+  })
+
+  ipcMain.handle('window', (event, action: 'minimize' | 'toggleMaximize' | 'close' | 'isMaximized') => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) return false
+    if (action === 'minimize') win.minimize()
+    else if (action === 'toggleMaximize') {
+      if (win.isMaximized()) win.unmaximize()
+      else win.maximize()
+    } else if (action === 'close') win.close()
+    return win.isMaximized()
   })
 
   ipcMain.handle('api', (_e, method: keyof typeof handlers, args: unknown[]) => {

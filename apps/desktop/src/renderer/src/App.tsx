@@ -18,14 +18,15 @@ import { ImageViewer } from './components/Lightbox'
 import { useDeleteShortcut } from './lib/deletion'
 import { LiveNotesPanel } from './components/LiveNotes'
 import { InspectorTabs } from './components/InspectorTabs'
+import { TooltipProvider } from './components/ui'
 
 export function App() {
   return (
-    <>
+    <TooltipProvider>
       <UpdateToast />
       <Toaster theme="dark" position="bottom-right" />
       <Main />
-    </>
+    </TooltipProvider>
   )
 }
 
