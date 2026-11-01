@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { CARD_SIZE, GROUP_HEADER, GROUP_PAD, Project } from './index'
+import { CARD_SIZE, GROUP_HEADER, GROUP_PAD, Project, overlapWarnings, sparseGroups } from './index'
 
 function fixture(t: { after: (fn: () => void) => void }) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'maquest-groups-'))
@@ -74,4 +74,63 @@ test('deleting a node removes it from groups', (t) => {
   p.createGroup('main', { title: 'Vault', nodes: [a.id] })
   p.deleteNode(a.id)
   assert.deepEqual(p.board().groups[0].nodes, [])
+})
+
+const overlap = (a: { x: number; y: number; width: number; height: number }, b: typeof a) =>
+  a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
+const card = (p: { x: number; y: number }) => ({ ...p, ...CARD_SIZE })
+
+test('piecemeal agent edits keep groups tight, gridded and apart', (t) => {
+  // Replays an agent session: groups built one call at a time, cards moved between them, a group nested late.
+  const p = fixture(t)
+  const ids = Array.from({ length: 14 }, (_, i) => p.createNode({ type: 'location', title: `Place ${i}` }).id)
+  p.setLayout(Object.fromEntries(ids.map((id, i) => [id, { x: (i % 4) * 300, y: Math.floor(i / 4) * 220 }])))
+  const town = p.createGroup('main', { title: 'Town', nodes: ids.slice(0, 2) })
+  const manor = p.createGroup('main', { title: 'Manor', nodes: [ids[1], ids[2], ids[9]] })
+  const market = p.createGroup('main', { title: 'Market', nodes: [ids[3], ids[8]] })
+  const temple = p.createGroup('main', { title: 'Temple', nodes: [ids[10], ids[11]] })
+  for (const id of ids.slice(4, 8)) p.updateGroup('main', town.id, { addNodes: [id] })
+  p.updateGroup('main', town.id, { removeNodes: [ids[4]] })
+  p.updateGroup('main', temple.id, { addNodes: [ids[4]], parent: town.id })
+  p.updateGroup('main', market.id, { parent: town.id })
+
+  const b = p.board()
+  const g = (id: string) => b.groups.find((x) => x.id === id)!
+  // Every card sits inside its group; groups at the same level never overlap.
+  for (const group of b.groups) for (const n of group.nodes) assert.ok(inside(group, b.layout[n], CARD_SIZE), `${n} in ${group.title}`)
+  for (const level of [undefined, town.id]) {
+    const siblings = b.groups.filter((x) => x.parent === level)
+    for (const [i, a] of siblings.entries()) for (const c of siblings.slice(i + 1)) assert.ok(!overlap(a, c), `${a.title} vs ${c.title}`)
+  }
+  assert.ok(!overlap(g(town.id), g(manor.id)))
+  for (const n of b.nodes ?? [])
+    if (!b.groups.some((x) => x.nodes.includes(n))) for (const x of b.groups) assert.ok(!overlap(x, card(b.layout[n])), `${x.title} covers ${n}`)
+  // Cards are packed into a grid, so no group is left as a mostly empty frame.
+  assert.deepEqual(sparseGroups(b), [])
+  assert.deepEqual(overlapWarnings(b), [])
+})
+
+test('nesting moves the group into its parent instead of stretching the parent', (t) => {
+  const p = fixture(t)
+  const [a, c] = ['Gate', 'Crypt'].map((title) => p.createNode({ type: 'location', title }).id)
+  p.setLayout({ [a]: { x: 0, y: 0 }, [c]: { x: 0, y: 3000 } })
+  const city = p.createGroup('main', { title: 'City', nodes: [a] })
+  const crypt = p.createGroup('main', { title: 'Crypt', nodes: [c] })
+  p.updateGroup('main', crypt.id, { parent: city.id })
+  const b = p.board()
+  const outer = b.groups.find((g) => g.id === city.id)!
+  assert.ok(outer.height < 2 * CARD_SIZE.height + 4 * GROUP_PAD + 2 * GROUP_HEADER + 120, `city height ${outer.height}`)
+  assert.ok(inside(outer, b.layout[c], CARD_SIZE))
+})
+
+test('arrangeBoard tidies a messy board', async (t) => {
+  const p = fixture(t)
+  const ids = Array.from({ length: 6 }, (_, i) => p.createNode({ type: 'location', title: `Spot ${i}` }).id)
+  p.setLayout(Object.fromEntries(ids.map((id, i) => [id, { x: 0, y: i * 900 }])))
+  p.createGroup('main', { title: 'A', nodes: ids.slice(0, 3), rect: { x: -100, y: -100, width: 5000, height: 5000 } })
+  p.createGroup('main', { title: 'B', nodes: ids.slice(3), rect: { x: -50, y: -50, width: 4000, height: 6000 } })
+  await p.arrangeBoard('main')
+  const [ga, gb] = p.board().groups
+  assert.ok(!overlap(ga, gb))
+  assert.ok(ga.width * ga.height < (5000 * 5000) / 4)
 })

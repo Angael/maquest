@@ -446,3 +446,139 @@ export type Guideline = {
   writes?: number
 }
 export type OutlineNode = { id: string; type: NodeType; title: string; status?: Status; summary?: string; children: OutlineNode[] }
+
+// ---------- tidying (used after programmatic group edits, e.g. from agents) ----------
+
+const TIDY_GAP = 40
+const TIDY_MAX_COLUMNS = 3
+
+const intersects = (a: Rect, b: Rect, gap = 0) =>
+  a.x < b.x + b.width + gap && b.x < a.x + a.width + gap && a.y < b.y + b.height + gap && b.y < a.y + a.height + gap
+
+/** Rectangles of a group's direct content: its cards and subgroups. */
+function directContent(board: Board, id: string, size: (card: string) => Size, skip?: string): Rect[] {
+  const group = board.groups.find((g) => g.id === id)
+  if (!group) return []
+  return [
+    ...group.nodes.filter((n) => n !== skip && board.layout[n]).map((n) => ({ ...board.layout[n], ...size(n) })),
+    ...board.groups.filter((g) => g.parent === id && g.id !== skip),
+  ]
+}
+
+/**
+ * The first free cell, in reading order, of a grid inside the group (at most three columns), for an item of
+ * `item` size. Fills gaps before growing the group downwards. `skip` is the item being placed.
+ */
+export function freeSpot(board: Board, id: string, item: Size, size: (card: string) => Size = () => CARD_SIZE, skip?: string): Position {
+  const group = board.groups.find((g) => g.id === id)
+  if (!group) throw new Error(`Group not found: ${id}`)
+  const taken = directContent(board, id, size, skip)
+  const origin = { x: group.x + GROUP_PAD, y: group.y + GROUP_HEADER + GROUP_PAD }
+  const cellW = Math.max(item.width, CARD_SIZE.width) + TIDY_GAP
+  const cellH = item.height + TIDY_GAP
+  const columns = Math.max(1, Math.min(TIDY_MAX_COLUMNS, Math.floor((group.width - 2 * GROUP_PAD + TIDY_GAP) / cellW)))
+  for (let row = 0; ; row++)
+    for (let col = 0; col < columns; col++) {
+      const at = { x: origin.x + col * cellW, y: origin.y + row * cellH }
+      if (!taken.some((r) => intersects(r, { ...at, ...item }, TIDY_GAP / 2))) return at
+    }
+}
+
+/** Moves a group together with its cards and nested groups. */
+export function moveGroup(board: Board, id: string, dx: number, dy: number) {
+  const ids = groupSubtree(board, id)
+  for (const g of board.groups)
+    if (ids.has(g.id)) {
+      g.x += dx
+      g.y += dy
+      for (const n of g.nodes) {
+        const p = board.layout[n]
+        if (p) board.layout[n] = { x: p.x + dx, y: p.y + dy }
+      }
+    }
+}
+
+/** Shrinks (or grows) a group to wrap its content exactly; empty groups keep their rectangle. */
+export function wrapGroup(board: Board, id: string, size: (card: string) => Size = () => CARD_SIZE) {
+  const group = board.groups.find((g) => g.id === id)
+  const content = groupContent(board, id, size)
+  if (group && content) Object.assign(group, content)
+}
+
+type BoardItem = { group: string } | { card: string }
+const sameItem = (a: BoardItem, b: BoardItem) => ('group' in a ? 'group' in b && a.group === b.group : 'card' in b && a.card === b.card)
+
+/**
+ * Pushes siblings of an item (same parent group, or top level) out of its way: overlapping groups and loose
+ * cards move right of it, and whatever they then overlap moves too. Returns whether anything moved.
+ */
+export function separate(board: Board, item: { group: string } | { card: string }, size: (card: string) => Size = () => CARD_SIZE): boolean {
+  const parentOf = (it: { group: string } | { card: string }) =>
+    'group' in it ? board.groups.find((g) => g.id === it.group)?.parent : groupOf(board, it.card)?.id
+  const rectOf = (it: { group: string } | { card: string }): Rect | undefined =>
+    'group' in it ? board.groups.find((g) => g.id === it.group) : board.layout[it.card] && { ...board.layout[it.card], ...size(it.card) }
+  const level = parentOf(item)
+  const siblings = (): ({ group: string } | { card: string })[] => [
+    ...board.groups.filter((g) => g.parent === level).map((g) => ({ group: g.id })),
+    ...(level ? (board.groups.find((g) => g.id === level)?.nodes ?? []) : (board.nodes ?? Object.keys(board.layout)).filter((n) => !groupOf(board, n)))
+      .filter((n) => board.layout[n])
+      .map((n) => ({ card: n })),
+  ]
+  let moved = false
+  const queue = [item]
+  for (let guard = 0; queue.length && guard < 500; guard++) {
+    const current = queue.shift()!
+    const r = rectOf(current)
+    if (!r) continue
+    for (const other of siblings()) {
+      if (sameItem(other, current)) continue
+      const o = rectOf(other)
+      if (!o || !intersects(r, o, TIDY_GAP / 2 - 1)) continue
+      const dx = r.x + r.width + TIDY_GAP - o.x
+      if ('group' in other) moveGroup(board, other.group, dx, 0)
+      else board.layout[other.card] = { x: o.x + dx, y: o.y }
+      moved = true
+      queue.push(other)
+    }
+  }
+  return moved
+}
+
+/**
+ * After a group's membership or nesting changed: wrap it tightly, push its siblings out of the way, and repeat
+ * for each enclosing group so ancestors fit their content without overlapping their own siblings.
+ */
+export function settleGroup(board: Board, id: string, size: (card: string) => Size = () => CARD_SIZE) {
+  const seen = new Set<string>()
+  for (let current: string | undefined = id; current && !seen.has(current); current = board.groups.find((g) => g.id === current)?.parent) {
+    seen.add(current)
+    wrapGroup(board, current, size)
+    separate(board, { group: current }, size)
+  }
+  fitGroups(board, size)
+}
+
+/** Groups overlapping a sibling group or a sibling loose card (e.g. "Town overlaps Castle"). */
+export function overlapWarnings(board: Board, size: (card: string) => Size = () => CARD_SIZE): string[] {
+  const out: string[] = []
+  const levels = new Set<string | undefined>(board.groups.map((g) => g.parent))
+  for (const level of levels) {
+    const groups = board.groups.filter((g) => g.parent === level)
+    const cards = (level ? (board.groups.find((g) => g.id === level)?.nodes ?? []) : (board.nodes ?? []).filter((n) => !groupOf(board, n))).filter(
+      (n) => board.layout[n],
+    )
+    for (const [i, a] of groups.entries()) {
+      for (const b of groups.slice(i + 1)) if (intersects(a, b)) out.push(`group "${a.title}" overlaps group "${b.title}"`)
+      for (const n of cards) if (intersects(a, { ...board.layout[n], ...size(n) })) out.push(`group "${a.title}" covers card ${n}, which is not in it`)
+    }
+  }
+  return out
+}
+
+/** Groups much larger than their content (e.g. left behind after cards moved out). */
+export function sparseGroups(board: Board, size: (card: string) => Size = () => CARD_SIZE): Group[] {
+  return board.groups.filter((g) => {
+    const content = groupContent(board, g.id, size)
+    return content && g.width * g.height > 3 * content.width * content.height && g.width * g.height > 4 * CARD_SIZE.width * CARD_SIZE.height
+  })
+}
