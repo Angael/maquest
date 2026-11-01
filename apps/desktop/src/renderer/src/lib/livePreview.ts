@@ -1,5 +1,5 @@
 import { syntaxTree } from '@codemirror/language'
-import { type Extension, type Range, StateEffect, StateField } from '@codemirror/state'
+import { type EditorState, type Extension, type Range, StateEffect, StateField } from '@codemirror/state'
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate, WidgetType } from '@codemirror/view'
 import { isVideo, mediaUrl } from './api'
 import { openImage } from '../components/Lightbox'
@@ -147,6 +147,111 @@ class NodeLinkWidget extends WidgetType {
   }
 }
 
+/** Splits a GFM table row into trimmed cells, honouring `\|` escapes. */
+function cells(row: string): string[] {
+  const t = row
+    .trim()
+    .replace(/^\|/, '')
+    .replace(/(?<!\\)\|$/, '')
+  return t.split(/(?<!\\)\|/).map((c) => c.trim().replaceAll('\\|', '|'))
+}
+
+const INLINE = /\*\*([^*]+)\*\*|\*([^*]+)\*|_([^_]+)_|`([^`]+)`|\[\[([^\]|\n]+)(?:\|([^\]\n]+))?\]\]/g
+
+/** Renders the inline subset used in table cells (bold, italics, code, node links) as DOM. */
+function inline(el: HTMLElement, text: string, titles: ReadonlyMap<string, string>) {
+  let last = 0
+  for (const m of text.matchAll(INLINE)) {
+    el.append(text.slice(last, m.index))
+    last = m.index + m[0].length
+    const [tag, cls, content] =
+      m[1] != null
+        ? ['strong', '', m[1]]
+        : m[2] != null || m[3] != null
+          ? ['em', '', m[2] ?? m[3]]
+          : m[4] != null
+            ? ['code', 'cm-md-code', m[4]]
+            : ['span', 'cm-md-node', m[6]?.trim() || titles.get(m[5].trim()) || m[5].trim()]
+    const child = document.createElement(tag)
+    if (cls) child.className = cls
+    child.textContent = content
+    el.append(child)
+  }
+  el.append(text.slice(last))
+}
+
+class TableWidget extends WidgetType {
+  constructor(
+    readonly source: string,
+    readonly titles: ReadonlyMap<string, string>,
+  ) {
+    super()
+  }
+  eq(other: TableWidget) {
+    return other.source === this.source && other.titles === this.titles
+  }
+  toDOM() {
+    const wrap = document.createElement('div')
+    wrap.className = 'cm-md-table'
+    const table = document.createElement('table')
+    const rows = this.source.split('\n').filter((r) => r.trim())
+    const align = cells(rows[1] ?? '').map((c) => (/^:-+:$/.test(c) ? 'center' : /-+:$/.test(c) ? 'right' : ''))
+    rows.forEach((row, i) => {
+      if (i === 1) return
+      const tr = document.createElement('tr')
+      cells(row).forEach((text, col) => {
+        const cell = document.createElement(i === 0 ? 'th' : 'td')
+        if (align[col]) cell.style.textAlign = align[col]
+        inline(cell, text, this.titles)
+        tr.append(cell)
+      })
+      ;(i === 0 ? table.createTHead() : (table.tBodies[0] ?? table.createTBody())).append(tr)
+    })
+    wrap.append(table)
+    return wrap
+  }
+  ignoreEvent() {
+    return false
+  }
+}
+
+/** Editor focus, mirrored into state so the table field can show raw markdown only while editing. */
+const setFocused = StateEffect.define<boolean>()
+const focused = StateField.define<boolean>({
+  create: () => false,
+  update: (value, tr) => tr.effects.reduce((v, e) => (e.is(setFocused) ? e.value : v), value),
+})
+
+/** Whether the selection touches [from, to] while the editor is focused. */
+const touches = (state: EditorState, from: number, to: number) => state.field(focused) && state.selection.ranges.some((r) => r.from <= to && r.to >= from)
+
+/**
+ * Tables span several lines, which plugins may not replace, so they are
+ * rendered from a state field. The raw table is shown while the cursor is in it.
+ */
+function buildTables(state: EditorState): DecorationSet {
+  const decos: Range<Decoration>[] = []
+  syntaxTree(state).iterate({
+    enter: (node) => {
+      if (node.name !== 'Table') return
+      if (!touches(state, node.from, node.to)) {
+        const widget = new TableWidget(state.sliceDoc(node.from, node.to), state.field(nodeTitles))
+        decos.push(Decoration.replace({ widget, block: true }).range(node.from, node.to))
+      }
+      return false
+    },
+  })
+  return Decoration.set(decos)
+}
+const tables = StateField.define<DecorationSet>({
+  create: buildTables,
+  update: (value, tr) =>
+    tr.docChanged || tr.selection || tr.effects.some((e) => e.is(setFocused) || e.is(setNodeTitles)) || syntaxTree(tr.startState) !== syntaxTree(tr.state)
+      ? buildTables(tr.state)
+      : value,
+  provide: (f) => EditorView.decorations.from(f),
+})
+
 const WIKI = /\[\[([^\]|\n]+)(?:\|([^\]\n]+))?\]\]/g
 
 function build(view: EditorView, opts: LivePreviewOptions): DecorationSet {
@@ -159,6 +264,7 @@ function build(view: EditorView, opts: LivePreviewOptions): DecorationSet {
   }
   const isActive = (pos: number) => active.has(state.doc.lineAt(pos).number)
   const decos: Range<Decoration>[] = []
+  const rendered: [number, number][] = []
   const lineDeco = (from: number, to: number, cls: string) => {
     for (let pos = from; pos <= to;) {
       const l = state.doc.lineAt(pos)
@@ -173,6 +279,10 @@ function build(view: EditorView, opts: LivePreviewOptions): DecorationSet {
       to,
       enter: (node) => {
         const name = node.name
+        if (name === 'Table' && !touches(state, node.from, node.to)) {
+          rendered.push([node.from, node.to])
+          return false
+        }
         if (headings[name]) {
           decos.push(line(headings[name]).range(state.doc.lineAt(node.from).from))
         } else if (inlineStyles[name]) {
@@ -232,6 +342,7 @@ function build(view: EditorView, opts: LivePreviewOptions): DecorationSet {
     for (const m of text.matchAll(WIKI)) {
       const start = from + m.index
       const end = start + m[0].length
+      if (rendered.some(([f, t]) => start >= f && end <= t)) continue
       if (isActive(start)) {
         decos.push(mark('cm-md-link').range(start, end))
         continue
@@ -315,5 +426,13 @@ export function livePreview(opts: LivePreviewOptions): Extension {
     },
     { decorations: (v) => v.decorations },
   )
-  return [nodeTitles, plugin, linkClick(opts), EditorView.contentAttributes.of({ class: 'cm-md-live' })]
+  return [
+    nodeTitles,
+    focused,
+    tables,
+    EditorView.focusChangeEffect.of((_, focusing) => setFocused.of(focusing)),
+    plugin,
+    linkClick(opts),
+    EditorView.contentAttributes.of({ class: 'cm-md-live' }),
+  ]
 }

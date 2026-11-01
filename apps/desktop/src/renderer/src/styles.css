@@ -195,3 +195,16 @@ body {
 .cm-placeholder {
   @apply text-stone-600;
 }
+.cm-md-table {
+  @apply my-2 overflow-x-auto;
+}
+.cm-md-table table {
+  @apply border-collapse text-sm;
+}
+.cm-md-table th,
+.cm-md-table td {
+  @apply border border-stone-700 px-2 py-1 align-top;
+}
+.cm-md-table th {
+  @apply bg-stone-800/60 font-semibold;
+}

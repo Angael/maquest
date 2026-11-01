@@ -60,3 +60,20 @@ test('media opens full size in a zoomable viewer', async ({ desktop }) => {
   await page.keyboard.press('Escape')
   await expect(viewer).toBeHidden()
 })
+
+test('markdown tables render as tables and show raw markdown while edited', async ({ desktop }) => {
+  const { page, project, ids } = desktop
+  project.updateNode(ids[1], { body: 'Stats:\n\n| STR | DEX |\n|---|---:|\n| 18 (+4) | **11** |\n\nEnd.' })
+  await page.locator(`.react-flow__node[data-id="${ids[1]}"]`).click()
+  const editor = page.locator('.cm-content')
+  const table = editor.locator('.cm-md-table table')
+  await expect(table.locator('th')).toHaveText(['STR', 'DEX'])
+  await expect(table.locator('td')).toHaveText(['18 (+4)', '11'])
+  await expect(table.locator('td strong')).toHaveText('11')
+
+  await table.locator('td').first().click()
+  await expect(table).toBeHidden()
+  await expect(editor).toContainText('| 18 (+4) | **11** |')
+  await page.keyboard.press('ControlOrMeta+End')
+  await expect(table).toBeVisible()
+})
