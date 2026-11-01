@@ -1,5 +1,18 @@
 # @maquest/desktop
 
+## 0.4.0
+
+### Minor Changes
+
+- 1c30055: Reorder canvases by dragging their tabs, and reorder characters, locations, factions, items and notes by dragging them in the sidebar. A new read-only "All" canvas always shows every node. Cards are a little wider and show their full summary instead of cutting it off after two lines.
+- 947b335: Node types are now configurable per project. A new Types view lets you rename any type, change its color and pick its icon from the full Lucide set, and add your own entity types (for example "Monster") with starter fields and body. Custom types get their own folder and sidebar section, show up in the canvas filters and "Promote to…" menus, and convert to and from existing types like notes. Agents can manage types through the MCP `project` tool, and `overview` lists them.
+
+### Patch Changes
+
+- 2aa1e1d: Search palette (Ctrl+K) now ranks exact and near-exact title matches first, tolerates one-letter typos, and no longer truncates entity names in favor of their summaries.
+- c4486e2: Auto layout keeps your ordering: cards stay in their current top-to-bottom order within each canvas column, and packed groups fill strict rows in reading order instead of being tucked under one another.
+- 5fba7b8: Groups edited by agents stay tidy: cards added to a group are packed into a grid, groups shrink to fit their content after cards move in or out, nesting a group moves it inside its parent instead of stretching the parent, and neighbouring groups are pushed aside instead of overlapping. The MCP `board` tool gains a `layout` action (the same auto-layout as the canvas button), shows group sizes and positions on `read`, and flags overlapping or mostly empty groups after edits.
+
 ## 0.3.0
 
 ### Minor Changes
