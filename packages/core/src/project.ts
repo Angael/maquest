@@ -5,6 +5,7 @@ import transliterate from '@sindresorhus/transliterate'
 import { parseFrontmatter, stringifyFrontmatter } from './frontmatter'
 import { DEFAULT_GUIDELINES } from './guidelines/defaults'
 import { TEMPLATES } from './templates'
+import { arrange, type LayoutMode } from './layout'
 import type { EdgeType } from './schema'
 import {
   ALLOWED_PARENTS,
@@ -20,7 +21,11 @@ import {
   refsOf,
   bounds,
   fitGroups,
-  groupContent,
+  freeSpot as groupSpot,
+  groupOf,
+  groupSubtree,
+  moveGroup,
+  settleGroup,
   removeGroup,
   type GroupColor,
   type Rect,
@@ -746,26 +751,92 @@ export class Project {
     this.saveGraph(g)
   }
 
+  /**
+   * Auto-arranges a board the way the canvas "Layout" button does: groups lay out their own content and move
+   * as blocks, shrink-wrapped, without overlaps; pinned cards stay put. Card sizes default to CARD_SIZE.
+   */
+  async arrangeBoard(boardId?: string, mode: LayoutMode = 'smart', sizes?: CardSizes) {
+    const b = this.board(boardId)
+    const nodes = new Map(this.listNodes().map((n) => [n.id, n]))
+    const size = sizeOf(sizes)
+    const keys = (b.nodes ?? Object.keys(b.layout)).filter((k) => b.layout[k] && nodes.has(entityOf(k)))
+    const cards = keys.map((k) => ({ id: k, position: b.layout[k], size: size(k), pinned: !!nodes.get(entityOf(k))?.pinned }))
+    const first = new Map<string, string>()
+    for (const k of keys) if (!first.has(entityOf(k))) first.set(entityOf(k), k)
+    const edges = this.graph()
+      .edges.filter((e) => first.has(e.source) && first.has(e.target))
+      .map((e) => ({ source: first.get(e.source)!, target: first.get(e.target)! }))
+    const { positions, groups } = await arrange(b, cards, edges, { mode })
+    this.setLayout(positions, b.id, { groups, sizes })
+  }
+
   // ---------- groups ----------
 
   createGroup(boardId: string, input: GroupInput): Group {
     const g = this.graph()
     const b = this.findBoard(g, boardId)
+    const size = sizeOf(input.sizes)
     let id = `g-${randomUUID().slice(0, 6)}`
     while (b.groups.some((x) => x.id === id)) id = `g-${randomUUID().slice(0, 6)}`
-    const rect = input.rect ?? emptyGroupSpot(b)
+    // Without an explicit rectangle, wrap the content where it already sits, unless that would swallow other
+    // cards or groups; then start at the first card and pack the content into a grid there.
+    const keep = !input.rect && this.canWrapInPlace(g, b, input, size)
+    const anchor = (input.nodes ?? []).map((n) => b.layout[n] ?? g.boards.find((x) => x.layout[n])?.layout[n]).find(Boolean)
+    const rect =
+      input.rect ??
+      (anchor && !keep
+        ? {
+            x: anchor.x - GROUP_PAD,
+            y: anchor.y - GROUP_PAD - GROUP_HEADER,
+            width: 2 * CARD_SIZE.width + 40 + 2 * GROUP_PAD,
+            height: CARD_SIZE.height + 2 * GROUP_PAD + GROUP_HEADER,
+          }
+        : emptyGroupSpot(b))
     const group = Group.parse({ id, title: input.title, color: input.color, ...rect })
     b.groups.push(group)
-    this.editGroup(g, b, group, { parent: input.parent, addNodes: input.nodes, keepPositions: true })
-    for (const child of input.groups ?? []) this.groupAction(() => assignGroup(b, child, id, true))
-    if (!input.rect && (input.nodes?.length || input.groups?.length)) {
-      // Wrap the content tightly instead of keeping the placeholder rectangle.
-      const content = groupContent(b, id, sizeOf(input.sizes))
-      if (content) Object.assign(group, content)
+    // A new group nests in place: it is placed inside its parent rather than stretching the parent to reach it.
+    this.editGroup(g, b, group, {
+      parent: input.parent,
+      addNodes: input.nodes,
+      keepPositions: !!input.rect || keep,
+      moveIntoParent: !input.rect && !keep,
+      size,
+    })
+    for (const child of input.groups ?? []) {
+      this.groupAction(() => assignGroup(b, child, id, true))
+      if (!input.rect && !keep) this.moveInto(b, child, id, size)
     }
-    fitGroups(b, sizeOf(input.sizes))
+    if (!input.rect && (input.nodes?.length || input.groups?.length)) settleGroup(b, id, size)
+    fitGroups(b, size)
     this.saveGraph(g)
     return group
+  }
+
+  /** Whether the bounding box of a new group's content is free of unrelated cards and groups. */
+  private canWrapInPlace(g: Graph, b: Board, input: GroupInput, size: (card: string) => Size) {
+    const own = new Set(input.nodes ?? [])
+    const ownGroups = new Set((input.groups ?? []).flatMap((x) => [...groupSubtree(b, x)]))
+    for (const x of ownGroups) for (const n of b.groups.find((y) => y.id === x)?.nodes ?? []) own.add(n)
+    const rects: Rect[] = [
+      ...[...(input.nodes ?? [])].map((n) => {
+        const at = b.layout[n] ?? g.boards.find((x) => x.layout[n])?.layout[n]
+        return at && { ...at, ...size(n) }
+      }),
+      ...b.groups.filter((x) => (input.groups ?? []).includes(x.id)),
+    ].filter((r): r is Rect => !!r)
+    if (rects.length !== (input.nodes?.length ?? 0) + (input.groups?.length ?? 0)) return false
+    const box = bounds(rects)
+    if (!box) return false
+    const hit = (r: Rect) => r.x < box.x + box.width && box.x < r.x + r.width && r.y < box.y + box.height && box.y < r.y + r.height
+    // Cards already in one group can't be wrapped in place by a group outside it.
+    for (const n of input.nodes ?? []) {
+      const current = groupOf(b, n)?.id
+      if (current && current !== input.parent && !ownGroups.has(current)) return false
+    }
+    const ancestors = new Set<string>()
+    for (let p = input.parent; p && !ancestors.has(p); p = b.groups.find((x) => x.id === p)?.parent) ancestors.add(p)
+    if (b.groups.some((x) => !ownGroups.has(x.id) && !ancestors.has(x.id) && hit(x))) return false
+    return !(b.nodes ?? []).some((n) => !own.has(n) && b.layout[n] && hit({ ...b.layout[n], ...size(n) }))
   }
 
   updateGroup(boardId: string, id: string, patch: GroupPatch): Group {
@@ -776,8 +847,18 @@ export class Project {
     if (patch.title !== undefined) group.title = patch.title
     if (patch.color !== undefined) group.color = patch.color
     if (patch.rect) Object.assign(group, patch.rect)
-    this.editGroup(g, b, group, patch)
-    fitGroups(b, sizeOf(patch.sizes))
+    const size = sizeOf(patch.sizes)
+    const before = new Set(Object.keys(b.layout).filter((n) => groupOf(b, n)?.id === group.id))
+    this.editGroup(g, b, group, { ...patch, moveIntoParent: true, size })
+    // Membership or nesting changed: wrap the group (and its ancestors) tightly and push neighbours aside.
+    if (patch.parent !== undefined || patch.addNodes?.some((n) => !before.has(n)) || patch.removeNodes?.length) {
+      settleGroup(b, group.id, size)
+      if (patch.removeNodes?.length) {
+        const old = patch.parent === undefined ? group.parent : undefined
+        if (old) settleGroup(b, old, size)
+      }
+    }
+    fitGroups(b, size)
     this.saveGraph(g)
     return group
   }
@@ -804,23 +885,52 @@ export class Project {
     }
   }
 
-  private editGroup(g: Graph, b: Board, group: Group, patch: Pick<GroupPatch, 'parent' | 'addNodes' | 'removeNodes'> & { keepPositions?: boolean }) {
-    if (patch.parent !== undefined) this.groupAction(() => assignGroup(b, group.id, patch.parent ?? null, true))
+  private editGroup(
+    g: Graph,
+    b: Board,
+    group: Group,
+    patch: Pick<GroupPatch, 'parent' | 'addNodes' | 'removeNodes'> & { keepPositions?: boolean; moveIntoParent?: boolean; size?: (card: string) => Size },
+  ) {
+    const size = patch.size ?? sizeOf()
+    if (patch.parent !== undefined && patch.parent !== (group.parent ?? null)) {
+      const from = group.parent
+      this.groupAction(() => assignGroup(b, group.id, patch.parent ?? null, true))
+      if (patch.moveIntoParent) {
+        if (patch.parent) this.moveInto(b, group.id, patch.parent, size)
+        else {
+          // Out to the top level: next to the outermost group it used to be in.
+          let top = b.groups.find((x) => x.id === from)
+          while (top?.parent) top = b.groups.find((x) => x.id === top!.parent)
+          if (top) moveGroup(b, group.id, top.x + top.width + 40 - group.x, top.y - group.y)
+        }
+      }
+    }
     for (const n of patch.addNodes ?? []) {
       this.requireNode(entityOf(n))
       b.nodes ??= []
       if (!b.nodes.includes(n)) b.nodes.push(n)
       const placed = b.layout[n] ?? g.boards.find((x) => x.layout[n])?.layout[n]
+      const already = groupOf(b, n)?.id === group.id
       // Cards already in place keep their spot when the group is being built around them.
-      b.layout[n] = patch.keepPositions && placed ? placed : spotInGroup(b, group)
+      if (!(already && placed)) b.layout[n] = patch.keepPositions && placed ? placed : groupSpot(b, group.id, size(n), size, n)
       assignGroup(b, n, group.id)
     }
     for (const n of patch.removeNodes ?? []) {
       if (!group.nodes.includes(n)) continue
       assignGroup(b, n, group.parent ?? null)
       const at = b.layout[n]
-      if (at && !group.parent) b.layout[n] = { x: group.x + group.width + 40, y: at.y }
+      if (!at) continue
+      // Out of the frame, next to it (inside the parent group when there is one).
+      b.layout[n] = group.parent ? groupSpot(b, group.parent, size(n), size, n) : { x: group.x + group.width + 40, y: at.y }
     }
+  }
+
+  /** Moves a group (with its content) into a free spot of `parent`. */
+  private moveInto(b: Board, id: string, parent: string, size: (card: string) => Size) {
+    const child = b.groups.find((x) => x.id === id)
+    if (!child) return
+    const to = groupSpot(b, parent, child, size, id)
+    moveGroup(b, id, to.x - child.x, to.y - child.y)
   }
 
   createBoard(input: { title: string; nodes?: string[]; phases?: string[] }): Board {
@@ -1021,13 +1131,6 @@ function freeSpot(b: Board, column: number, fallback?: Position): Position {
   const x = column >= 0 ? column * PHASE_WIDTH + 40 : b.phases.length ? -PHASE_WIDTH / 2 : 0
   const below = Object.values(b.layout).filter((p) => Math.floor(p.x / PHASE_WIDTH) === Math.floor(x / PHASE_WIDTH))
   return { x, y: below.length ? Math.max(...below.map((p) => p.y)) + 200 : 0 }
-}
-
-/** A free spot inside a group: below its current content, growing the group as needed. */
-function spotInGroup(b: Board, group: Group): Position {
-  const content = groupContent(b, group.id)
-  if (!content) return { x: group.x + GROUP_PAD, y: group.y + GROUP_HEADER + GROUP_PAD }
-  return { x: group.x + GROUP_PAD, y: content.y + content.height - GROUP_PAD + 40 }
 }
 
 /** Where a new empty group goes: right of everything on the board. */

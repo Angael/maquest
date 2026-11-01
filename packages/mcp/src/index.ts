@@ -15,6 +15,8 @@ import {
   refsOf,
   phaseIndex,
   slugify,
+  overlapWarnings,
+  sparseGroups,
   textMatches,
   GroupColor,
   type Board,
@@ -143,10 +145,23 @@ function groupsText(b: Board, titles: Map<string, { title: string }>) {
     b.groups
       .filter((g) => g.parent === parent)
       .flatMap((g) => [
-        `${'  '.repeat(depth)}- ${g.id}: ${g.title} (${g.nodes.length} cards${g.nodes.length ? `: ${g.nodes.map((n) => titles.get(entityOf(n))?.title ?? n).join(', ')}` : ''})`,
+        `${'  '.repeat(depth)}- ${g.id}: ${g.title} [${Math.round(g.width)}×${Math.round(g.height)} at ${Math.round(g.x)},${Math.round(g.y)}] (${g.nodes.length} cards${g.nodes.length ? `: ${g.nodes.map((n) => titles.get(entityOf(n))?.title ?? n).join(', ')}` : ''})`,
         ...walk(g.id, depth + 1),
       ])
-  return b.groups.length ? `## Groups\n${walk(undefined, 0).join('\n')}` : ''
+  return b.groups.length ? [`## Groups\n${walk(undefined, 0).join('\n')}`, layoutHints(b)].filter(Boolean).join('\n') : ''
+}
+
+/** Layout problems worth fixing, with the fix; empty when the board looks tidy. */
+function layoutHints(b: Board) {
+  const problems = [...overlapWarnings(b), ...sparseGroups(b).map((g) => `group "${g.title}" is mostly empty space`)]
+  if (!problems.length) return ''
+  const shown = problems.slice(0, 5).join('; ') + (problems.length > 5 ? `; +${problems.length - 5} more` : '')
+  return `Layout issues: ${shown}. Run board action "layout" to tidy.`
+}
+
+const hints = (p: Project, board: string) => {
+  const h = layoutHints(p.board(board))
+  return h ? `\n${h}` : ''
 }
 
 function boardText(p: Project, b: Board) {
@@ -467,9 +482,9 @@ server.registerTool(
   {
     title: 'Boards (canvases)',
     description:
-      "Boards are separate canvases over the same nodes. Each board shows only the nodes placed on it; none is special, and removing a node from a board keeps it in the project. A board may have phase columns (acts, left to right) — a node's phase is the column it sits in. Groups are bordered areas on a board (rooms, cities, chapters), may nest, and always contain their cards. Actions: list, read (nodes by phase, plus groups), create (title, phases?, nodes?), update (title?, phases? as ordered titles, removeNodes?), place (nodes onto the board, optionally into a phase or group), group (create a group: title, nodes?, parent?, color?; or edit one given group: title?, nodes? to add, removeNodes?, parent?, color?), ungroup (remove the group frame, keep its cards), delete.",
+      "Boards are separate canvases over the same nodes. Each board shows only the nodes placed on it; none is special, and removing a node from a board keeps it in the project. A board may have phase columns (acts, left to right) — a node's phase is the column it sits in. Groups are bordered areas on a board (rooms, cities, chapters), may nest, and always contain their cards. Actions: list, read (nodes by phase, plus groups with size and position), create (title, phases?, nodes?), update (title?, phases? as ordered titles, removeNodes?), place (nodes onto the board, optionally into a phase or group), group (create a group: title, nodes?, parent?, color?; or edit one given group: title?, nodes? to add, removeNodes?, parent?, color?), ungroup (remove the group frame, keep its cards), layout (auto-arrange the whole board: groups pack their content, shrink to fit and never overlap; pinned cards stay; mode?), delete. Maquest positions cards itself: build groups outermost first, each in one call with all its nodes and its parent, rather than many small edits; after restructuring groups, run layout.",
     inputSchema: {
-      action: z.enum(['list', 'read', 'create', 'update', 'place', 'group', 'ungroup', 'delete']),
+      action: z.enum(['list', 'read', 'create', 'update', 'place', 'group', 'ungroup', 'layout', 'delete']),
       id: z.string().optional().describe('Board id (default: the first board)'),
       title: z.string().optional(),
       phases: z.array(z.string()).optional().describe('Phase titles in order; replaces the columns'),
@@ -479,9 +494,13 @@ server.registerTool(
       group: z.string().optional().describe('Group id or title (place, group, ungroup)'),
       parent: z.string().nullable().optional().describe('Parent group id to nest in; null = top level (group)'),
       color: GroupColor.optional(),
+      mode: z
+        .enum(['smart', 'grid', 'flow-right', 'flow-down', 'classic'])
+        .optional()
+        .describe('layout: smart (default; flow where linked, grid otherwise), grid, flow-right, flow-down, classic'),
     },
   },
-  safe(({ action, id, title, phases, nodes, phase, removeNodes, group, parent, color }) => {
+  safe(async ({ action, id, title, phases, nodes, phase, removeNodes, group, parent, color, mode }) => {
     const p = project()
     switch (action) {
       case 'list':
@@ -503,22 +522,27 @@ server.registerTool(
         if (!nodes?.length) throw new Error('place requires nodes')
         const b = p.updateBoard(p.board(id).id, { addNodes: nodes, phase })
         if (group) p.updateGroup(b.id, group, { addNodes: nodes })
-        return `placed ${nodes.length} node(s) on ${b.id}${phase ? ` in ${phase}` : ''}${group ? ` in group ${group}` : ''}`
+        return `placed ${nodes.length} node(s) on ${b.id}${phase ? ` in ${phase}` : ''}${group ? ` in group ${group}` : ''}${hints(p, b.id)}`
       }
       case 'group': {
         const board = p.board(id).id
         if (group) {
           const g = p.updateGroup(board, group, { title, color, parent, addNodes: nodes, removeNodes })
-          return `updated group ${g.id}: ${g.title}`
+          return `updated group ${g.id}: ${g.title}${hints(p, board)}`
         }
         if (!title) throw new Error('group requires title (new group) or group (existing)')
         const g = p.createGroup(board, { title, color, parent: parent ?? undefined, nodes })
-        return `created group ${g.id}: ${g.title}`
+        return `created group ${g.id}: ${g.title}${hints(p, board)}`
       }
       case 'ungroup':
         if (!group) throw new Error('ungroup requires group')
         p.deleteGroup(p.board(id).id, group)
         return `removed group ${group}`
+      case 'layout': {
+        const b = p.board(id)
+        await p.arrangeBoard(b.id, mode)
+        return `arranged ${b.id} (${mode ?? 'smart'})${hints(p, b.id)}`
+      }
       case 'delete':
         if (!id) throw new Error('delete requires id')
         p.deleteBoard(id)

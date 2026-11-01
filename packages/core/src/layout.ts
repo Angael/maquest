@@ -1,6 +1,6 @@
 import dagre from '@dagrejs/dagre'
 import ELK, { type LayoutOptions } from 'elkjs/lib/elk.bundled.js'
-import { CARD_SIZE, GROUP_HEADER, GROUP_PAD, PHASE_WIDTH, bounds, phaseIndex, type Board, type Position, type Rect, type Size } from '@maquest/core/schema'
+import { CARD_SIZE, GROUP_HEADER, GROUP_PAD, PHASE_WIDTH, bounds, phaseIndex, type Board, type Position, type Rect, type Size } from './schema'
 
 export type LayoutCard = { id: string; position: Position; size: Size; pinned?: boolean }
 export type LayoutResult = { positions: Record<string, Position>; groups: Record<string, Rect> }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { Board, type Rect } from '@maquest/core/schema'
+import { Board, type Rect } from './schema'
 import { LAYOUT_MODES, arrange, type LayoutCard } from './layout'
 
 const size = { width: 200, height: 100 }

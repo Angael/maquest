@@ -81,7 +81,7 @@ import { inferConnectionType } from '../lib/connections'
 import { StoryCard, type CardData, type CardRef } from './StoryCard'
 import { FloatingConnectionLine, FloatingEdge, type FloatingFlowEdge } from './FloatingEdge'
 import { GROUP_STYLE, GroupFrame, type GroupFlowNode } from './GroupFrame'
-import { LAYOUT_MODES, arrange } from '../lib/layout'
+import { LAYOUT_MODES, arrange } from '@maquest/core/layout'
 
 const nodeTypes = { card: StoryCard, frame: GroupFrame }
 const edgeTypes = { floating: FloatingEdge }
