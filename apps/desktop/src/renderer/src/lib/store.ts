@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { EdgeType, NodeType } from '@maquest/core/schema'
 import { entityOf } from '@maquest/core/schema'
-import type { LayoutMode } from './layout'
+import type { LayoutMode } from '@maquest/core/layout'
 
 export type View = 'canvas' | 'backlog' | 'guidelines' | 'types'
 export type Selection = { kind: 'node'; id: string } | { kind: 'edge'; id: string } | null
