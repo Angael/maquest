@@ -5,6 +5,13 @@ import { api } from '../lib/api'
 import { queryClient } from '../lib/queries'
 
 function show(r: SyncResult) {
+  if (r.push?.status === 'pushed')
+    toast.success('Local changes pushed to remote', {
+      id: 'git-push',
+      description: `Pushed ${r.push.commits} commit${r.push.commits === 1 ? '' : 's'} to ${r.push.upstream}`,
+      duration: 6000,
+    })
+  else if (r.push) toast.warning("Couldn't push local changes to remote", { id: 'git-push', description: r.push.reason, duration: 10_000 })
   if (r.status === 'skipped') return
   if (r.status === 'updated')
     toast.success('Project updated to the latest version', {
@@ -15,7 +22,7 @@ function show(r: SyncResult) {
   else toast.warning("Couldn't update project from remote", { id: 'git-sync', description: r.reason, duration: 10_000 })
 }
 
-/** On project open, pulls safe remote git updates and reports the outcome; silent when there is nothing to say. */
+/** On project open, pulls safe remote git updates, pushes local commits when that is a fast-forward, and reports the outcome; silent when there is nothing to say. */
 export function SyncToast({ root }: { root: string }) {
   useEffect(() => {
     // A result for a previously open project is never shown.
@@ -31,6 +38,7 @@ export function SyncToast({ root }: { root: string }) {
     return () => {
       alive = false
       toast.dismiss('git-sync')
+      toast.dismiss('git-push')
     }
   }, [root])
   return null
