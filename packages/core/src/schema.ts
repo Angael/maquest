@@ -477,11 +477,17 @@ export function freeSpot(board: Board, id: string, item: Size, size: (card: stri
   const cellW = Math.max(item.width, CARD_SIZE.width) + TIDY_GAP
   const cellH = item.height + TIDY_GAP
   const columns = Math.max(1, Math.min(TIDY_MAX_COLUMNS, Math.floor((group.width - 2 * GROUP_PAD + TIDY_GAP) / cellW)))
-  for (let row = 0; ; row++)
+  // Only the size matters: `item` may be a whole group, whose own x/y must not override the candidate cell.
+  const { width, height } = item
+  // Below all existing content every cell is free, so this always terminates; the bound is a safety net.
+  const bottom = Math.max(origin.y, ...taken.map((r) => r.y + r.height))
+  const rows = Math.ceil((bottom - origin.y) / cellH) + 2
+  for (let row = 0; row < rows; row++)
     for (let col = 0; col < columns; col++) {
       const at = { x: origin.x + col * cellW, y: origin.y + row * cellH }
-      if (!taken.some((r) => intersects(r, { ...at, ...item }, TIDY_GAP / 2))) return at
+      if (!taken.some((r) => intersects(r, { ...at, width, height }, TIDY_GAP / 2))) return at
     }
+  return { x: origin.x, y: bottom + TIDY_GAP }
 }
 
 /** Moves a group together with its cards and nested groups. */
