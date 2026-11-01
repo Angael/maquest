@@ -30,6 +30,10 @@ type UI = {
   pendingFocus: string | null
   /** Selection each view had when it was left, restored on return. */
   viewSelections: Partial<Record<View, { selection: Selection; selectedNodeIds: string[] }>>
+  /** Nodes pinned as inspector tabs. */
+  tabs: string[]
+  openTab: (id: string) => void
+  closeTab: (id: string) => void
   /** Live notes panel open. */
   liveNotesOpen: boolean
   setLiveNotesOpen: (open: boolean) => void
@@ -67,6 +71,22 @@ export const useUI = create<UI>()(
       pendingFocus: null,
       viewSelections: {},
       liveNotesOpen: false,
+      tabs: [],
+      openTab: (id) =>
+        set((s) => {
+          // The node being viewed becomes a tab too, so opening another one never loses it.
+          const current = s.selection?.kind === 'node' ? [s.selection.id] : []
+          const tabs = [...new Set([...s.tabs, ...current, id])]
+          return { tabs, selection: { kind: 'node', id }, selectedNodeIds: [id] }
+        }),
+      closeTab: (id) =>
+        set((s) => {
+          const i = s.tabs.indexOf(id)
+          const tabs = s.tabs.filter((t) => t !== id)
+          if (s.selection?.kind !== 'node' || s.selection.id !== id) return { tabs }
+          const next = tabs[Math.min(i, tabs.length - 1)]
+          return { tabs, selection: next ? { kind: 'node', id: next } : null, selectedNodeIds: next ? [next] : [] }
+        }),
       setLiveNotesOpen: (liveNotesOpen) => set({ liveNotesOpen }),
       setView: (view) =>
         set((s) =>

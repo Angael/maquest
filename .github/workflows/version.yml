@@ -21,8 +21,13 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - uses: changesets/action/version@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
+      - id: pending
+        # Merging a Version Packages PR consumes every changeset; there is nothing to version then.
+        run: echo "count=$(find .changeset -name '*.md' ! -name README.md | wc -l)" >> "$GITHUB_OUTPUT"
+      - if: steps.pending.outputs.count != '0'
+        run: pnpm install --frozen-lockfile
+      - if: steps.pending.outputs.count != '0'
+        uses: changesets/action/version@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
         with:
           script: pnpm version:release
           pr-title: Version Packages

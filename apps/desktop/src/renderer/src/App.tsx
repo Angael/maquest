@@ -15,6 +15,7 @@ import { UpdateToast } from './components/UpdateToast'
 import { ImageViewer } from './components/Lightbox'
 import { useDeleteShortcut } from './lib/deletion'
 import { LiveNotesPanel } from './components/LiveNotes'
+import { InspectorTabs } from './components/InspectorTabs'
 
 export function App() {
   useLiveProject()
@@ -43,7 +44,10 @@ export function App() {
           <Sidebar />
           <main className="relative min-w-0 flex-1">
             {/* The canvas stays mounted so other views keep its viewport. */}
-            <div className={view === 'canvas' ? 'absolute inset-0' : 'invisible absolute inset-0'} aria-hidden={view !== 'canvas'}>
+            <div
+              className={view === 'canvas' ? 'absolute inset-0' : 'pointer-events-none invisible absolute inset-0 -z-10 [&_*]:invisible!'}
+              aria-hidden={view !== 'canvas'}
+            >
               <Canvas />
             </div>
             {view === 'backlog' && <Backlog />}
@@ -53,7 +57,10 @@ export function App() {
           </main>
           {selection && view !== 'guidelines' && view !== 'types' && (
             <InspectorPanel>
-              <Inspector key={`${selection.kind}:${selection.id}`} />
+              <div className="flex min-h-0 w-full min-w-0 flex-col">
+                <InspectorTabs />
+                <Inspector key={`${selection.kind}:${selection.id}`} />
+              </div>
             </InspectorPanel>
           )}
         </div>

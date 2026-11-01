@@ -88,3 +88,23 @@ test('the caret stays visible on a new empty line', async ({ desktop }) => {
   const [caret, scroller] = await Promise.all([page.locator('.cm-cursor').first().boundingBox(), page.locator('.cm-scroller').boundingBox()])
   expect(caret!.x).toBeGreaterThanOrEqual(scroller!.x)
 })
+
+test('other views hide the canvas behind them', async ({ desktop }) => {
+  const { page, ids } = desktop
+  await page.getByRole('button', { name: 'Backlog', exact: true }).click()
+  await expect(page.locator(`.react-flow__node[data-id="${ids[0]}"]`)).toBeHidden()
+})
+
+test('middle click opens nodes as inspector tabs', async ({ desktop }) => {
+  const { page, ids } = desktop
+  await page.locator(`.react-flow__node[data-id="${ids[0]}"]`).click()
+  await page.locator(`.react-flow__node[data-id="${ids[1]}"]`).click({ button: 'middle', position: { x: 20, y: 20 } })
+  const tabs = page.getByRole('tablist', { name: 'Open nodes' })
+  await expect(tabs.getByRole('tab')).toHaveText(['Hall', 'Cellar'])
+  await expect(tabs.getByRole('tab', { name: 'Cellar' })).toHaveAttribute('aria-selected', 'true')
+  await tabs.getByRole('tab', { name: 'Hall' }).click()
+  await expect(page.locator('#project-inspector input').first()).toHaveValue('Hall')
+  await page.getByRole('button', { name: 'Close Hall' }).click()
+  await expect(tabs.getByRole('tab')).toHaveText(['Cellar'])
+  await expect(page.locator('#project-inspector input').first()).toHaveValue('Cellar')
+})
