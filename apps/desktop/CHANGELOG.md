@@ -1,5 +1,17 @@
 # @maquest/desktop
 
+## 0.7.0
+
+### Minor Changes
+
+- cc45e0b: - Inspector tabs: middle-click a card to open it in a new tab above the inspector and flip between several nodes (e.g. stat blocks in combat); × or middle-click closes a tab, double-click keeps a preview tab open.
+  - Fix the canvas showing through the Backlog, Guidelines and Types views.
+
+### Patch Changes
+
+- b8cb612: - App updates now show a toast while the new version downloads, with the versions it updates from and to and download progress; failed downloads are reported instead of disappearing silently.
+  - Release notes recommend the Linux AppImage, the only Linux build that updates itself.
+
 ## 0.6.0
 
 ### Minor Changes
