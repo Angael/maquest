@@ -1,5 +1,16 @@
 # @maquest/desktop
 
+## 0.5.0
+
+### Minor Changes
+
+- 72c54aa: Images and maps can now be viewed full size in a zoomable, pannable viewer. Click an inspector thumbnail or the expand button on a card, or double-click an image on a card or in the body editor. Scroll or pinch to zoom, drag to pan, Escape to close.
+- 68fdf63: The content editor is now a single live-preview editor instead of separate Write and Preview tabs. Headings, bold, italic, strikethrough, inline code, links, quotes, lists, checkboxes, rules, images/videos and `[[node]]` links render as you type, and their markdown syntax only shows on the line you're editing. Checkboxes toggle on click, node links select the node, and Ctrl/Cmd+click opens web links in your browser. Files are never reformatted.
+
+### Patch Changes
+
+- 8358da9: Fixed the MCP server freezing when an agent nested a group inside another group whose content overlapped the group's current position. The group now goes into the first free spot in its parent.
+
 ## 0.4.0
 
 ### Minor Changes
