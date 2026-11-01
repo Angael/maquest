@@ -30,7 +30,7 @@ export function Inspector() {
   const selection = useUI((s) => s.selection)!
   const select = useUI((s) => s.select)
   return (
-    <aside id="project-inspector" aria-label="Inspector" className="w-full min-w-0 overflow-y-auto border-l border-stone-800 bg-stone-950">
+    <aside id="project-inspector" aria-label="Inspector" className="min-h-0 w-full min-w-0 flex-1 overflow-y-auto border-l border-stone-800 bg-stone-950">
       <div className="flex justify-end p-1">
         <Button onClick={() => select(null)} title="Close">
           <X size={16} />

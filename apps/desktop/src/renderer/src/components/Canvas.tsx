@@ -914,6 +914,14 @@ export function Canvas() {
       ref={workspace}
       className="canvas-workspace h-full w-full outline-none"
       tabIndex={0}
+      onMouseDownCapture={(e) => {
+        // Middle click on a card opens it in a new inspector tab.
+        if (e.button !== 1) return
+        const card = (e.target as Element).closest('.react-flow__node:not(.react-flow__node-group)')?.getAttribute('data-id')
+        if (!card || groupIdOf(card)) return
+        e.preventDefault()
+        useUI.getState().openTab(entityOf(card))
+      }}
       aria-label="Story canvas"
       aria-keyshortcuts="A"
       onPointerMove={(event) => {
