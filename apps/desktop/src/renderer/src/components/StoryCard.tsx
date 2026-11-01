@@ -1,7 +1,8 @@
 import { memo } from 'react'
 import { Handle, Position, useConnection, type Node, type NodeProps } from '@xyflow/react'
 import clsx from 'clsx'
-import { Pin, PinOff, Search } from 'lucide-react'
+import { Maximize2, Pin, PinOff, Search } from 'lucide-react'
+import { openImage } from './Lightbox'
 import { useAction } from '../lib/queries'
 import type { EdgeType, NodeType, StoryNode } from '@maquest/core/schema'
 import { useUI } from '../lib/store'
@@ -69,7 +70,23 @@ export const StoryCard = memo(function StoryCard({ data, selected }: NodeProps<N
         (isVideo(cover) ? (
           <video src={mediaUrl(cover)} className="pointer-events-none max-h-40 w-full rounded-t-lg bg-black object-cover" muted loop autoPlay={isMedia} />
         ) : (
-          <img src={mediaUrl(cover)} className="max-h-40 w-full rounded-t-lg object-cover" draggable={false} />
+          <>
+            <img
+              src={mediaUrl(cover)}
+              className="max-h-40 w-full rounded-t-lg object-cover"
+              draggable={false}
+              onDoubleClick={() => openImage(mediaUrl(cover))}
+            />
+            <button
+              type="button"
+              className="nodrag nopan absolute top-1 left-1 z-10 rounded bg-stone-950/90 p-1.5 text-stone-400 opacity-0 group-hover:opacity-100 hover:text-amber-300 focus-visible:opacity-100"
+              title="View full size"
+              aria-label={`View ${n.title} full size`}
+              onClick={(event) => (event.stopPropagation(), openImage(mediaUrl(cover)))}
+            >
+              <Maximize2 size={12} />
+            </button>
+          </>
         ))}
       {(!isMedia || !cover) && (
         <div className="px-3 py-2">

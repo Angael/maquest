@@ -2,6 +2,7 @@ import { syntaxTree } from '@codemirror/language'
 import { type Extension, type Range, StateEffect, StateField } from '@codemirror/state'
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate, WidgetType } from '@codemirror/view'
 import { isVideo, mediaUrl } from './api'
+import { openImage } from '../components/Lightbox'
 
 /**
  * Obsidian-style live preview for CodeMirror markdown: styles the common
@@ -104,12 +105,16 @@ class MediaWidget extends WidgetType {
     el.className = 'cm-md-media'
     el.src = url
     if (el instanceof HTMLVideoElement) el.controls = true
-    else el.alt = this.alt
+    else {
+      el.alt = this.alt
+      el.title = 'Double-click to view full size'
+      el.addEventListener('dblclick', () => openImage(url))
+    }
     return el
   }
   ignoreEvent(e: Event) {
-    // let video controls work; clicks on images still move the cursor in
-    return e.target instanceof HTMLVideoElement
+    // let video controls and image double-click work; single clicks on images still move the cursor in
+    return e.target instanceof HTMLVideoElement || e.type === 'dblclick'
   }
 }
 

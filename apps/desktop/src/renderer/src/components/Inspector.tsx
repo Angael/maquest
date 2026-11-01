@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useDebouncedCallback } from 'use-debounce'
+import { openImage } from './Lightbox'
 import { ArrowRight, ImagePlus, Trash2, X } from 'lucide-react'
 import {
   ALLOWED_PARENTS,
@@ -408,7 +409,11 @@ function MediaStrip({ node }: { node: StoryNode }) {
       <div className="flex flex-wrap gap-2">
         {items.map((m) => (
           <div key={m} className="group relative">
-            {isVideo(m) ? <video src={mediaUrl(m)} className="h-20 rounded" controls /> : <img src={mediaUrl(m)} className="h-20 rounded object-cover" />}
+            {isVideo(m) ? (
+              <video src={mediaUrl(m)} className="h-20 rounded" controls />
+            ) : (
+              <img src={mediaUrl(m)} className="h-20 cursor-zoom-in rounded object-cover" title="View full size" onClick={() => openImage(mediaUrl(m))} />
+            )}
             {m !== node.src && (
               <button
                 className="absolute top-1 right-1 hidden rounded bg-black/70 p-0.5 group-hover:block"
