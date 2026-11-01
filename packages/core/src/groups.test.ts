@@ -119,7 +119,8 @@ test('nesting moves the group into its parent instead of stretching the parent',
   p.updateGroup('main', crypt.id, { parent: city.id })
   const b = p.board()
   const outer = b.groups.find((g) => g.id === city.id)!
-  assert.ok(outer.height < 2 * CARD_SIZE.height + 4 * GROUP_PAD + 2 * GROUP_HEADER + 120, `city height ${outer.height}`)
+  // Crypt lands in the next free row below Gate, not 3000px away.
+  assert.ok(outer.height < 1000, `city height ${outer.height}`)
   assert.ok(inside(outer, b.layout[c], CARD_SIZE))
 })
 
@@ -133,4 +134,18 @@ test('arrangeBoard tidies a messy board', async (t) => {
   const [ga, gb] = p.board().groups
   assert.ok(!overlap(ga, gb))
   assert.ok(ga.width * ga.height < (5000 * 5000) / 4)
+})
+
+test('nesting a group whose rectangle overlaps a sibling in the parent finds a free spot (no hang)', (t) => {
+  const p = fixture(t)
+  const [a, b] = ['Gate', 'Barracks'].map((title) => p.createNode({ type: 'location', title }).id)
+  const city = p.createGroup('main', { title: 'City', rect: { x: 0, y: 0, width: 1400, height: 1400 } })
+  const gate = p.createGroup('main', { title: 'Gate', parent: city.id, nodes: [a], rect: { x: 24, y: 60, width: 600, height: 280 } })
+  // Sits exactly on top of Gate before being moved into City.
+  const keep = p.createGroup('main', { title: 'Keep', nodes: [b], rect: { x: 24, y: 60, width: 600, height: 264 } })
+  p.updateGroup('main', keep.id, { parent: city.id })
+  const board = p.board()
+  const [g, k] = [gate.id, keep.id].map((id) => board.groups.find((x) => x.id === id)!)
+  assert.equal(k.parent, city.id)
+  assert.ok(!overlap(g, k))
 })
