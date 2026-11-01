@@ -9,6 +9,7 @@ Principles:
 - MCP is local stdio, registered per project folder, and starts only when an agent works there.
 - Keep the MCP surface small: add options to existing tools before adding new tools. Agent-facing output should be token-efficient, with summaries first and full content on request.
 - Prefer established libraries over hand-rolled code.
+- Agent edits must show up live. Whatever an agent can change through MCP (notes, documents, graph, media, guidelines, any other data model), the app must refresh open views of it right away. The user should never have to reload or reopen anything. Any new MCP-editable data needs this live refresh too.
 
 Layout:
 

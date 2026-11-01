@@ -23,6 +23,7 @@ import {
   type Position,
 } from '@maquest/core'
 import { ProjectHistory } from './history'
+import { syncFromRemote } from './gitSync'
 
 let current: Project | null = null
 let watcher: FSWatcher | null = null
@@ -90,6 +91,14 @@ export const handlers = {
     void watcher?.close()
     current = null
     history = new ProjectHistory()
+  },
+  /** Pulls remote commits into the project's git repo when that is conflict-free; see gitSync.ts. */
+  syncFromRemote: async () => {
+    const root = p().root
+    const result = await syncFromRemote(root)
+    // Undo entries captured before the pull would revert remote changes.
+    if (result.status === 'updated' && current?.root === root) history = new ProjectHistory()
+    return result
   },
   /** Removes only the recent entry; project files are left untouched. */
   removeRecent: (root: string) => {
