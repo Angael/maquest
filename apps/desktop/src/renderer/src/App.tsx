@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react'
 import { ReactFlowProvider } from '@xyflow/react'
 import { useCurrent, useLiveProject } from './lib/queries'
 import { useUI } from './lib/store'
@@ -19,12 +20,13 @@ import { useDeleteShortcut } from './lib/deletion'
 import { LiveNotesPanel } from './components/LiveNotes'
 import { InspectorTabs } from './components/InspectorTabs'
 import { TooltipProvider } from './components/ui'
+import './components/shell.css'
 
 export function App() {
   return (
     <TooltipProvider>
       <UpdateToast />
-      <Toaster theme="dark" position="bottom-right" />
+      <Toaster theme="dark" position="bottom-right" gap={8} offset={16} className="maquest-toaster" style={{ '--width': '340px' } as CSSProperties} />
       <Main />
     </TooltipProvider>
   )
@@ -44,12 +46,12 @@ function Main() {
     <ReactFlowProvider>
       <SyncToast root={current.root} />
       <ImageViewer />
-      <div className="flex h-full flex-col">
+      <div className="flex h-full flex-col bg-app">
         <CommandPalette />
         <TopBar />
         <div className="flex min-h-0 flex-1">
           <Sidebar />
-          <main className="relative min-w-0 flex-1">
+          <main className="relative min-w-0 flex-1 bg-app">
             {/* The canvas stays mounted so other views keep its viewport. */}
             <div
               className={view === 'canvas' ? 'absolute inset-0' : 'pointer-events-none invisible absolute inset-0 -z-10 [&_*]:invisible!'}
