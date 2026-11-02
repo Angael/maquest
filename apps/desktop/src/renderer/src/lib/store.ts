@@ -34,6 +34,8 @@ type UI = {
   tabs: string[]
   openTab: (id: string) => void
   closeTab: (id: string) => void
+  /** Replace the pinned tabs (tab context menu); if the viewed tab was closed, `focus` becomes the viewed node. */
+  setTabs: (tabs: string[], focus?: string) => void
   /** Canvas minimap shown (bottom right). */
   minimap: boolean
   setMinimap: (open: boolean) => void
@@ -102,6 +104,12 @@ export const useUI = create<UI>()(
           if (s.selection?.kind !== 'node' || s.selection.id !== id) return { tabs }
           const next = tabs[Math.min(i, tabs.length - 1)]
           return { tabs, selection: next ? { kind: 'node', id: next } : null, selectedNodeIds: next ? [next] : [] }
+        }),
+      setTabs: (tabs, focus) =>
+        set((s) => {
+          const viewed = s.selection?.kind === 'node' ? s.selection.id : null
+          if (!viewed || !focus || !s.tabs.includes(viewed) || tabs.includes(viewed)) return { tabs }
+          return { tabs, selection: { kind: 'node', id: focus }, selectedNodeIds: [focus] }
         }),
       setLiveNotesOpen: (liveNotesOpen) => set({ liveNotesOpen }),
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),

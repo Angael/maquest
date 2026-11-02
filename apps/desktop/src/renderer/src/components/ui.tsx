@@ -11,6 +11,7 @@ import {
 } from 'react'
 import { Tooltip as BaseTooltip } from '@base-ui/react/tooltip'
 import { Menu as BaseMenu } from '@base-ui/react/menu'
+import { ContextMenu as BaseContextMenu } from '@base-ui/react/context-menu'
 import { Popover as BasePopover } from '@base-ui/react/popover'
 import { ChevronDown, type LucideIcon } from 'lucide-react'
 
@@ -193,6 +194,20 @@ export function MenuItem({
       <span className="flex-1 truncate">{children}</span>
       {shortcut && <span className="text-2xs text-fg-faint">{shortcut}</span>}
     </BaseMenu.Item>
+  )
+}
+
+/** Right-click menu for `children` (rendered as the trigger element); fill it with `MenuItem`s. */
+export function ContextMenu({ children, menu, className }: { children: ReactElement; menu: ReactNode; className?: string }) {
+  return (
+    <BaseContextMenu.Root>
+      <BaseContextMenu.Trigger render={children} />
+      <BaseContextMenu.Portal>
+        <BaseContextMenu.Positioner className="z-[60]">
+          <BaseContextMenu.Popup className={cn(popupSurface, 'popup-motion min-w-48', className)}>{menu}</BaseContextMenu.Popup>
+        </BaseContextMenu.Positioner>
+      </BaseContextMenu.Portal>
+    </BaseContextMenu.Root>
   )
 }
 
