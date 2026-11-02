@@ -20,6 +20,7 @@ export function ImageViewer() {
       carousel={{ finite: true }}
       render={{ buttonPrev: () => null, buttonNext: () => null }}
       controller={{ closeOnBackdropClick: true }}
+      styles={{ container: { backgroundColor: 'oklch(0.12 0.004 60 / 0.94)' } }}
     />
   )
 }

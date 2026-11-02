@@ -5,7 +5,7 @@
  * Each state is captured independently; a failing selector is logged and the run continues. Selectors each state
  * depends on (update these after a redesign):
  *   setup        .react-flow__node (card presence), button "Fit View" (React Flow controls)
- *   01 start     button[title="Close project"] (TopBar); Recent list button with the project name
+ *   01 start     TopBar button "Project: …" > menuitem "Close project"; text "Recent"
  *   02 canvas    Escape to clear selection, button "Fit View"
  *   03 scene     card .react-flow__node[data-id=<id>]; aside "Inspector"
  *   04 character card click; aside "Inspector"
@@ -202,7 +202,8 @@ test('capture UI states', async ({ playwright }) => {
 
     // Last, so the project stays open for the canvas shots: close it to show the start screen with Recent entries.
     await shot('01-start-screen', async () => {
-      await page.getByTitle('Close project').click()
+      await page.getByRole('button', { name: /^Project:/ }).click()
+      await page.getByRole('menuitem', { name: 'Close project' }).click()
       await expect(page.getByText('Recent', { exact: true })).toBeVisible()
       await page.mouse.move(0, 0)
     })
