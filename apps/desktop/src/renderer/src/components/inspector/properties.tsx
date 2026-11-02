@@ -43,15 +43,10 @@ export const ClockProperty = memo(function ClockProperty({ node }: { node: Story
             id={sizeId}
             aria-label="Clock size"
             className="w-auto"
-            value={clock.size}
-            onChange={(e) => set({ size: Number(e.target.value), filled: Math.min(clock.filled, Number(e.target.value)) })}
-          >
-            {CLOCK_SIZES.map((n) => (
-              <option key={n} value={n}>
-                {n} segments
-              </option>
-            ))}
-          </GhostSelect>
+            value={String(clock.size)}
+            options={CLOCK_SIZES.map((n) => ({ value: String(n), label: `${n} segments` }))}
+            onValueChange={(v) => set({ size: Number(v), filled: Math.min(clock.filled, Number(v)) })}
+          />
           <IconButton
             icon={X}
             label="Remove clock"

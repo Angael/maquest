@@ -113,12 +113,9 @@ export function EdgeInspector({ id }: { id: string }) {
               id={typeId}
               value={edge.type}
               leading={<span aria-hidden className="block h-0.5 w-3 rounded-full" style={{ background: color }} />}
-              onChange={(e) => updateEdge.mutate([id, { type: e.target.value as EdgeType }])}
-            >
-              {EDGE_TYPES.map((t) => (
-                <option key={t}>{t}</option>
-              ))}
-            </GhostSelect>
+              options={EDGE_TYPES.map((t) => ({ value: t, label: t }))}
+              onValueChange={(type) => updateEdge.mutate([id, { type: type as EdgeType }])}
+            />
             <p className="px-1.5 pb-1 text-xs leading-4 text-fg-subtle">{EDGE_DESCRIPTIONS[edge.type]}</p>
           </div>
         </PropertyRow>

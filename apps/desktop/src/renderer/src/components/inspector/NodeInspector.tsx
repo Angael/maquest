@@ -220,30 +220,22 @@ const CoreProperties = memo(function CoreProperties({ node }: { node: StoryNode 
           id={ids.type}
           value={node.type}
           leading={<S.icon size={14} style={{ color: S.color }} />}
-          onChange={(e) => update.mutate([node.id, { type: e.target.value as NodeType, parent: null }])}
-        >
-          {typeOptions.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.label}
-            </option>
-          ))}
-        </GhostSelect>
+          options={typeOptions.map((t) => ({ value: t.id, label: t.label, icon: <t.icon size={14} style={{ color: t.color }} /> }))}
+          onValueChange={(type) => update.mutate([node.id, { type: type as NodeType, parent: null }])}
+        />
       </PropertyRow>
       <PropertyRow label="Status" htmlFor={ids.status}>
         <GhostSelect
           id={ids.status}
           value={node.status ?? ''}
           leading={<StatusDot status={node.status} />}
-          className={node.status ? undefined : '[&_select]:text-fg-faint'}
-          onChange={(e) => update.mutate([node.id, { status: (e.target.value || null) as Status | null }])}
-        >
-          <option value="">No status</option>
-          {STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {STATUS_LABEL[s]}
-            </option>
-          ))}
-        </GhostSelect>
+          muted={!node.status}
+          options={[
+            { value: '', label: 'No status', icon: <StatusDot status={undefined} /> },
+            ...STATUSES.map((s) => ({ value: s, label: STATUS_LABEL[s], icon: <StatusDot status={s} /> })),
+          ]}
+          onValueChange={(status) => update.mutate([node.id, { status: (status || null) as Status | null }])}
+        />
       </PropertyRow>
       {allowed && (
         <PropertyRow label={parentLabel} htmlFor={ids.parent}>
@@ -251,16 +243,10 @@ const CoreProperties = memo(function CoreProperties({ node }: { node: StoryNode 
             id={ids.parent}
             value={node.parent ?? ''}
             leading={P ? <P.icon size={14} style={{ color: P.color }} /> : undefined}
-            className={parent ? undefined : '[&_select]:text-fg-faint'}
-            onChange={(e) => update.mutate([node.id, { parent: e.target.value || null }])}
-          >
-            <option value="">None</option>
-            {parents.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.title}
-              </option>
-            ))}
-          </GhostSelect>
+            muted={!parent}
+            options={[{ value: '', label: 'None' }, ...parents.map((p) => ({ value: p.id, label: p.title }))]}
+            onValueChange={(id) => update.mutate([node.id, { parent: id || null }])}
+          />
         </PropertyRow>
       )}
     </>

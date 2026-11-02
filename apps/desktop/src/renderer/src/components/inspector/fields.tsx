@@ -1,6 +1,7 @@
-import { forwardRef, useState, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react'
-import { ChevronDown, X } from 'lucide-react'
-import { cn } from '../ui'
+import { forwardRef, useState, type ReactNode, type TextareaHTMLAttributes } from 'react'
+import { Select as BaseSelect } from '@base-ui/react/select'
+import { Check, ChevronDown, X } from 'lucide-react'
+import { cn, menuItem, popupSurface } from '../ui'
 
 /*
  * Inspector property-list building blocks (Linear/Notion style): a fixed label column and value controls that read as
@@ -37,27 +38,70 @@ export function PropertyRow({
   )
 }
 
-/** Native select (keyboard/OS behaviour) dressed as a ghost control; `leading` sits before the value (icon, dot). */
-export const GhostSelect = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSelectElement> & { leading?: ReactNode }>(function GhostSelect(
-  { leading, className, ...p },
-  ref,
-) {
+export type SelectOption = { value: string; label: string; icon?: ReactNode }
+
+/**
+ * Ghost-styled select (Base UI): reads as plain text at rest; the popup sizes to its options instead of stretching to
+ * the row, and matches the app's menus. `leading` sits before the value (icon, dot); `muted` greys an empty value.
+ */
+export function GhostSelect({
+  id,
+  value,
+  options,
+  onValueChange,
+  leading,
+  muted,
+  className,
+  'aria-label': ariaLabel,
+}: {
+  id?: string
+  value: string
+  options: readonly SelectOption[]
+  onValueChange: (value: string) => void
+  leading?: ReactNode
+  muted?: boolean
+  className?: string
+  'aria-label'?: string
+}) {
+  const current = options.find((o) => o.value === value)
   return (
-    <div className={cn('group/select relative w-full min-w-0', className)}>
-      {leading && <span className="pointer-events-none absolute top-1/2 left-1.5 flex -translate-y-1/2 items-center">{leading}</span>}
-      <select
-        ref={ref}
-        {...p}
-        className={cn(ghost, 'h-7 cursor-default appearance-none truncate pr-6 [&>option]:bg-raised [&>option]:text-fg', leading && 'pl-6')}
-      />
-      <ChevronDown
-        size={13}
-        aria-hidden
-        className="pointer-events-none absolute top-1/2 right-1.5 -translate-y-1/2 text-fg-faint opacity-0 transition-opacity duration-100 group-focus-within/select:opacity-100 group-hover/select:opacity-100"
-      />
-    </div>
+    <BaseSelect.Root value={value} onValueChange={(v) => v != null && v !== value && onValueChange(v)}>
+      <BaseSelect.Trigger
+        id={id}
+        aria-label={ariaLabel}
+        className={cn(
+          ghost,
+          'group/select relative flex h-7 cursor-default items-center gap-1.5 pr-6 text-left data-[popup-open]:bg-hover',
+          muted && 'text-fg-faint',
+          className,
+        )}
+      >
+        {leading && <span className="flex shrink-0 items-center">{leading}</span>}
+        <span className="min-w-0 truncate">{current?.label ?? value}</span>
+        <ChevronDown
+          size={13}
+          aria-hidden
+          className="pointer-events-none absolute top-1/2 right-1.5 -translate-y-1/2 text-fg-faint opacity-0 transition-opacity duration-100 group-hover/select:opacity-100 group-focus-visible/select:opacity-100 group-data-[popup-open]/select:opacity-100"
+        />
+      </BaseSelect.Trigger>
+      <BaseSelect.Portal>
+        <BaseSelect.Positioner alignItemWithTrigger={false} side="bottom" align="start" sideOffset={4} className="z-[60]">
+          <BaseSelect.Popup className={cn(popupSurface, 'popup-motion max-h-[min(var(--available-height),20rem)] min-w-40 overflow-y-auto')}>
+            {options.map((o) => (
+              <BaseSelect.Item key={o.value} value={o.value} className={cn(menuItem, 'relative pr-7 data-[selected]:text-fg')}>
+                {o.icon && <span className="flex w-3.5 shrink-0 items-center justify-center">{o.icon}</span>}
+                <BaseSelect.ItemText className="min-w-0 truncate">{o.label}</BaseSelect.ItemText>
+                <BaseSelect.ItemIndicator className="absolute right-2 flex items-center text-accent-text">
+                  <Check size={14} aria-hidden />
+                </BaseSelect.ItemIndicator>
+              </BaseSelect.Item>
+            ))}
+          </BaseSelect.Popup>
+        </BaseSelect.Positioner>
+      </BaseSelect.Portal>
+    </BaseSelect.Root>
   )
-})
+}
 
 /** Single-logical-line text that wraps and grows; Enter never inserts a newline. */
 export const GhostText = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(function GhostText({ className, onKeyDown, ...p }, ref) {
