@@ -55,7 +55,7 @@ export function ListGroup({ label, count, children }: { label: string; count?: n
 /** Row classes for list panes: 32px, accent tint when selected. */
 export const listRow = (selected: boolean) =>
   cn(
-    'relative flex h-8 w-full items-center gap-2.5 rounded-md px-3 text-left text-sm outline-none transition-colors duration-100',
+    'relative flex h-8 w-full items-center gap-2.5 rounded-md px-3 text-left text-sm outline-none focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent transition-colors duration-100',
     selected ? 'bg-accent-soft text-fg' : 'text-fg-muted hover:bg-hover hover:text-fg',
   )
 

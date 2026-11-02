@@ -86,9 +86,13 @@ label {
 ::selection {
   background: oklch(0.74 0.16 52 / 0.35);
 }
-:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 1px;
+/* Layered so a component's `outline-none` wins (e.g. the focusable canvas workspace, which otherwise lights up
+   when the window regains focus after Alt+Tab). */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 1px;
+  }
 }
 input::placeholder,
 textarea::placeholder {

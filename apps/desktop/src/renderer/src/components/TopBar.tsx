@@ -60,7 +60,7 @@ function ProjectMenu() {
         <button
           type="button"
           aria-label={`Project: ${current?.config.name ?? ''}`}
-          className="flex h-7 max-w-64 min-w-0 items-center gap-2 rounded-md pr-1.5 pl-1 text-sm font-medium text-fg outline-none transition-colors duration-100 hover:bg-hover data-[popup-open]:bg-active"
+          className="flex h-7 max-w-64 min-w-0 items-center gap-2 rounded-md pr-1.5 pl-1 text-sm font-medium text-fg outline-none focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent transition-colors duration-100 hover:bg-hover data-[popup-open]:bg-active"
         >
           <Logo className="size-5 shrink-0" />
           <span className="truncate">{current?.config.name}</span>
@@ -135,7 +135,7 @@ function ViewTabs() {
             aria-current={on ? 'page' : undefined}
             onClick={() => setView(id)}
             className={cn(
-              'flex h-7 items-center gap-1.5 rounded-md px-2 text-sm font-medium outline-none transition-colors duration-100',
+              'flex h-7 items-center gap-1.5 rounded-md px-2 text-sm font-medium outline-none focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent transition-colors duration-100',
               on ? 'bg-active text-fg' : 'text-fg-subtle hover:bg-hover hover:text-fg',
             )}
           >
@@ -156,7 +156,7 @@ function SearchTrigger() {
     <button
       type="button"
       onClick={() => useUI.getState().setPaletteOpen(true)}
-      className="mr-1 flex h-7 w-52 items-center gap-2 rounded-md bg-app/60 pr-1.5 pl-2 text-sm text-fg-faint shadow-[inset_0_0_0_1px_var(--color-line)] outline-none transition-[box-shadow,color] duration-100 hover:text-fg-subtle hover:shadow-[inset_0_0_0_1px_var(--color-line-strong)]"
+      className="mr-1 flex h-7 w-52 items-center gap-2 rounded-md bg-app/60 pr-1.5 pl-2 text-sm text-fg-faint shadow-[inset_0_0_0_1px_var(--color-line)] outline-none focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent transition-[box-shadow,color] duration-100 hover:text-fg-subtle hover:shadow-[inset_0_0_0_1px_var(--color-line-strong)]"
     >
       <Search size={14} aria-hidden />
       Search
