@@ -265,6 +265,7 @@ function build(view: EditorView, opts: LivePreviewOptions): DecorationSet {
   const isActive = (pos: number) => active.has(state.doc.lineAt(pos).number)
   const decos: Range<Decoration>[] = []
   const rendered: [number, number][] = []
+  const code: [number, number][] = []
   const lineDeco = (from: number, to: number, cls: string) => {
     for (let pos = from; pos <= to;) {
       const l = state.doc.lineAt(pos)
@@ -291,6 +292,7 @@ function build(view: EditorView, opts: LivePreviewOptions): DecorationSet {
           lineDeco(node.from, node.to, 'cm-md-quote')
         } else if (name === 'FencedCode' || name === 'CodeBlock') {
           lineDeco(node.from, node.to, 'cm-md-codeblock')
+          code.push([node.from, node.to])
           return false
         } else if (name === 'HorizontalRule') {
           if (!isActive(node.from)) decos.push(Decoration.replace({ widget: new RuleWidget() }).range(node.from, node.to))
@@ -326,8 +328,15 @@ function build(view: EditorView, opts: LivePreviewOptions): DecorationSet {
             const item = node.node.parent
             const isTask = !!item?.getChild('Task')
             const text = state.sliceDoc(node.from, node.to)
+            const bullet = /^[-*+]$/.test(text)
             if (isTask) decos.push(hide.range(node.from, Math.min(node.to + 1, item!.to)))
-            else if (/^[-*+]$/.test(text)) decos.push(Decoration.replace({ widget: new BulletWidget() }).range(node.from, node.to))
+            else if (bullet) {
+              const end = state.sliceDoc(node.to, node.to + 1) === ' ' ? node.to + 1 : node.to
+              decos.push(Decoration.replace({ widget: new BulletWidget() }).range(node.from, end))
+            } else if (state.sliceDoc(node.to, node.to + 1) === ' ') decos.push(mark('cm-md-olmark').range(node.from, node.to + 1))
+            // Hanging indent so wrapped item text lines up after the marker.
+            const l = state.doc.lineAt(node.from)
+            if (node.from === l.from) decos.push(line(isTask || bullet ? 'cm-md-li' : 'cm-md-oli').range(l.from))
           }
         }
         if (name === 'TaskMarker') {
@@ -336,6 +345,13 @@ function build(view: EditorView, opts: LivePreviewOptions): DecorationSet {
         }
       },
     })
+
+    // Blank separator lines render at roughly half height so paragraphs get prose spacing, not a full empty line.
+    for (let pos = from; pos <= to;) {
+      const l = state.doc.lineAt(pos)
+      if (!l.text.trim() && !isActive(l.from) && !code.some(([f, t]) => l.from >= f && l.from <= t)) decos.push(line('cm-md-gap').range(l.from))
+      pos = l.to + 1
+    }
 
     // [[node-id]] / [[node-id|alias]] links are not markdown syntax; find them by regex.
     const text = state.sliceDoc(from, to)

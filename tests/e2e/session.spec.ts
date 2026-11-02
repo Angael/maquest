@@ -65,7 +65,7 @@ test('links in the body editor open on click', async ({ desktop }) => {
   await page.locator(`.react-flow__node[data-id="${ids[1]}"]`).click()
   const editor = page.locator('.cm-content')
   await editor.locator('.cm-md-link', { hasText: 'the hall' }).click()
-  await expect(page.locator('#project-inspector input').first()).toHaveValue('Hall')
+  await expect(page.getByRole('textbox', { name: 'Title' })).toHaveValue('Hall')
 
   await page.locator(`.react-flow__node[data-id="${ids[1]}"]`).click()
   // On the line being edited the raw [[id]] shows; Ctrl+click still follows it.
@@ -74,7 +74,7 @@ test('links in the body editor open on click', async ({ desktop }) => {
     .locator('.cm-md-link')
     .last()
     .click({ modifiers: ['ControlOrMeta'] })
-  await expect(page.locator('#project-inspector input').first()).toHaveValue('Hall')
+  await expect(page.getByRole('textbox', { name: 'Title' })).toHaveValue('Hall')
 })
 
 test('the caret stays visible on a new empty line', async ({ desktop }) => {
@@ -103,8 +103,8 @@ test('middle click opens nodes as inspector tabs', async ({ desktop }) => {
   await expect(tabs.getByRole('tab')).toHaveText(['Hall', 'Cellar'])
   await expect(tabs.getByRole('tab', { name: 'Cellar' })).toHaveAttribute('aria-selected', 'true')
   await tabs.getByRole('tab', { name: 'Hall' }).click()
-  await expect(page.locator('#project-inspector input').first()).toHaveValue('Hall')
+  await expect(page.getByRole('textbox', { name: 'Title' })).toHaveValue('Hall')
   await page.getByRole('button', { name: 'Close Hall' }).click()
   await expect(tabs.getByRole('tab')).toHaveText(['Cellar'])
-  await expect(page.locator('#project-inspector input').first()).toHaveValue('Cellar')
+  await expect(page.getByRole('textbox', { name: 'Title' })).toHaveValue('Cellar')
 })
