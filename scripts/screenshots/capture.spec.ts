@@ -10,7 +10,9 @@
  *   03 scene     card .react-flow__node[data-id=<id>]; aside "Inspector"
  *   04 character card click; aside "Inspector"
  *   05 edge      button "Select connection: <label>" (FloatingEdge label); fallback: View popover (button /^View:/) > group "When to show line names" > "Always"
+ *   04b status   combobox "Status" in the inspector; role=listbox
  *   06 tabs      middle-click on cards; tablist "Open nodes"
+ *   06b tab menu right-click a tab; role=menu
  *   07 view      button /^View:/ (top-right) opens the view popover; its "Lines" section expands
  *   08 add menu  toolbar button "Add" (aria-haspopup=menu); menu "Add node"
  *   09 context   right-click on a card; role=menu
@@ -99,6 +101,12 @@ test('capture UI states', async ({ playwright }) => {
       await expect(page.getByRole('complementary', { name: 'Inspector' })).toBeVisible()
     })
 
+    await shot('04b-inspector-status-select', async () => {
+      await card(ids.vess.id).click({ position: { x: 40, y: 16 } })
+      await page.getByRole('complementary', { name: 'Inspector' }).getByRole('combobox', { name: 'Status' }).click()
+      await expect(page.getByRole('listbox')).toBeVisible()
+    })
+
     await shot('05-inspector-edge', async () => {
       const label = page.getByRole('button', { name: 'Select connection: old partners' })
       await card(ids.vess.id).click({ position: { x: 40, y: 16 } })
@@ -122,6 +130,12 @@ test('capture UI states', async ({ playwright }) => {
       for (const id of [ids.vess.id, ids.maelis.id, ids.ash.id]) await card(id).click({ button: 'middle', position: { x: 40, y: 16 } })
       await card(ids.s2.id).click({ position: { x: 40, y: 16 } })
       await expect(page.getByRole('tablist', { name: 'Open nodes' }).getByRole('tab')).toHaveCount(4)
+    })
+
+    await shot('06b-inspector-tab-menu', async () => {
+      await card(ids.s2.id).click({ position: { x: 40, y: 16 } })
+      await page.getByRole('tablist', { name: 'Open nodes' }).getByRole('tab').nth(1).click({ button: 'right' })
+      await expect(page.getByRole('menu')).toBeVisible()
     })
     // Close the pinned tabs again so later shots start clean (the tab strip only renders while the inspector is open).
     await card(ids.s2.id)
