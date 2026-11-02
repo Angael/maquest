@@ -15,6 +15,7 @@ export function InspectorPanel({ children }: { children: ReactNode }) {
     }
   })
   const [maximum, setMaximum] = useState(DEFAULT_WIDTH)
+  const [dragging, setDragging] = useState(false)
   const minimum = Math.min(280, maximum)
   const width = Math.max(minimum, Math.min(preferred, maximum))
 
@@ -42,7 +43,7 @@ export function InspectorPanel({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div ref={panel} className="relative flex min-h-0 shrink-0" style={{ width }}>
+    <div ref={panel} className="relative flex min-h-0 shrink-0 border-l border-line bg-panel" style={{ width }}>
       <div
         role="separator"
         aria-label="Resize inspector"
@@ -54,12 +55,14 @@ export function InspectorPanel({ children }: { children: ReactNode }) {
         aria-valuetext={`${Math.round(width)} pixels`}
         tabIndex={0}
         title="Drag to resize · Arrow keys adjust · Home / End"
-        className="group absolute inset-y-0 -left-1 z-20 w-2 cursor-col-resize touch-none outline-none before:absolute before:inset-y-0 before:left-[3px] before:w-px before:bg-transparent hover:before:bg-amber-500/70 focus-visible:before:w-0.5 focus-visible:before:bg-amber-400"
+        data-dragging={dragging || undefined}
+        className="absolute inset-y-0 -left-1 z-20 w-2 cursor-col-resize touch-none outline-none before:absolute before:inset-y-0 before:left-1 before:w-px before:bg-transparent before:transition-colors before:delay-75 before:duration-100 hover:before:bg-accent/70 focus-visible:outline-none focus-visible:before:w-0.5 focus-visible:before:bg-accent data-[dragging]:before:w-0.5 data-[dragging]:before:bg-accent data-[dragging]:before:delay-0"
         onPointerDown={(event) => {
           if (event.button !== 0) return
           event.preventDefault()
           event.currentTarget.setPointerCapture(event.pointerId)
           drag.current = { pointer: event.pointerId, x: event.clientX, width }
+          setDragging(true)
         }}
         onPointerMove={(event) => {
           if (drag.current?.pointer !== event.pointerId) return
@@ -68,13 +71,16 @@ export function InspectorPanel({ children }: { children: ReactNode }) {
         onPointerUp={(event) => {
           if (drag.current?.pointer !== event.pointerId) return
           drag.current = null
+          setDragging(false)
           if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
         }}
         onPointerCancel={() => {
           drag.current = null
+          setDragging(false)
         }}
         onLostPointerCapture={() => {
           drag.current = null
+          setDragging(false)
         }}
         onKeyDown={(event) => {
           const step = event.shiftKey ? 40 : 10
