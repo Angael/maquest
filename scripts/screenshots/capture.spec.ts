@@ -15,7 +15,8 @@
  *   08 add menu  button[title^="Add node"] (aria-haspopup=menu); menu "Add node"
  *   09 context   right-click on a card; role=menu
  *   10 palette   Ctrl/Cmd+K; placeholder "Search everything…"
- *   11-13 views  TopBar nav buttons "Backlog" / "Guidelines" / "Types"; guideline list button by title; Types listitem "Clue"
+ *   11-13 views  TopBar nav buttons "Backlog" / "Guidelines" / "Types"; idea title button (hover); guideline list button by title;
+ *                Types listitem "Clue"
  *   14 live      Ctrl/Cmd+J; region "Live notes"
  *   15 agent     TopBar button "Agent"
  *   16 boards    tablist "Boards" > tab "Act II: The Siege"
@@ -161,6 +162,8 @@ test('capture UI states', async ({ playwright }) => {
     await shot('11-backlog', async () => {
       await page.getByRole('button', { name: /^Backlog/ }).click()
       await expect(page.getByText('A heist inside the vault').first()).toBeVisible()
+      // Hover one idea so its row actions (Promote, Delete) are part of the shot.
+      await page.getByRole('list', { name: 'Ideas' }).getByRole('button', { name: 'What if Corin is Iselde’s son?', exact: true }).hover()
     })
 
     await shot('12-guidelines', async () => {

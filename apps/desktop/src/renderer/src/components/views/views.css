@@ -1,0 +1,34 @@
+/* Styles for the full-width views (Backlog, Guidelines, Types). Tokens come from styles.css. */
+
+/* Confirmation dialogs: fade + slight scale from the center; exits are faster than enters. */
+.dialog-backdrop {
+  transition: opacity 180ms var(--ease-out);
+}
+.dialog-backdrop[data-starting-style],
+.dialog-backdrop[data-ending-style] {
+  opacity: 0;
+}
+.dialog-popup {
+  transition:
+    opacity 180ms var(--ease-out),
+    transform 180ms var(--ease-out);
+}
+.dialog-popup[data-starting-style],
+.dialog-popup[data-ending-style] {
+  opacity: 0;
+  transform: scale(0.96);
+}
+.dialog-popup[data-ending-style],
+.dialog-backdrop[data-ending-style] {
+  transition-duration: 110ms;
+}
+
+/* Hover-revealed row actions: reserve their space, show on hover and keyboard focus. */
+.reveal-actions {
+  opacity: 0;
+  transition: opacity 100ms var(--ease-out);
+}
+:is(.group\/row:hover, .group\/row:focus-within) .reveal-actions,
+.reveal-actions:has([data-popup-open]) {
+  opacity: 1;
+}
