@@ -1,17 +1,9 @@
 import { memo, useState } from 'react'
 import { NodeResizeControl, NodeToolbar, Position, ResizeControlVariant, type ControlPosition, type Node, type NodeProps } from '@xyflow/react'
-import clsx from 'clsx'
 import { Ungroup } from 'lucide-react'
 import { GROUP_COLORS, GROUP_HEADER, type Group, type GroupColor, type Rect } from '@maquest/core/schema'
-
-export const GROUP_STYLE: Record<GroupColor, { border: string; fill: string; text: string }> = {
-  stone: { border: '#78716c', fill: 'rgb(120 113 108 / 0.07)', text: '#d6d3d1' },
-  amber: { border: '#f59e0b', fill: 'rgb(245 158 11 / 0.06)', text: '#fcd34d' },
-  emerald: { border: '#10b981', fill: 'rgb(16 185 129 / 0.06)', text: '#6ee7b7' },
-  sky: { border: '#0ea5e9', fill: 'rgb(14 165 233 / 0.06)', text: '#7dd3fc' },
-  violet: { border: '#8b5cf6', fill: 'rgb(139 92 246 / 0.07)', text: '#c4b5fd' },
-  rose: { border: '#f43f5e', fill: 'rgb(244 63 94 / 0.06)', text: '#fda4af' },
-}
+import { GROUP_STYLE } from '../lib/styles'
+import { IconButton, Separator, cn, floating } from './ui'
 
 export type GroupData = {
   group: Group
@@ -51,8 +43,11 @@ export const GroupFrame = memo(function GroupFrame({ data, selected }: NodeProps
   }
   return (
     <div
-      className={clsx('h-full w-full rounded-xl border-2', selected ? 'border-solid' : 'border-dashed')}
-      style={{ borderColor: selected ? '#fbbf24' : `${style.border}99`, background: style.fill }}
+      className="h-full w-full rounded-xl"
+      style={{
+        background: style.fill,
+        boxShadow: selected ? 'inset 0 0 0 1.5px var(--color-accent)' : `inset 0 0 0 1px color-mix(in oklch, ${style.border} 38%, transparent)`,
+      }}
     >
       {selected &&
         [...LINES, ...CORNERS].map((position) => (
@@ -61,7 +56,7 @@ export const GroupFrame = memo(function GroupFrame({ data, selected }: NodeProps
             position={position}
             variant={LINES.includes(position) ? ResizeControlVariant.Line : ResizeControlVariant.Handle}
             className="group-interactive"
-            color="#fbbf24"
+            color="var(--color-accent)"
             {...minSize(group, data.content, position)}
             onResizeEnd={(_, p) => data.resized({ x: p.x, y: p.y, width: p.width, height: p.height })}
           />
@@ -70,38 +65,43 @@ export const GroupFrame = memo(function GroupFrame({ data, selected }: NodeProps
         isVisible={selected}
         position={Position.Top}
         align="end"
+        offset={8}
         style={{ zIndex: 10 }}
-        className="flex items-center gap-1 rounded-md border border-stone-700 bg-stone-900 p-1 shadow-xl"
+        className={cn(floating, 'flex h-8 items-center gap-1 px-1.5')}
       >
         {GROUP_COLORS.map((c) => (
           <button
             key={c}
+            type="button"
             aria-label={`Color ${c}`}
             aria-pressed={group.color === c}
-            className={clsx('h-4 w-4 rounded-full border-2', group.color === c ? 'border-stone-100' : 'border-transparent')}
-            style={{ background: GROUP_STYLE[c].border }}
+            title={c}
+            className="flex size-6 items-center justify-center rounded-md outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-accent/70"
             onClick={() => data.recolor(c)}
-          />
+          >
+            <span
+              className="size-3.5 rounded-full"
+              style={{
+                background: GROUP_STYLE[c].border,
+                boxShadow: group.color === c ? '0 0 0 2px var(--color-panel), 0 0 0 3.5px var(--color-fg-muted)' : undefined,
+              }}
+            />
+          </button>
         ))}
-        <div className="mx-0.5 h-4 w-px bg-stone-700" />
-        <button
-          aria-label={`Ungroup ${group.title}`}
-          title="Remove the frame, keep its cards (Delete)"
-          className="rounded p-0.5 text-stone-400 hover:text-red-400"
-          onClick={data.ungroup}
-        >
-          <Ungroup size={14} />
-        </button>
+        <Separator vertical />
+        <IconButton size="sm" icon={Ungroup} label={`Ungroup ${group.title}`} shortcut="Del" tooltipSide="top" onClick={data.ungroup} />
       </NodeToolbar>
       <div
-        className="group-handle group-interactive flex cursor-grab items-center gap-2 rounded-t-xl px-3 active:cursor-grabbing"
-        style={{ height: GROUP_HEADER, color: style.text }}
+        className="group-handle group-interactive flex cursor-grab items-center gap-2 rounded-t-xl px-3.5 active:cursor-grabbing"
+        style={{ height: GROUP_HEADER }}
         onPointerDown={data.select}
         onDoubleClick={() => setTitle(group.title)}
         title="Drag to move the group with its cards · double-click to rename"
       >
         {title === null ? (
-          <span className="truncate font-serif text-lg">{group.title}</span>
+          <span className="truncate font-serif text-lg font-medium" style={{ color: style.text }}>
+            {group.title}
+          </span>
         ) : (
           <input
             autoFocus
@@ -113,10 +113,10 @@ export const GroupFrame = memo(function GroupFrame({ data, selected }: NodeProps
               if (e.key === 'Enter') commit()
               if (e.key === 'Escape') setTitle(null)
             }}
-            className="nodrag min-w-0 flex-1 rounded bg-stone-900 px-1.5 py-0.5 font-serif text-lg text-stone-100 outline-amber-400"
+            className="nodrag h-8 min-w-0 flex-1 rounded-md bg-surface px-2 font-serif text-lg text-fg shadow-[inset_0_0_0_1px_var(--color-accent)] outline-none"
           />
         )}
-        <span className="shrink-0 text-[11px] text-stone-500">{data.count}</span>
+        <span className="tabular shrink-0 rounded-full bg-hover px-1.5 text-2xs text-fg-subtle">{data.count}</span>
       </div>
     </div>
   )

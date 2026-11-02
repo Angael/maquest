@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import {
   BaseEdge,
   EdgeLabelRenderer,
@@ -12,6 +13,8 @@ import {
 import { inferConnectionType } from '../lib/connections'
 import { useUI } from '../lib/store'
 import type { CardData } from './StoryCard'
+import { useCanvasHover } from './canvas/hover'
+import { cn } from './ui'
 
 type Rect = { x: number; y: number; width: number; height: number }
 export type FloatingData = {
@@ -62,16 +65,19 @@ export function floatingPath(from: Rect, to: Rect | { x: number; y: number }, of
   return getBezierPath({ sourceX: a.x, sourceY: a.y, sourcePosition: a.pos, targetX: b.x, targetY: b.y, targetPosition: b.pos })
 }
 
-export function FloatingEdge({ id, source, target, style, markerEnd, label, selected, data }: EdgeProps<FloatingFlowEdge>) {
+export const FloatingEdge = memo(function FloatingEdge({ id, source, target, style, markerEnd, label, selected, data }: EdgeProps<FloatingFlowEdge>) {
   const select = useUI((state) => state.select)
+  // Only lines whose hover state flips re-render; the canvas component never sees hover.
+  const hovered = useCanvasHover((h) => h.edge === id || h.node === source || h.node === target)
   const s = useInternalNode(source)
   const t = useInternalNode(target)
   if (!s || !t) return null
   const [path, lx, ly] = floatingPath(rect(s), rect(t), data?.offset)
+  const showLabel = !!label && (!data?.hideLabel || selected || hovered)
   return (
     <>
       <BaseEdge id={id} path={path} style={style} markerEnd={markerEnd} interactionWidth={16} />
-      {label && (!data?.hideLabel || selected) && (
+      {showLabel && (
         <EdgeLabelRenderer>
           <div
             role="button"
@@ -87,21 +93,20 @@ export function FloatingEdge({ id, source, target, style, markerEnd, label, sele
                 select({ kind: 'edge', id })
               }
             }}
-            className="nodrag nopan pointer-events-auto absolute cursor-pointer rounded bg-stone-900 px-1.5 py-0.5 text-[11px] focus-visible:outline focus-visible:outline-amber-400"
-            style={{
-              transform: `translate(-50%, -50%) translate(${lx}px, ${ly}px)`,
-              opacity: style?.opacity,
-              color: data?.color,
-              outline: selected ? '1px solid currentColor' : undefined,
-            }}
+            className={cn(
+              'nodrag nopan pointer-events-auto absolute flex h-5 cursor-pointer items-center gap-1.5 rounded-full bg-raised pr-2 pl-1.5 text-2xs whitespace-nowrap text-fg-muted shadow-[inset_0_0_0_1px_var(--color-line)] outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/70',
+              selected && 'text-fg shadow-[0_0_0_1.5px_var(--color-accent)]',
+            )}
+            style={{ transform: `translate(-50%, -50%) translate(${lx}px, ${ly}px)`, opacity: style?.opacity }}
           >
+            <span aria-hidden className="size-1.5 shrink-0 rounded-full" style={{ background: data?.color }} />
             {label}
           </div>
         </EdgeLabelRenderer>
       )}
     </>
   )
-}
+})
 
 /** Drag preview that matches the final floating edge and names the type the drop will create. */
 export function FloatingConnectionLine({ fromNode, toNode, toX, toY, connectionStatus }: ConnectionLineComponentProps) {
@@ -111,11 +116,22 @@ export function FloatingConnectionLine({ fromNode, toNode, toX, toY, connectionS
   const invalid = connectionStatus === 'invalid'
   const type =
     connectType !== 'auto' ? connectType : over ? inferConnectionType((fromNode.data as CardData).node.type, (over.data as CardData).node.type) : null
-  const text = invalid ? 'Already connected or same card' : (type ?? 'drop on a card')
+  const text = invalid ? 'Already connected or same card' : (type ?? 'Drop on a card')
+  const color = invalid ? 'var(--color-danger)' : 'var(--color-accent)'
   return (
     <g>
-      <path d={path} fill="none" stroke={invalid ? '#f87171' : '#fbbf24'} strokeWidth={2} strokeDasharray="6 4" />
-      <text x={toX + 12} y={toY - 10} fontSize={11} fill={invalid ? '#fca5a5' : '#fcd34d'} paintOrder="stroke" stroke="#0c0a09" strokeWidth={3}>
+      <path d={path} fill="none" stroke={color} strokeWidth={1.75} strokeDasharray="6 4" />
+      <text
+        x={toX + 12}
+        y={toY - 10}
+        fontSize={11}
+        fontWeight={500}
+        fill={color}
+        paintOrder="stroke"
+        stroke="var(--color-app)"
+        strokeWidth={4}
+        strokeLinejoin="round"
+      >
         {text}
       </text>
     </g>

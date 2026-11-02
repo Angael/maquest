@@ -40,18 +40,18 @@ test('canvases reorder by dragging their tabs', async ({ desktop }) => {
   await expect(tabs.getByRole('tab', { name: 'Second' })).toBeVisible()
   await dragOnto(page, tabs.getByRole('tab', { name: 'Second' }), tabs.getByRole('tab', { name: 'Main' }), 'before')
   await expect.poll(() => project.boards().map((b) => b.title)).toEqual(['Second', 'Main'])
-  await expect(tabs.getByRole('tab')).toHaveText(['All', 'Second', 'Main'])
+  await expect(tabs.getByRole('tab')).toHaveText(['Overview', 'Second', 'Main'])
 })
 
-test('the All canvas shows every node and cannot be edited', async ({ desktop }) => {
+test('the Overview canvas shows every node and cannot be edited', async ({ desktop }) => {
   const { page, project, ids } = desktop
   const extra = project.createNode({ type: 'character', title: 'Off board' })
   const tabs = page.getByRole('tablist', { name: 'Boards' })
-  await tabs.getByRole('tab', { name: 'All' }).click()
+  await tabs.getByRole('tab', { name: 'Overview' }).click()
   for (const id of [...ids, extra.id]) await expect(page.locator(`.react-flow__node[data-id="${id}"]`)).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Rename board' })).toBeHidden()
-  await expect(page.getByRole('button', { name: 'Delete board' })).toBeHidden()
-  await expect(page.getByRole('button', { name: 'Add node (A or right-click canvas)' })).toBeHidden()
+  await expect(page.getByRole('button', { name: 'Board actions' })).toBeHidden()
+  await expect(page.getByRole('button', { name: 'Add', exact: true })).toBeHidden()
+  await expect(page.getByRole('toolbar', { name: 'Canvas', exact: true })).toContainText('Read-only')
   const before = JSON.stringify(project.graph())
   const card = page.locator(`.react-flow__node[data-id="${ids[0]}"]`)
   await card.click()
@@ -82,4 +82,32 @@ test('cards render a maximum-length summary in full', async ({ desktop }) => {
   const box = (await text.boundingBox())!
   const card = (await page.locator(`.react-flow__node[data-id="${ids[0]}"]`).boundingBox())!
   expect(box.y + box.height).toBeLessThanOrEqual(card.y + card.height)
+})
+
+test('the board actions menu renames, adds phase columns and deletes a board', async ({ desktop }) => {
+  const { page, project } = desktop
+  project.createBoard({ title: 'Second' })
+  const tabs = page.getByRole('tablist', { name: 'Boards' })
+  await tabs.getByRole('tab', { name: 'Second' }).click()
+  await page.getByRole('button', { name: 'Board actions' }).click()
+  await page.getByRole('menuitem', { name: 'Rename…' }).click()
+  await page.getByRole('textbox', { name: 'Board name' }).fill('Act II')
+  await page.getByRole('textbox', { name: 'Board name' }).press('Enter')
+  await expect(tabs.getByRole('tab', { name: 'Act II' })).toHaveAttribute('aria-selected', 'true')
+  await page.getByRole('button', { name: 'Board actions' }).click()
+  await page.getByRole('menuitem', { name: /Phase columns/ }).click()
+  await page.getByRole('dialog', { name: 'Phase columns' }).getByRole('button', { name: 'Add phase' }).click()
+  await expect
+    .poll(() =>
+      project
+        .boards()
+        .find((b) => b.title === 'Act II')
+        ?.phases.map((p) => p.title),
+    )
+    .toEqual(['Phase 1'])
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: 'Board actions' }).click()
+  await page.getByRole('menuitem', { name: 'Delete board' }).click()
+  await expect.poll(() => project.boards().map((b) => b.title)).toEqual(['Main'])
+  await expect(tabs.getByRole('tab', { name: 'Main' })).toHaveAttribute('aria-selected', 'true')
 })

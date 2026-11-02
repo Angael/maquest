@@ -26,9 +26,9 @@ export function ClockDial({
           <path
             key={i}
             d={`M${r},${r} L${point(i)} A${r - 1},${r - 1} 0 0 1 ${point(i + 1)} Z`}
-            fill={on ? '#f59e0b' : '#292524'}
-            stroke="#0c0a09"
-            strokeWidth={1.5}
+            fill={on ? 'var(--color-accent)' : 'var(--color-raised)'}
+            stroke="var(--color-surface)"
+            strokeWidth={r < 10 ? 1 : 1.5}
             className={onSet ? 'nodrag cursor-pointer hover:opacity-80' : undefined}
             onClick={
               onSet &&
@@ -42,7 +42,7 @@ export function ClockDial({
           </path>
         )
       })}
-      <circle cx={r} cy={r} r={r - 1} fill="none" stroke="#78716c" strokeWidth={1} />
+      <circle cx={r} cy={r} r={r - 1} fill="none" stroke="var(--color-line-strong)" strokeWidth={1} />
     </svg>
   )
 }

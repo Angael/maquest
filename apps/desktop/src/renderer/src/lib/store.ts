@@ -34,6 +34,9 @@ type UI = {
   tabs: string[]
   openTab: (id: string) => void
   closeTab: (id: string) => void
+  /** Canvas minimap shown (bottom right). */
+  minimap: boolean
+  setMinimap: (open: boolean) => void
   /** Live notes panel open. */
   liveNotesOpen: boolean
   setLiveNotesOpen: (open: boolean) => void
@@ -82,6 +85,8 @@ export const useUI = create<UI>()(
       sidebarOpen: true,
       sidebarWidth: 248,
       paletteOpen: false,
+      minimap: false,
+      setMinimap: (minimap) => set({ minimap }),
       tabs: [],
       openTab: (id) =>
         set((s) => {
@@ -156,12 +161,14 @@ export const useUI = create<UI>()(
           liveNotesOpen: saved.liveNotesOpen ?? false,
           sidebarOpen: saved.sidebarOpen ?? true,
           sidebarWidth: saved.sidebarWidth ?? 248,
+          minimap: saved.minimap ?? false,
         }
       },
-      partialize: ({ hiddenEdges, hiddenNodes, connectType, edgeLabels, referenceLines, layoutMode, liveNotesOpen, sidebarOpen, sidebarWidth }) => ({
+      partialize: ({ hiddenEdges, hiddenNodes, connectType, edgeLabels, referenceLines, layoutMode, liveNotesOpen, sidebarOpen, sidebarWidth, minimap }) => ({
         liveNotesOpen,
         sidebarOpen,
         sidebarWidth,
+        minimap,
         hiddenEdges,
         hiddenNodes,
         connectType,
