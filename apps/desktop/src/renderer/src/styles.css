@@ -199,23 +199,19 @@ textarea::placeholder {
   background: oklch(1 0 0 / 0.028);
 }
 
-/* Cards: neutral surface with a hairline; the type color is only a thin top accent and the icon. */
+/* Cards: neutral surface with a hairline; the type color lives in the icon and label only. */
 .story-card {
   box-shadow:
     inset 0 0 0 1px var(--color-line),
     0 1px 2px oklch(0 0 0 / 0.3);
   transition: opacity 150ms var(--ease-out);
 }
-.story-card::before {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto;
-  z-index: 1;
-  height: 2px;
-  border-radius: 8px 8px 0 0;
-  background: var(--type-color);
-  opacity: 0.6;
-  pointer-events: none;
+/* Cards are clicked (select), middle-clicked (open in a tab) and dragged: a pointer, not a grab hand, until dragging. */
+.react-flow__node:not(.react-flow__node-group).draggable {
+  cursor: pointer;
+}
+.react-flow__node:not(.react-flow__node-group).draggable.dragging {
+  cursor: grabbing;
 }
 .story-card[data-emphasis='neighbor'] {
   box-shadow:

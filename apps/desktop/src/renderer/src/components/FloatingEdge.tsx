@@ -94,12 +94,12 @@ export const FloatingEdge = memo(function FloatingEdge({ id, source, target, sty
               }
             }}
             className={cn(
-              'nodrag nopan pointer-events-auto absolute flex h-5 cursor-pointer items-center gap-1.5 rounded-full bg-raised pr-2 pl-1.5 text-2xs whitespace-nowrap text-fg-muted shadow-[inset_0_0_0_1px_var(--color-line)] outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/70',
+              'nodrag nopan pointer-events-auto absolute flex h-5 cursor-pointer items-center rounded-full bg-raised px-2 text-2xs whitespace-nowrap text-fg-muted shadow-[inset_0_0_0_1px_var(--color-line)] outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/70',
               selected && 'text-fg shadow-[0_0_0_1.5px_var(--color-accent)]',
             )}
-            style={{ transform: `translate(-50%, -50%) translate(${lx}px, ${ly}px)`, opacity: style?.opacity }}
+            // Hovered or selected labels rise above cards (nodes and labels share one stacking context).
+            style={{ transform: `translate(-50%, -50%) translate(${lx}px, ${ly}px)`, opacity: style?.opacity, zIndex: hovered || selected ? 5000 : undefined }}
           >
-            <span aria-hidden className="size-1.5 shrink-0 rounded-full" style={{ background: data?.color }} />
             {label}
           </div>
         </EdgeLabelRenderer>
