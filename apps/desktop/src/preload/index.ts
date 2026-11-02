@@ -13,6 +13,13 @@ const bridge = {
     ipcRenderer.on('update:status', listener)
     return () => void ipcRenderer.removeListener('update:status', listener)
   },
+  platform: process.platform,
+  window: (action: 'minimize' | 'toggleMaximize' | 'close' | 'isMaximized') => ipcRenderer.invoke('window', action) as Promise<boolean>,
+  onMaximized: (cb: (maximized: boolean) => void) => {
+    const listener = (_e: unknown, maximized: boolean) => cb(maximized)
+    ipcRenderer.on('window:maximized', listener)
+    return () => void ipcRenderer.removeListener('window:maximized', listener)
+  },
   installUpdate: () => ipcRenderer.invoke('update:install'),
   /** Absolute path of a File dropped from the OS. */
   pathForFile: (file: File) => webUtils.getPathForFile(file),

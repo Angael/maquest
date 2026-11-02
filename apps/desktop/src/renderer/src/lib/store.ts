@@ -34,9 +34,22 @@ type UI = {
   tabs: string[]
   openTab: (id: string) => void
   closeTab: (id: string) => void
+  /** Replace the pinned tabs (tab context menu); if the viewed tab was closed, `focus` becomes the viewed node. */
+  setTabs: (tabs: string[], focus?: string) => void
+  /** Canvas minimap shown (bottom right). */
+  minimap: boolean
+  setMinimap: (open: boolean) => void
   /** Live notes panel open. */
   liveNotesOpen: boolean
   setLiveNotesOpen: (open: boolean) => void
+  /** Project sidebar shown (Ctrl+B) and its width in px. */
+  sidebarOpen: boolean
+  sidebarWidth: number
+  setSidebarOpen: (open: boolean) => void
+  setSidebarWidth: (width: number) => void
+  /** Command palette (Ctrl+K) open. Not persisted. */
+  paletteOpen: boolean
+  setPaletteOpen: (open: boolean) => void
   /** Shows a node on the canvas: switches to `board` (when given), selects and centers it. */
   focusNode: (id: string, board?: string) => void
   setView: (v: View) => void
@@ -71,6 +84,11 @@ export const useUI = create<UI>()(
       pendingFocus: null,
       viewSelections: {},
       liveNotesOpen: false,
+      sidebarOpen: true,
+      sidebarWidth: 248,
+      paletteOpen: false,
+      minimap: false,
+      setMinimap: (minimap) => set({ minimap }),
       tabs: [],
       openTab: (id) =>
         set((s) => {
@@ -87,7 +105,16 @@ export const useUI = create<UI>()(
           const next = tabs[Math.min(i, tabs.length - 1)]
           return { tabs, selection: next ? { kind: 'node', id: next } : null, selectedNodeIds: next ? [next] : [] }
         }),
+      setTabs: (tabs, focus) =>
+        set((s) => {
+          const viewed = s.selection?.kind === 'node' ? s.selection.id : null
+          if (!viewed || !focus || !s.tabs.includes(viewed) || tabs.includes(viewed)) return { tabs }
+          return { tabs, selection: { kind: 'node', id: focus }, selectedNodeIds: [focus] }
+        }),
       setLiveNotesOpen: (liveNotesOpen) => set({ liveNotesOpen }),
+      setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
+      setSidebarWidth: (sidebarWidth) => set({ sidebarWidth }),
+      setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
       setView: (view) =>
         set((s) =>
           s.view === view
@@ -140,10 +167,16 @@ export const useUI = create<UI>()(
           referenceLines: false,
           layoutMode: 'smart' as const,
           liveNotesOpen: saved.liveNotesOpen ?? false,
+          sidebarOpen: saved.sidebarOpen ?? true,
+          sidebarWidth: saved.sidebarWidth ?? 248,
+          minimap: saved.minimap ?? false,
         }
       },
-      partialize: ({ hiddenEdges, hiddenNodes, connectType, edgeLabels, referenceLines, layoutMode, liveNotesOpen }) => ({
+      partialize: ({ hiddenEdges, hiddenNodes, connectType, edgeLabels, referenceLines, layoutMode, liveNotesOpen, sidebarOpen, sidebarWidth, minimap }) => ({
         liveNotesOpen,
+        sidebarOpen,
+        sidebarWidth,
+        minimap,
         hiddenEdges,
         hiddenNodes,
         connectType,

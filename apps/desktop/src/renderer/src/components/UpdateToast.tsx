@@ -6,11 +6,21 @@ const ID = 'app-update'
 
 function Progress({ percent }: { percent: number }) {
   return (
-    <div className="mt-1.5 flex items-center gap-2">
-      <div className="h-1 flex-1 overflow-hidden rounded-full bg-stone-800">
-        <div className="h-full bg-sky-500 transition-[width]" style={{ width: `${percent}%` }} />
+    <div className="mt-2 flex items-center gap-2">
+      <div
+        role="progressbar"
+        aria-label="Download progress"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.floor(percent)}
+        className="h-1 flex-1 overflow-hidden rounded-full bg-active"
+      >
+        <div
+          className="h-full origin-left rounded-full bg-accent transition-transform duration-200 ease-out"
+          style={{ transform: `scaleX(${percent / 100})` }}
+        />
       </div>
-      <span className="tabular-nums">{Math.floor(percent)}%</span>
+      <span className="tabular w-8 text-right text-2xs text-fg-subtle">{Math.floor(percent)}%</span>
     </div>
   )
 }

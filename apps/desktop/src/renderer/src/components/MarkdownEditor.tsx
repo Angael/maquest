@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useLayoutEffect, useEffect, useMemo, useRef, useState } from 'react'
 import CodeMirror, { EditorView } from '@uiw/react-codemirror'
 import { openImage } from './Lightbox'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
@@ -10,7 +10,9 @@ import { isVideo, mediaUrl } from '../lib/api'
 import { useNodes } from '../lib/queries'
 import { useUI } from '../lib/store'
 import { livePreview, setNodeTitles } from '../lib/livePreview'
+import { cn } from './ui'
 
+const NO_NODES: { id: string; title: string }[] = []
 const embed = (paths: string[]) => paths.map((p) => `![${p.split('/').pop()}](${p})`).join('\n')
 
 /** Inserts dropped or pasted images/videos as markdown embeds. */
@@ -40,10 +42,10 @@ const editorTheme = EditorView.theme(
     '&': { backgroundColor: 'transparent' },
     '.cm-gutters': { display: 'none' },
     // A little left padding keeps the caret at column 0 from being clipped by the scroller.
-    '.cm-content': { padding: '8px 0 8px 2px', caretColor: '#fbbf24' },
-    '.cm-cursor': { borderLeftColor: '#fbbf24' },
+    '.cm-content': { padding: '8px 0 8px 2px', caretColor: 'var(--color-accent)' },
+    '.cm-cursor': { borderLeftColor: 'var(--color-accent)', borderLeftWidth: '1.5px' },
     '&.cm-focused': { outline: 'none' },
-    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': { backgroundColor: 'rgba(251, 191, 36, 0.2) !important' },
+    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': { backgroundColor: 'var(--color-accent-soft) !important' },
   },
   { dark: true },
 )
@@ -92,13 +94,18 @@ export function MarkdownPreview({ source }: { source: string }) {
   )
 }
 
-export function MarkdownEditor({
+/**
+ * Live-preview markdown editor. `variant="document"` is the borderless hero used for node content (prose width, no
+ * frame); `boxed` (default) keeps a framed field. Syntax help appears only while the editor is focused and empty.
+ */
+export const MarkdownEditor = memo(function MarkdownEditor({
   value,
   onChange,
   label = 'Body',
   placeholder = 'Write here…',
   minHeight = '240px',
   hint = true,
+  variant = 'boxed',
 }: {
   value: string
   onChange: (v: string) => void
@@ -106,8 +113,10 @@ export function MarkdownEditor({
   placeholder?: string
   minHeight?: string
   hint?: boolean
+  variant?: 'boxed' | 'document'
 }) {
-  const { data: nodes = [] } = useNodes()
+  const { data: nodes = NO_NODES } = useNodes()
+  const [focused, setFocused] = useState(false)
   const select = useUI((s) => s.select)
   const onChangeRef = useRef(onChange)
   useLayoutEffect(() => {
@@ -129,9 +138,19 @@ export function MarkdownEditor({
   // Keep CodeMirror's listener/configuration stable while the controlled draft
   // updates. External value changes are already annotated by react-codemirror.
   const handleChange = useCallback((next: string) => onChangeRef.current(next), [])
+  const doc = variant === 'document'
   return (
-    <div className="rounded-md border border-stone-800 bg-stone-900/50">
-      <div className="px-3">
+    <div
+      className={cn(
+        'relative',
+        doc
+          ? 'px-4 pt-1'
+          : 'rounded-md bg-surface/60 px-3 shadow-[inset_0_0_0_1px_var(--color-line)] focus-within:shadow-[inset_0_0_0_1px_var(--color-line-strong)]',
+      )}
+      onFocus={() => setFocused(true)}
+      onBlur={(e) => !e.currentTarget.contains(e.relatedTarget) && setFocused(false)}
+    >
+      <div className={doc ? 'max-w-[70ch]' : undefined}>
         <CodeMirror
           value={value}
           onChange={handleChange}
@@ -144,11 +163,14 @@ export function MarkdownEditor({
           onCreateEditor={setView}
         />
       </div>
-      {hint && (
-        <div className="border-t border-stone-800 px-3 py-1 text-right text-xs text-stone-600">
-          drop or paste images/videos · [[node-id]] links · click a link to open (Ctrl+click while editing its line)
-        </div>
+      {hint && focused && !value && (
+        <p className={cn('pointer-events-none text-xs text-fg-faint', doc ? 'pb-2' : 'absolute right-3 bottom-2')}>
+          <span translate="no" className="font-mono text-2xs text-fg-subtle">
+            [[node-id]]
+          </span>{' '}
+          links a node · drop or paste images and videos
+        </p>
       )}
     </div>
   )
-}
+})

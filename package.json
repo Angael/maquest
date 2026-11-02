@@ -18,6 +18,7 @@
     "test:e2e": "pnpm build && node scripts/test-e2e.mjs",
     "changeset": "changeset",
     "version:release": "changeset version",
+    "screenshots": "pnpm build && xvfb-run -a -s '-screen 0 1920x1080x24' pnpm exec playwright test -c scripts/screenshots/playwright.config.ts",
     "package:desktop": "pnpm build && pnpm --filter @maquest/desktop exec electron-builder --publish never"
   },
   "devDependencies": {

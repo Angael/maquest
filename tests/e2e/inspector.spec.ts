@@ -77,3 +77,30 @@ test('markdown tables render as tables and show raw markdown while edited', asyn
   await page.keyboard.press('ControlOrMeta+End')
   await expect(table).toBeVisible()
 })
+
+test('properties: tag chips, custom fields and Esc to close', async ({ desktop }) => {
+  const { page, project, ids } = desktop
+  await page.locator(`.react-flow__node[data-id="${ids[1]}"]`).click()
+  const tags = page.getByRole('textbox', { name: 'Tags' })
+  await tags.fill('damp, dark')
+  await tags.press('Enter')
+  await expect.poll(() => project.getNode(ids[1])?.tags).toEqual(['damp', 'dark'])
+  await tags.press('Backspace')
+  await expect.poll(() => project.getNode(ids[1])?.tags).toEqual(['damp'])
+  await page.getByRole('button', { name: 'Remove tag damp' }).click()
+  await expect.poll(() => project.getNode(ids[1])?.tags).toEqual([])
+
+  await page.getByRole('button', { name: 'Add property' }).click()
+  await page.getByRole('menuitem', { name: 'Field…' }).click()
+  await page.getByRole('textbox', { name: 'New field name' }).fill('smell')
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('textbox', { name: 'smell' })).toBeFocused()
+  await page.keyboard.type('Mould')
+  await expect.poll(() => project.getNode(ids[1])?.fields.smell).toBe('Mould')
+
+  // The first Esc leaves the field, the second closes the inspector.
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('complementary', { name: 'Inspector' })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('complementary', { name: 'Inspector' })).toBeHidden()
+})

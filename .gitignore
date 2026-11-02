@@ -7,3 +7,5 @@ out
 /playwright-report/
 
 /apps/desktop/release/
+/.screenshots/
+/.claude/worktrees/

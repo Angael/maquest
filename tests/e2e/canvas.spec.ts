@@ -50,21 +50,42 @@ test('external file edits appear on the canvas', async ({ desktop }) => {
 
 test('canvas display controls switch modes and retain display preferences', async ({ desktop }) => {
   const { page } = desktop
+  const open = () => page.getByRole('button', { name: /^View:/ }).click()
   const view = page.getByRole('group', { name: 'Graph view mode' })
   const labels = page.getByRole('group', { name: 'When to show line names' })
   const references = page.getByRole('group', { name: 'How to show references' })
-  await view.getByRole('button', { name: 'World / entities', exact: true }).click()
-  await expect(view.getByRole('button', { name: 'World / entities', exact: true })).toHaveAttribute('aria-pressed', 'true')
-  await view.getByRole('button', { name: 'Everything', exact: true }).click()
+  await open()
+  await view.getByRole('button', { name: 'World', exact: true }).click()
+  await expect(view.getByRole('button', { name: 'World', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('button', { name: 'View: World' })).toBeVisible()
+  // Hiding a single type makes a custom view with a reset chip.
+  await page.getByRole('button', { name: /^Cards.*\d/ }).click()
+  await page.getByRole('button', { name: 'Notes', exact: true, pressed: true }).click()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('button', { name: 'View: Custom' })).toBeVisible()
+  await page.getByRole('button', { name: 'Reset', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'View: Everything' })).toBeVisible()
+  await open()
   await labels.getByRole('button', { name: 'Always', exact: true }).click()
   await references.getByRole('button', { name: 'Lines', exact: true }).click()
   await page.reload()
+  await open()
   await expect(labels.getByRole('button', { name: 'Always', exact: true })).toHaveAttribute('aria-pressed', 'true')
   await expect(references.getByRole('button', { name: 'Lines', exact: true })).toHaveAttribute('aria-pressed', 'true')
-  await labels.getByRole('button', { name: 'On hover / focus', exact: true }).click()
-  await references.getByRole('button', { name: 'Chips on cards', exact: true }).click()
-  await expect(labels.getByRole('button', { name: 'On hover / focus', exact: true })).toHaveAttribute('aria-pressed', 'true')
-  await expect(references.getByRole('button', { name: 'Chips on cards', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await labels.getByRole('button', { name: 'On hover', exact: true }).click()
+  await references.getByRole('button', { name: 'Chips', exact: true }).click()
+  await expect(labels.getByRole('button', { name: 'On hover', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(references.getByRole('button', { name: 'Chips', exact: true })).toHaveAttribute('aria-pressed', 'true')
+})
+
+test('the minimap is hidden by default and its toggle is remembered', async ({ desktop }) => {
+  const { page } = desktop
+  await expect(page.locator('.react-flow__minimap')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Minimap', exact: true }).click()
+  await expect(page.locator('.react-flow__minimap')).toBeVisible()
+  await page.reload()
+  await expect(page.locator('.react-flow__minimap')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Minimap', exact: true })).toHaveAttribute('aria-pressed', 'true')
 })
 
 test('boards are independent: remove keeps the entity, paste places a reference, duplicate copies', async ({ desktop }) => {
@@ -99,6 +120,9 @@ test('boards are independent: remove keeps the entity, paste places a reference,
   expect(project.board(main).nodes).toContain(ids[0])
   // Duplicate creates a new entity.
   await card(created).click({ button: 'right' })
+  // Right-clicking a card opens its menu without selecting or focusing it.
+  await expect(card(created)).not.toHaveClass(/selected/)
+  await expect(card(created)).not.toBeFocused()
   await page.getByRole('menuitem', { name: /Duplicate/ }).click()
   await expect.poll(() => project.listNodes().length).toBe(4)
   expect(project.board('arc').nodes).toHaveLength(2)
@@ -166,14 +190,17 @@ test('auto-layout runs the chosen style and remembers it', async ({ desktop }) =
   const ids = [...desktop.ids, ...['Attic', 'Garden', 'Stable', 'Chapel', 'Well', 'Gate'].map((title) => project.createNode({ type: 'location', title }).id)]
   project.setLayout(Object.fromEntries(ids.map((id, i) => [id, { x: 100, y: 100 + i * 200 }])))
   await expect(page.locator('.react-flow__node').filter({ hasText: 'Gate' })).toBeVisible()
-  const style = page.getByRole('combobox', { name: 'Auto-layout style' })
-  await expect(style).toHaveValue('smart')
-  await style.selectOption('grid')
-  await page.getByRole('button', { name: 'Auto-layout unpinned nodes' }).click()
+  const style = page.getByRole('button', { name: 'Auto-layout style' })
+  await style.click()
+  await expect(page.getByRole('menuitemradio', { name: /^Smart/ })).toHaveAttribute('aria-checked', 'true')
+  // Picking a style from the split button's menu runs it right away and makes it the default.
+  await page.getByRole('menuitemradio', { name: /^Grid/ }).click()
   // A column of unlinked cards is packed into several columns instead of staying one tall stack.
   await expect.poll(() => new Set(ids.map((id) => project.board().layout[id].x)).size).toBeGreaterThan(1)
+  await expect(page.getByRole('button', { name: 'Auto-layout (Grid)' })).toBeVisible()
   await page.reload()
-  await expect(page.getByRole('combobox', { name: 'Auto-layout style' })).toHaveValue('grid')
+  await page.getByRole('button', { name: 'Auto-layout style' }).click()
+  await expect(page.getByRole('menuitemradio', { name: /^Grid/ })).toHaveAttribute('aria-checked', 'true')
 })
 
 test('cards in nested groups follow saved layouts after the groups are dragged', async ({ desktop }) => {

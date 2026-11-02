@@ -1,56 +1,27 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   Background,
   BackgroundVariant,
   ConnectionMode,
-  Controls,
   MarkerType,
-  MiniMap,
   Panel,
   ReactFlow,
   SelectionMode,
   useReactFlow,
-  ViewportPortal,
   type Connection,
   type Edge as FlowEdge,
+  type EdgeMouseHandler,
   type IsValidConnection,
   type Node as FlowNode,
   type NodeChange,
+  type NodeMouseHandler,
 } from '@xyflow/react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import clsx from 'clsx'
-import {
-  BoxSelect,
-  ChevronDown,
-  ClipboardPaste,
-  Columns3,
-  Copy,
-  CopyPlus,
-  Eye,
-  EyeOff,
-  Globe,
-  LayoutGrid,
-  Lock,
-  MousePointer2,
-  Pencil,
-  Plus,
-  Redo2,
-  Route,
-  Tags,
-  Trash2,
-  Undo2,
-  Waypoints,
-  X,
-  type LucideIcon,
-} from 'lucide-react'
 import {
   ALL_BOARD,
-  EDGE_DESCRIPTIONS,
-  EDGE_TYPES,
   CARD_SIZE,
   GROUP_HEADER,
   GROUP_PAD,
-  PHASE_WIDTH,
   bounds,
   clueCounts,
   groupAt,
@@ -72,36 +43,34 @@ import {
   type StoryNode,
   refsOf,
 } from '@maquest/core/schema'
+import { useShallow } from 'zustand/react/shallow'
 import { api } from '../lib/api'
 import { NODE_DRAG_TYPE, importFiles, useCreateNode } from '../lib/actions'
 import { currentBoardId, queryClient, useAction, useBoard, useGraph, useNodes } from '../lib/queries'
 import { useUI } from '../lib/store'
 import { isEditingTarget as isEditing, useDeleteEverywhere, useRemoveFromBoard } from '../lib/deletion'
-import { EDGE_STYLE, useTypes, type EdgeKind, type TypeStyle } from '../lib/styles'
+import { EDGE_STYLE, useTypes, type EdgeKind } from '../lib/styles'
 import { inferConnectionType } from '../lib/connections'
 import { StoryCard, type CardData, type CardRef } from './StoryCard'
 import { FloatingConnectionLine, FloatingEdge, type FloatingFlowEdge } from './FloatingEdge'
-import { GROUP_STYLE, GroupFrame, type GroupFlowNode } from './GroupFrame'
-import { LAYOUT_MODES, arrange } from '@maquest/core/layout'
+import { GroupFrame, type GroupFlowNode } from './GroupFrame'
+import { CanvasToolbar } from './canvas/CanvasToolbar'
+import { CanvasControls, CanvasMinimap } from './canvas/CanvasControls'
+import { ViewMenu } from './canvas/ViewMenu'
+import { AddNodeMenu, NodeMenu } from './canvas/menus'
+import { PhaseLanes } from './canvas/PhaseLanes'
+import { hoverEdge, hoverNode } from './canvas/hover'
+import { FIT_VIEW, cardSize, isCard, type AnyFlowNode, type CardFlowNode } from './canvas/shared'
 
 const nodeTypes = { card: StoryCard, frame: GroupFrame }
 const edgeTypes = { floating: FloatingEdge }
 const NONE: StoryNode[] = []
-const MODES: { label: string; icon: LucideIcon; nodes: (types: readonly TypeStyle[]) => NodeType[]; edges: readonly EdgeKind[] }[] = [
-  { label: 'Everything', icon: LayoutGrid, nodes: (types) => types.map((t) => t.id), edges: ['contains', ...EDGE_TYPES] },
-  {
-    label: 'Story flow',
-    icon: Route,
-    nodes: () => ['story', 'chapter', 'scene', 'note'],
-    edges: ['contains', 'leads-to', 'branches-to', 'parallel', 'foreshadows'],
-  },
-  {
-    label: 'World / entities',
-    icon: Globe,
-    nodes: (types) => [...types.filter((t) => t.entity).map((t) => t.id), 'media', 'note'],
-    edges: ['link', 'involves', 'located-at', 'member-of', 'owns', 'relationship'],
-  },
-]
+/** Selected lines and arrowheads use the brand accent. */
+const SELECTED = '#f88a3d'
+const onEdgeEnter: EdgeMouseHandler = (_, edge) => hoverEdge(edge.id)
+const onEdgeLeave: EdgeMouseHandler = () => hoverEdge(null)
+const onNodeEnter: NodeMouseHandler = (_, node) => hoverNode(node.id)
+const onNodeLeave: NodeMouseHandler = () => hoverNode(null)
 
 function defaultPosition(column: number, index: number) {
   return { x: Math.max(0, column) * 300, y: index * 180 }
@@ -122,14 +91,10 @@ function descendants(nodes: StoryNode[], root: string) {
 }
 
 type LocalNode = { position?: { x: number; y: number }; measured?: { width: number; height: number }; dragging?: boolean; size?: Size }
-type CardFlowNode = FlowNode<CardData, 'card'>
-type AnyFlowNode = CardFlowNode | GroupFlowNode
-
 /** Flow id of a group frame; card ids are node ids. */
 const GROUP_PREFIX = 'group:'
 const groupKey = (id: string) => GROUP_PREFIX + id
 const groupIdOf = (flowId: string) => (flowId.startsWith(GROUP_PREFIX) ? flowId.slice(GROUP_PREFIX.length) : null)
-const isCard = (n: FlowNode): n is CardFlowNode => n.type === 'card'
 type NewEdge = { source: string; target: string; type: EdgeType }
 
 /** Adds an edge optimistically so the line stays on screen while the write round-trips through disk. */
@@ -154,20 +119,28 @@ let clipboard: { ids: string[]; board: string; pastes: number } | null = null
 /** Separates an edge id from the card keys of its extra copies (when a node has several cards). */
 const EDGE_REF = '@'
 
-const cardSize = (n: CardFlowNode) => ({
-  width: n.measured?.width ?? (n.data.node.type === 'media' ? 288 : CARD_SIZE.width),
-  height: n.measured?.height ?? CARD_SIZE.height,
-})
-
 export function Canvas() {
   const { data: all = NONE } = useNodes()
   const { data: graph } = useGraph()
-  const { selection, selectedNodeIds, select, selectNodes, hiddenEdges, hiddenNodes, storyScope, connectType, edgeLabels, referenceLines } = useUI()
+  const { selection, selectedNodeIds, hiddenEdges, hiddenNodes, storyScope, connectType, edgeLabels, referenceLines } = useUI(
+    useShallow((s) => ({
+      selection: s.selection,
+      selectedNodeIds: s.selectedNodeIds,
+      hiddenEdges: s.hiddenEdges,
+      hiddenNodes: s.hiddenNodes,
+      storyScope: s.storyScope,
+      connectType: s.connectType,
+      edgeLabels: s.edgeLabels,
+      referenceLines: s.referenceLines,
+    })),
+  )
+  const select = useUI((s) => s.select)
+  const selectNodes = useUI((s) => s.selectNodes)
+  const minimap = useUI((s) => s.minimap)
   const board = useBoard()
   const types = useTypes()
   const typeIds = useMemo(() => types.list.map((t) => t.id), [types])
   const readOnly = board?.id === ALL_BOARD
-  const [hovered, setHovered] = useState<{ edge?: string; node?: string }>({})
   useEffect(() => {
     if (all === NONE) return
     const existing = new Set(all.map((node) => node.id))
@@ -254,13 +227,13 @@ export function Canvas() {
     [duplicate, selectNodes],
   )
   const [nodeMenu, setNodeMenu] = useState<{ x: number; y: number; ids: string[] } | null>(null)
+  const middlePress = useRef<{ x: number; y: number } | null>(null)
   const openNodeMenu = (event: { preventDefault: () => void; clientX: number; clientY: number }, id?: string) => {
     event.preventDefault()
     if (readOnly) return
     const selected = useUI.getState().selectedNodeIds
     const ids = id && !selected.includes(id) ? [id] : selected
     if (!ids.length) return
-    if (id && !selected.includes(id)) selectNodes(ids)
     setAddMenu(null)
     setNodeMenu({ x: event.clientX, y: event.clientY, ids })
   }
@@ -665,7 +638,7 @@ export function Canvas() {
     if (board && fitted.current !== board.id && flowNodes.length) {
       fitted.current = board.id
       setLocal({})
-      requestAnimationFrame(() => void flow.fitView({ padding: 0.15, maxZoom: 1 }))
+      requestAnimationFrame(() => void flow.fitView(FIT_VIEW))
     }
   }, [flowNodes, flow, board])
 
@@ -678,16 +651,17 @@ export function Canvas() {
       return {
         selected,
         style: {
-          stroke: selected ? '#fbbf24' : s.color,
+          stroke: selected ? SELECTED : s.color,
           strokeWidth: (s.width ?? 1.5) + (selected ? 2 : focus.active && incident ? 1 : 0),
           strokeDasharray: s.dash,
           opacity: focus.active && !incident ? 0.5 : 1,
         },
-        animated: s.animated && (!focus.active || incident),
+        // Flow lines only march while a card on them is selected: calm at rest, cause and effect on focus.
+        animated: !!s.animated && focus.active && incident,
         markerEnd:
           kind === 'contains' || kind === 'link' || kind === 'relationship'
             ? undefined
-            : { type: MarkerType.ArrowClosed, color: selected ? '#fbbf24' : s.color },
+            : { type: MarkerType.ArrowClosed, color: selected ? SELECTED : s.color },
       }
     }
     // A line joins every card of its source to every card of its target; extra copies get suffixed ids.
@@ -719,8 +693,8 @@ export function Canvas() {
         ids.has(e.target) &&
         (referenceLines || !isReferenceEdge(e.type) || focus.roots.has(e.source) || focus.roots.has(e.target)),
     )
-    const labelShown = (id: string, flowId: string, source: string, target: string) =>
-      edgeLabels === 'always' || (focus.active && focus.lines.has(id)) || hovered.edge === flowId || hovered.node === source || hovered.node === target
+    // Hover reveals the rest of the names inside FloatingEdge, so hovering never rebuilds this list.
+    const labelShown = (id: string) => edgeLabels === 'always' || (focus.active && focus.lines.has(id))
     // Spread every line between the same two cards so A→B and B→A (or two types) stay readable.
     const pairs = new Map<string, string[]>()
     for (const e of shown) {
@@ -739,12 +713,12 @@ export function Canvas() {
           source: pair.s,
           target: pair.t,
           label: e.label ?? (e.type === 'link' ? undefined : e.type),
-          data: { color: EDGE_STYLE[e.type].color, offset, hideLabel: !labelShown(e.id, pair.id, pair.s, pair.t) },
+          data: { color: EDGE_STYLE[e.type].color, offset, hideLabel: !labelShown(e.id) },
           ...style(e.type, e.id),
         })
     }
     return out
-  }, [visible, keysOf, graph, hiddenEdges, selection, focus, referenceLines, edgeLabels, hovered])
+  }, [visible, keysOf, graph, hiddenEdges, selection, focus, referenceLines, edgeLabels])
   const connectionType = useCallback(
     (c: Connection | FlowEdge) => {
       const source = flow.getNode(c.source)?.data as CardData | undefined
@@ -896,6 +870,7 @@ export function Canvas() {
     window.addEventListener('keydown', handle)
     return () => window.removeEventListener('keydown', handle)
   }, [selectedGroup, board, deleteGroup, makeGroup])
+  const groupSelection = useCallback(() => void makeGroup().catch(() => {}), [makeGroup])
   const error =
     createError ??
     createGroup.error ??
@@ -912,14 +887,21 @@ export function Canvas() {
   return (
     <div
       ref={workspace}
-      className="canvas-workspace h-full w-full outline-none"
+      className="canvas-workspace relative h-full w-full outline-none"
       tabIndex={0}
       onMouseDownCapture={(e) => {
-        // Middle click on a card opens it in a new inspector tab.
-        if (e.button !== 1) return
+        if (e.button === 0) return
+        // Middle and right presses never focus or select a card: they pan or open its menu.
+        if ((e.target as Element).closest('.react-flow__node')) e.preventDefault()
+        if (e.button === 1) middlePress.current = { x: e.clientX, y: e.clientY }
+      }}
+      onAuxClick={(e) => {
+        // A middle click (not a pan) on a card opens it in a new inspector tab.
+        const start = middlePress.current
+        middlePress.current = null
+        if (e.button !== 1 || !start || Math.hypot(e.clientX - start.x, e.clientY - start.y) > 4) return
         const card = (e.target as Element).closest('.react-flow__node:not(.react-flow__node-group)')?.getAttribute('data-id')
         if (!card || groupIdOf(card)) return
-        e.preventDefault()
         useUI.getState().openTab(entityOf(card))
       }}
       aria-label="Story canvas"
@@ -997,10 +979,10 @@ export function Canvas() {
         onConnect={onConnect}
         onEdgeClick={onEdgeClick}
         onPaneClick={onPaneClick}
-        onEdgeMouseEnter={(_, edge) => setHovered({ edge: edge.id })}
-        onEdgeMouseLeave={() => setHovered({})}
-        onNodeMouseEnter={(_, node) => setHovered({ node: node.id })}
-        onNodeMouseLeave={() => setHovered({})}
+        onEdgeMouseEnter={onEdgeEnter}
+        onEdgeMouseLeave={onEdgeLeave}
+        onNodeMouseEnter={onNodeEnter}
+        onNodeMouseLeave={onNodeLeave}
         onPaneContextMenu={(event) => {
           event.preventDefault()
           setNodeMenu(null)
@@ -1021,51 +1003,43 @@ export function Canvas() {
         proOptions={{ hideAttribution: true }}
         colorMode="dark"
       >
-        <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="#292524" />
-        {board && <PhaseLanes board={board} />}
-        <Controls position="bottom-left" className="!overflow-hidden !rounded-lg !border !border-stone-600 !shadow-xl" />
-        <MiniMap
-          position="bottom-right"
-          pannable
-          zoomable
-          ariaLabel="Graph overview — drag to pan, scroll to zoom"
-          nodeColor={(n) => (isCard(n) ? types.of(n.data.node.type).color : 'transparent')}
-          nodeStrokeColor={(n) => (isCard(n) ? '#fafaf9' : GROUP_STYLE[(n as GroupFlowNode).data.group.color].border)}
-          nodeStrokeWidth={2}
-          nodeBorderRadius={3}
-          bgColor="#292524"
-          maskColor="rgb(0 0 0 / 0.6)"
-          maskStrokeColor="#fbbf24"
-          maskStrokeWidth={3}
-          style={{ border: '1px solid #57534e', borderRadius: 8 }}
-        />
-        <Panel position="top-left" className="canvas-toolbar">
-          <Toolbar
+        <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="oklch(1 0 0 / 0.07)" />
+        {board && <PhaseLanes phases={board.phases} layout={board.layout} />}
+        <CanvasControls readOnly={readOnly} />
+        {minimap && <CanvasMinimap />}
+        <Panel position="top-left" className="!m-3 max-w-[calc(100%-200px)]">
+          <CanvasToolbar
             canUndo={!!history.data?.canUndo && !historyBusy}
             canRedo={!!history.data?.canRedo && !historyBusy}
             travel={travel}
-            openAddMenu={(point) => setAddMenu(point)}
-            group={() => void makeGroup().catch(() => {})}
+            openAddMenu={setAddMenu}
+            group={groupSelection}
             afterLayout={releaseLayout}
             readOnly={readOnly}
           />
         </Panel>
-        <Panel position="top-right" className="canvas-modes">
-          <FilterPanel />
+        <Panel position="top-right" className="canvas-view !m-3">
+          <ViewMenu />
         </Panel>
-        <Panel position="bottom-center">
-          <div className="rounded-md border border-stone-800 bg-stone-950/90 px-3 py-1.5 text-[11px] text-stone-400">
-            {readOnly
-              ? 'Read-only overview of every node · Click a card to inspect it · Middle drag to pan'
-              : 'A / right-click blank space to add · Right-click cards for actions · Ctrl+G group · Ctrl+C/V reference · Ctrl+D duplicate · Del remove from board · Middle drag to pan'}
-          </div>
-          {error && (
-            <div role="alert" className="mt-1 max-w-lg rounded bg-red-950 px-3 py-2 text-xs text-red-200">
+        {error && (
+          <Panel position="bottom-center" className="!mb-3">
+            <div role="alert" className="max-w-lg rounded-md bg-danger-soft px-3 py-2 text-xs text-danger shadow-[var(--shadow-float)]">
               {error.message}
             </div>
-          )}
-        </Panel>
+          </Panel>
+        )}
       </ReactFlow>
+      {!readOnly && board && cards.length === 0 && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <div className="max-w-xs text-center">
+            <p className="font-serif text-lg text-fg-muted">This board is empty</p>
+            <p className="mt-1 text-sm text-fg-subtle">
+              Press <kbd className="rounded bg-hover px-1 font-sans text-xs text-fg-muted">A</kbd> or right-click to add a card, or drag entries from the
+              sidebar.
+            </p>
+          </div>
+        </div>
+      )}
       {addMenu && (
         <AddNodeMenu
           point={addMenu}
@@ -1110,734 +1084,6 @@ export function Canvas() {
           }}
         />
       )}
-    </div>
-  )
-}
-
-/** Keeps a floating menu on screen, focuses its first item and closes it on outside clicks. */
-function useFloatingMenu(point: { x: number; y: number }, close: () => void) {
-  const menu = useRef<HTMLDivElement>(null)
-  useLayoutEffect(() => {
-    const element = menu.current!
-    const rect = element.getBoundingClientRect()
-    element.style.left = `${Math.max(8, Math.min(point.x, window.innerWidth - rect.width - 8))}px`
-    element.style.top = `${Math.max(8, Math.min(point.y, window.innerHeight - rect.height - 8))}px`
-    element.querySelector('button')?.focus({ preventScroll: true })
-  }, [point])
-  useEffect(() => {
-    const dismiss = (event: PointerEvent) => {
-      if (event.target instanceof Node && !menu.current?.contains(event.target)) close()
-    }
-    window.addEventListener('pointerdown', dismiss, true)
-    window.addEventListener('resize', close)
-    return () => {
-      window.removeEventListener('pointerdown', dismiss, true)
-      window.removeEventListener('resize', close)
-    }
-  }, [close])
-  return menu
-}
-
-/** Arrow / Home / End move between items; Escape and Tab close. */
-function menuKeys(event: ReactKeyboardEvent<HTMLDivElement>, close: () => void) {
-  const buttons = Array.from(event.currentTarget.querySelectorAll('button'))
-  const index = buttons.indexOf(document.activeElement as HTMLButtonElement)
-  if (event.target instanceof HTMLInputElement && event.key !== 'Escape' && event.key !== 'ArrowDown') return
-  if (event.key === 'Escape' || event.key === 'Tab') {
-    event.preventDefault()
-    close()
-  } else if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
-    event.preventDefault()
-    const next =
-      event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length
-    buttons[next]?.focus()
-  }
-}
-
-const MENU_ITEM = 'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-stone-800 focus:bg-stone-800 focus:outline-none'
-
-function NodeMenu({
-  point,
-  count,
-  close,
-  actions,
-}: {
-  point: { x: number; y: number }
-  count: number
-  close: () => void
-  actions: Record<'copy' | 'duplicate' | 'group' | 'remove' | 'destroy', () => void>
-}) {
-  const menu = useFloatingMenu(point, close)
-  const items: { key: keyof typeof actions; label: string; icon: LucideIcon; shortcut?: string; danger?: boolean }[] = [
-    { key: 'copy', label: 'Copy reference', icon: Copy, shortcut: 'Ctrl+C' },
-    { key: 'duplicate', label: 'Duplicate', icon: CopyPlus, shortcut: 'Ctrl+D' },
-    { key: 'group', label: 'Group', icon: BoxSelect, shortcut: 'Ctrl+G' },
-    { key: 'remove', label: 'Remove from board', icon: EyeOff, shortcut: 'Del' },
-    { key: 'destroy', label: 'Delete everywhere…', icon: Trash2, shortcut: 'Shift+Del', danger: true },
-  ]
-  return (
-    <div
-      ref={menu}
-      role="menu"
-      aria-label={count === 1 ? 'Card actions' : `Actions for ${count} cards`}
-      className="fixed z-50 w-60 rounded-lg border border-stone-700 bg-stone-900 p-1 text-sm shadow-2xl"
-      style={{ left: point.x, top: point.y }}
-      onContextMenu={(event) => event.preventDefault()}
-      onKeyDown={(event) => menuKeys(event, close)}
-    >
-      {count > 1 && <div className="px-2 py-1 text-[11px] text-stone-500">{count} cards</div>}
-      {items.map(({ key, label, icon: Icon, shortcut, danger }) => (
-        <button
-          key={key}
-          role="menuitem"
-          className={clsx(MENU_ITEM, danger && 'text-red-300')}
-          onClick={() => {
-            close()
-            actions[key]()
-          }}
-        >
-          <Icon size={14} className={danger ? 'text-red-400' : 'text-stone-400'} /> <span className="flex-1">{label}</span>
-          {shortcut && <span className="text-[11px] text-stone-500">{shortcut}</span>}
-        </button>
-      ))}
-    </div>
-  )
-}
-
-function AddNodeMenu({
-  point,
-  close,
-  create,
-  board,
-  nodes,
-  place,
-  group,
-  paste,
-}: {
-  point: { x: number; y: number }
-  close: () => void
-  create: (type: NodeType) => void
-  group: () => void
-  paste?: () => void
-  board?: Board
-  nodes: StoryNode[]
-  place: (id: string) => void
-}) {
-  const [query, setQuery] = useState('')
-  const missing = board ? nodes.filter((n) => !onBoard(board, n.id) && n.title.toLowerCase().includes(query.toLowerCase())).slice(0, 8) : []
-  const menu = useFloatingMenu(point, close)
-  const types = useTypes()
-  return (
-    <div
-      ref={menu}
-      role="menu"
-      aria-label="Add node"
-      className="fixed z-50 max-h-[calc(100vh-16px)] w-56 overflow-y-auto rounded-lg border border-stone-700 bg-stone-900 p-1 text-sm shadow-2xl"
-      style={{ left: point.x, top: point.y }}
-      onContextMenu={(event) => event.preventDefault()}
-      onKeyDown={(event) => menuKeys(event, close)}
-    >
-      {paste && (
-        <button role="menuitem" className={clsx(MENU_ITEM, 'border-b border-stone-800')} onClick={paste}>
-          <ClipboardPaste size={14} className="text-stone-400" /> <span className="flex-1">Paste reference</span>
-          <span className="text-[11px] text-stone-500">Ctrl+V</span>
-        </button>
-      )}
-      {types.list
-        .filter((t) => t.id !== 'media')
-        .map((style) => {
-          const type = style.id
-          return (
-            <button
-              key={type}
-              role="menuitem"
-              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-stone-800 focus:bg-stone-800 focus:outline-none"
-              onClick={() => create(type)}
-            >
-              <style.icon size={14} style={{ color: style.color }} /> {style.label}
-            </button>
-          )
-        })}
-      <button
-        role="menuitem"
-        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-stone-800 focus:bg-stone-800 focus:outline-none"
-        onClick={group}
-      >
-        <BoxSelect size={14} className="text-stone-400" /> Group area
-      </button>
-      <div className="px-2 py-1.5 text-[11px] text-stone-500">Drop images or videos to add media.</div>
-      {board && (
-        <div className="border-t border-stone-800 pt-1">
-          <input
-            aria-label="Find an existing node to place on this board"
-            placeholder="Place existing…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="w-full rounded bg-stone-800 px-2 py-1 text-xs text-stone-100 outline-none placeholder:text-stone-500"
-          />
-          {missing.map((n) => {
-            const style = types.of(n.type)
-            return (
-              <button
-                key={n.id}
-                role="menuitem"
-                className="flex w-full items-center gap-2 truncate rounded px-2 py-1 text-left text-xs hover:bg-stone-800 focus:bg-stone-800 focus:outline-none"
-                onClick={() => place(n.id)}
-              >
-                <style.icon size={12} className="shrink-0" style={{ color: style.color }} />
-                <span className="truncate">{n.title}</span>
-              </button>
-            )
-          })}
-        </div>
-      )}
-    </div>
-  )
-}
-
-/** Phase columns drawn in flow coordinates behind the cards; a card's phase is the column it sits in. */
-function PhaseLanes({ board }: { board: Board }) {
-  if (!board.phases.length) return null
-  const ys = Object.values(board.layout).map((p) => p.y)
-  const top = (ys.length ? Math.min(...ys) : 0) - 120
-  const height = Math.max(1600, (ys.length ? Math.max(...ys) : 0) - top + 600)
-  return (
-    <ViewportPortal>
-      {board.phases.map((phase, i) => (
-        <div
-          key={phase.id}
-          className="pointer-events-none absolute border-r border-dashed border-stone-700/70"
-          style={{
-            transform: `translate(${i * PHASE_WIDTH}px, ${top}px)`,
-            width: PHASE_WIDTH,
-            height,
-            background: i % 2 ? 'rgb(41 37 36 / 0.25)' : 'rgb(41 37 36 / 0.1)',
-            zIndex: -1,
-          }}
-        >
-          <div className="px-4 py-3 font-serif text-2xl text-stone-500">
-            {i + 1}. {phase.title}
-          </div>
-        </div>
-      ))}
-    </ViewportPortal>
-  )
-}
-
-/** Hierarchical auto layout: groups arrange their own content and move as blocks; pinned cards stay put. */
-function useAutoLayout(afterLayout: () => void) {
-  const flow = useReactFlow<AnyFlowNode>()
-  const setLayout = useAction(api.setLayout)
-  const board = useBoard()
-  const layoutMode = useUI((s) => s.layoutMode)
-  const [error, setError] = useState<Error | null>(null)
-  const run = async () => {
-    setError(null)
-    if (!board) return
-    try {
-      const nodes = flow.getNodes().filter(isCard)
-      const cards = nodes.map((n) => ({ id: n.id, position: n.position, size: cardSize(n), pinned: n.data.node.pinned }))
-      const pane = document.querySelector('.react-flow')?.getBoundingClientRect()
-      const aspectRatio = pane && pane.height > 0 ? pane.width / pane.height : undefined
-      const { positions, groups } = await arrange(board, cards, flow.getEdges(), { mode: layoutMode, aspectRatio })
-      const sizes = Object.fromEntries(cards.map((c) => [c.id, c.size]))
-      if (nodes.length || board.groups.length) await setLayout.mutateAsync([positions, board.id, { groups, sizes }])
-      afterLayout()
-      requestAnimationFrame(() => void flow.fitView({ padding: 0.15, maxZoom: 1, duration: 400 }))
-    } catch (cause) {
-      setError(cause instanceof Error ? cause : new Error(String(cause)))
-    }
-  }
-  return { run, pending: setLayout.isPending, error }
-}
-
-function Toolbar({
-  canUndo,
-  canRedo,
-  travel,
-  openAddMenu,
-  group,
-  afterLayout,
-  readOnly,
-}: {
-  canUndo: boolean
-  canRedo: boolean
-  travel: (direction: 'undo' | 'redo') => void
-  openAddMenu: (point: { x: number; y: number }) => void
-  group: () => void
-  afterLayout: () => void
-  readOnly: boolean
-}) {
-  const autoLayout = useAutoLayout(afterLayout)
-  const { data: all = [] } = useNodes()
-  const { storyScope, setStoryScope, layoutMode, setLayoutMode } = useUI()
-  const mode = LAYOUT_MODES.find((m) => m.mode === layoutMode) ?? LAYOUT_MODES[0]
-  const button = 'rounded p-1.5 text-stone-400 hover:bg-stone-800 hover:text-stone-100 disabled:cursor-not-allowed disabled:opacity-30'
-  return (
-    <div className="space-y-1.5">
-      <BoardBar />
-      {!readOnly && (
-        <div className="flex w-fit flex-wrap items-center gap-1.5 rounded-lg border border-stone-700/80 bg-stone-900/95 p-1.5 text-sm shadow-xl backdrop-blur">
-          <div className="relative">
-            <button
-              aria-haspopup="menu"
-              title="Add node (A or right-click canvas)"
-              className="flex items-center gap-1 rounded-md bg-amber-500 px-2.5 py-1 font-medium text-stone-950 hover:bg-amber-400"
-              onClick={(event) => {
-                const rect = event.currentTarget.getBoundingClientRect()
-                openAddMenu({ x: rect.left, y: rect.bottom + 8 })
-              }}
-            >
-              <Plus size={15} /> Add
-            </button>
-          </div>
-          <div className="mx-1 h-5 w-px bg-stone-700" />
-          <button
-            aria-label="Undo"
-            aria-keyshortcuts="Control+Z Meta+Z"
-            title="Undo (Ctrl / ⌘ Z)"
-            disabled={!canUndo}
-            className={button}
-            onClick={() => travel('undo')}
-          >
-            <Undo2 size={16} />
-          </button>
-          <button
-            aria-label="Redo"
-            aria-keyshortcuts="Control+Y Control+Shift+Z Meta+Shift+Z"
-            title="Redo (Ctrl Y / Ctrl or ⌘ Shift Z)"
-            disabled={!canRedo}
-            className={button}
-            onClick={() => travel('redo')}
-          >
-            <Redo2 size={16} />
-          </button>
-          <button
-            aria-label="Auto-layout unpinned nodes"
-            title={`Arrange visible nodes around pinned cards (${mode.label}: ${mode.hint})`}
-            disabled={autoLayout.pending}
-            className={button}
-            onClick={() => {
-              void autoLayout.run()
-            }}
-          >
-            <LayoutGrid size={16} />
-          </button>
-          <select
-            aria-label="Auto-layout style"
-            title={mode.hint}
-            className="-ml-1 rounded bg-stone-800 px-1 py-1 text-xs text-stone-200 outline-amber-400"
-            value={mode.mode}
-            onChange={(e) => setLayoutMode(e.target.value as typeof layoutMode)}
-          >
-            {LAYOUT_MODES.map((m) => (
-              <option key={m.mode} value={m.mode} title={m.hint}>
-                {m.label}
-              </option>
-            ))}
-          </select>
-          <button
-            aria-label="Group selection"
-            aria-keyshortcuts="Control+G Meta+G"
-            title="Group selected cards (Ctrl / ⌘ G)"
-            className={button}
-            onClick={group}
-          >
-            <BoxSelect size={16} />
-          </button>
-          <select
-            aria-label="Story scope"
-            className="max-w-40 rounded bg-stone-800 px-1.5 py-1 text-xs text-stone-200 outline-amber-400"
-            value={storyScope ?? ''}
-            onChange={(e) => setStoryScope(e.target.value || null)}
-          >
-            <option value="">All stories</option>
-            {all
-              .filter((n) => n.type === 'story')
-              .map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.title}
-                </option>
-              ))}
-          </select>
-        </div>
-      )}
-      {autoLayout.error && (
-        <div role="alert" className="mt-2 max-w-sm rounded bg-red-950 p-2 text-xs text-red-200">
-          {autoLayout.error.message}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function IconSegments<T extends string | number>({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string
-  value: T
-  options: { value: T; label: string; icon: LucideIcon }[]
-  onChange: (value: T) => void
-}) {
-  return (
-    <div role="group" aria-label={label} className="flex overflow-hidden rounded-md border border-stone-700">
-      {options.map(({ value: option, label: name, icon: Icon }) => (
-        <button
-          key={option}
-          type="button"
-          aria-label={name}
-          title={name}
-          aria-pressed={value === option}
-          onClick={() => onChange(option)}
-          className={clsx(
-            'flex min-w-9 flex-1 items-center justify-center border-r border-stone-700 px-2 py-1.5 last:border-r-0 focus-visible:z-10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-amber-400',
-            value === option ? 'bg-amber-500 text-stone-950' : 'bg-stone-800 text-stone-300 hover:bg-stone-700',
-          )}
-        >
-          <Icon size={16} aria-hidden="true" />
-        </button>
-      ))}
-    </div>
-  )
-}
-
-function FilterPanel() {
-  const { hiddenEdges, hiddenNodes, toggleEdge, toggleNode, connectType, setConnectType, edgeLabels, referenceLines } = useUI()
-  const [advanced, setAdvanced] = useState(false)
-  const connectionDescription = connectType === 'auto' ? 'Automatically choose the connection type' : EDGE_DESCRIPTIONS[connectType]
-  const types = useTypes()
-  const ids = types.list.map((t) => t.id)
-  const kinds: EdgeKind[] = ['contains', ...EDGE_TYPES]
-  const current = MODES.findIndex(
-    (mode) =>
-      ids.every((t) => hiddenNodes.includes(t) === !mode.nodes(types.list).includes(t)) &&
-      kinds.every((t) => hiddenEdges.includes(t) === !mode.edges.includes(t)),
-  )
-  const mode = (index: number) => {
-    const preset = MODES[index]
-    const shown = preset.nodes(types.list)
-    useUI.setState({ hiddenNodes: ids.filter((t) => !shown.includes(t)), hiddenEdges: kinds.filter((t) => !preset.edges.includes(t)) })
-  }
-  return (
-    <div className="w-60 rounded-lg border border-stone-700/80 bg-stone-900/95 text-sm shadow-xl backdrop-blur">
-      <div className="space-y-2 p-2.5">
-        <div className="space-y-1.5">
-          <span className="text-xs text-stone-400">View</span>
-          <IconSegments label="Graph view mode" value={current} options={MODES.map((m, i) => ({ value: i, label: m.label, icon: m.icon }))} onChange={mode} />
-        </div>
-        <div className="space-y-1.5 text-xs text-stone-300">
-          <div className="flex items-center justify-between gap-2">
-            <span>Line names</span>
-            <IconSegments
-              label="When to show line names"
-              value={edgeLabels}
-              options={[
-                { value: 'focus', label: 'On hover / focus', icon: MousePointer2 },
-                { value: 'always', label: 'Always', icon: Eye },
-              ]}
-              onChange={(edgeLabels) => useUI.setState({ edgeLabels })}
-            />
-          </div>
-          <div className="flex items-center justify-between gap-2">
-            <span>References</span>
-            <IconSegments
-              label="How to show references"
-              value={referenceLines ? 'lines' : 'chips'}
-              options={[
-                { value: 'chips', label: 'Chips on cards', icon: Tags },
-                { value: 'lines', label: 'Lines', icon: Waypoints },
-              ]}
-              onChange={(value) => useUI.setState({ referenceLines: value === 'lines' })}
-            />
-          </div>
-        </div>
-        <div className="flex items-center justify-between text-[11px]">
-          <span className="text-stone-400">
-            New lines: <span className="text-amber-300">{connectType === 'auto' ? 'Auto' : connectType}</span>
-          </span>
-          <button aria-expanded={advanced} className="flex items-center gap-1 text-stone-300 hover:text-amber-300" onClick={() => setAdvanced(!advanced)}>
-            Advanced <ChevronDown size={12} className={advanced ? 'rotate-180' : ''} />
-          </button>
-        </div>
-      </div>
-      {advanced && (
-        <div className="max-h-[65vh] space-y-3 overflow-y-auto border-t border-stone-800 p-2.5">
-          <label className="flex items-center justify-between gap-1 text-xs text-stone-400" title={connectionDescription}>
-            Connect as
-            <select
-              aria-label="New connection type"
-              className="rounded bg-stone-800 px-1 py-1 text-stone-100"
-              value={connectType}
-              onChange={(e) => setConnectType(e.target.value as EdgeType | 'auto')}
-            >
-              <option value="auto">Auto</option>
-              {EDGE_TYPES.map((t) => (
-                <option key={t}>{t}</option>
-              ))}
-            </select>
-          </label>
-          {connectType !== 'auto' && <p className="text-[11px] text-stone-500">{connectionDescription}</p>}
-          <div>
-            <div className="pb-1 text-[10px] tracking-wider text-stone-500 uppercase">Connections / legend</div>
-            {kinds.map((k) => {
-              const s = EDGE_STYLE[k]
-              return (
-                <button
-                  key={k}
-                  aria-pressed={!hiddenEdges.includes(k)}
-                  title={k === 'contains' ? 'Story → chapter → scene hierarchy' : EDGE_DESCRIPTIONS[k]}
-                  onClick={(event) => {
-                    if (event.shiftKey || event.ctrlKey || event.metaKey) useUI.setState({ hiddenEdges: kinds.filter((kind) => kind !== k) })
-                    else toggleEdge(k)
-                  }}
-                  className={clsx('flex w-full items-center gap-2 rounded px-1 py-1 text-xs hover:bg-stone-800', hiddenEdges.includes(k) && 'opacity-35')}
-                >
-                  <svg width="28" height="8">
-                    <line x1="0" y1="4" x2="28" y2="4" stroke={s.color} strokeWidth={s.width ?? 1.5} strokeDasharray={s.dash} />
-                  </svg>
-                  {k}
-                </button>
-              )
-            })}
-          </div>
-          <div>
-            <div className="pb-1 text-[10px] tracking-wider text-stone-500 uppercase">Nodes</div>
-            {types.list.map((S) => {
-              const t = S.id
-              return (
-                <button
-                  key={t}
-                  aria-pressed={!hiddenNodes.includes(t)}
-                  onClick={(event) => {
-                    if (event.shiftKey || event.ctrlKey || event.metaKey) useUI.setState({ hiddenNodes: ids.filter((type) => type !== t) })
-                    else toggleNode(t)
-                  }}
-                  className={clsx('flex w-full items-center gap-2 rounded px-1 py-1 text-xs hover:bg-stone-800', hiddenNodes.includes(t) && 'opacity-35')}
-                >
-                  <S.icon size={13} style={{ color: S.color }} />
-                  {S.plural}
-                </button>
-              )
-            })}
-          </div>
-          <p className="text-[11px] text-stone-500">Shift / Ctrl / ⌘ click a legend item to show only that type.</p>
-          <p className="text-[11px] text-stone-500">Selected cards glow amber; neighbors have a soft outline. Unrelated cards and lines fade.</p>
-        </div>
-      )}
-    </div>
-  )
-}
-
-/** Board switcher plus create / rename / delete and phase-column editing. */
-function BoardBar() {
-  const { data: graph } = useGraph()
-  const board = useBoard()
-  const setBoard = useUI((s) => s.setBoard)
-  const create = useAction(api.createBoard)
-  const update = useAction(api.updateBoard)
-  const remove = useAction(api.deleteBoard)
-  const reorder = useAction(api.reorderBoards)
-  const [dragged, setDragged] = useState<string | null>(null)
-  const [dropAt, setDropAt] = useState<{ id: string; after: boolean } | null>(null)
-  const [editing, setEditing] = useState<'new' | 'rename' | null>(null)
-  const [title, setTitle] = useState('')
-  const [phasesOpen, setPhasesOpen] = useState(false)
-  if (!graph || !board) return null
-  const button = 'rounded p-1 text-stone-400 hover:bg-stone-800 hover:text-stone-100'
-  const submit = async () => {
-    const value = title.trim()
-    setEditing(null)
-    if (!value) return
-    if (editing === 'new') setBoard((await create.mutateAsync([{ title: value }])).id)
-    else update.mutate([board.id, { title: value }])
-  }
-  const error = create.error ?? update.error ?? remove.error ?? reorder.error
-  const readOnly = board.id === ALL_BOARD
-  const tab = (id: string) =>
-    clsx('shrink-0 rounded px-2 py-1 text-xs', id === board.id ? 'bg-stone-700 text-stone-50' : 'text-stone-400 hover:bg-stone-800 hover:text-stone-100')
-  const drop = (target: string, after: boolean) => {
-    if (!dragged || dragged === target) return
-    const ids = graph.boards.map((b) => b.id).filter((id) => id !== dragged)
-    ids.splice(ids.indexOf(target) + (after ? 1 : 0), 0, dragged)
-    reorder.mutate([ids])
-  }
-  return (
-    <div className="w-fit rounded-lg border border-stone-700/80 bg-stone-900/95 p-1 text-sm shadow-xl backdrop-blur">
-      <div className="flex items-center gap-1">
-        <div role="tablist" aria-label="Boards" className="flex max-w-[50vw] items-center gap-0.5 overflow-x-auto">
-          <button
-            role="tab"
-            aria-selected={readOnly}
-            onClick={() => setBoard(ALL_BOARD)}
-            title="Every node in the project (read-only)"
-            className={clsx(tab(ALL_BOARD), 'flex items-center gap-1')}
-          >
-            <Lock size={11} /> All
-          </button>
-          <div className="mx-0.5 h-4 w-px shrink-0 bg-stone-700" />
-          {graph.boards.map((b) => (
-            <button
-              key={b.id}
-              role="tab"
-              aria-selected={b.id === board.id}
-              onClick={() => setBoard(b.id)}
-              title={`${b.nodes?.length ?? 0} cards · drag to reorder`}
-              draggable
-              data-board-tab={b.id}
-              onDragStart={(e) => {
-                e.dataTransfer.setData('application/x-maquest-board', b.id)
-                e.dataTransfer.effectAllowed = 'move'
-                setDragged(b.id)
-              }}
-              onDragEnd={() => {
-                setDragged(null)
-                setDropAt(null)
-              }}
-              onDragOver={(e) => {
-                if (!dragged) return
-                e.preventDefault()
-                e.stopPropagation()
-                e.dataTransfer.dropEffect = 'move'
-                const rect = e.currentTarget.getBoundingClientRect()
-                setDropAt({ id: b.id, after: e.clientX > rect.left + rect.width / 2 })
-              }}
-              onDrop={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                const rect = e.currentTarget.getBoundingClientRect()
-                drop(b.id, e.clientX > rect.left + rect.width / 2)
-                setDragged(null)
-                setDropAt(null)
-              }}
-              className={clsx(
-                tab(b.id),
-                dragged === b.id && 'opacity-40',
-                dropAt?.id === b.id && dragged !== b.id && (dropAt.after ? 'shadow-[inset_-2px_0_0_#fbbf24]' : 'shadow-[inset_2px_0_0_#fbbf24]'),
-              )}
-            >
-              {b.title}
-            </button>
-          ))}
-        </div>
-        {editing ? (
-          <form
-            className="flex"
-            onSubmit={(e) => {
-              e.preventDefault()
-              void submit()
-            }}
-          >
-            <input
-              autoFocus
-              aria-label={editing === 'new' ? 'New board name' : 'Board name'}
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              onBlur={() => void submit()}
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') setEditing(null)
-              }}
-              placeholder="Board name"
-              className="w-32 rounded bg-stone-800 px-1.5 py-0.5 text-xs text-stone-100 outline-amber-400"
-            />
-          </form>
-        ) : (
-          <>
-            <button
-              aria-label="New board"
-              title="New board (starts empty; place cards with A → Place existing)"
-              className={button}
-              onClick={() => {
-                setTitle('')
-                setEditing('new')
-              }}
-            >
-              <Plus size={14} />
-            </button>
-            <button
-              aria-label="Rename board"
-              title="Rename board"
-              hidden={readOnly}
-              className={button}
-              onClick={() => {
-                setTitle(board.title)
-                setEditing('rename')
-              }}
-            >
-              <Pencil size={13} />
-            </button>
-          </>
-        )}
-        <button
-          aria-label="Phase columns"
-          aria-expanded={phasesOpen}
-          hidden={readOnly}
-          title="Phase columns (acts, left to right)"
-          className={clsx(button, board.phases.length && 'text-amber-300')}
-          onClick={() => setPhasesOpen(!phasesOpen)}
-        >
-          <Columns3 size={14} />
-        </button>
-        {graph.boards.length > 1 && !readOnly && (
-          <button
-            aria-label="Delete board"
-            title="Delete board (cards stay in the project)"
-            className={clsx(button, 'hover:text-red-400')}
-            onClick={() => {
-              setBoard(graph.boards.find((b) => b.id !== board.id)!.id)
-              remove.mutate([board.id])
-            }}
-          >
-            <Trash2 size={13} />
-          </button>
-        )}
-      </div>
-      {phasesOpen && !readOnly && <PhaseEditor key={board.id} board={board} save={(phases) => update.mutate([board.id, { phases }])} />}
-      {error && (
-        <div role="alert" className="mt-1 max-w-sm rounded bg-red-950 p-2 text-xs text-red-200">
-          {error.message}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function PhaseEditor({ board, save }: { board: Board; save: (phases: Board['phases']) => void }) {
-  const [phases, setPhases] = useState(board.phases)
-  const commit = (next: Board['phases']) => {
-    setPhases(next)
-    save(next.filter((p) => p.title.trim()))
-  }
-  return (
-    <div className="mt-1 w-64 space-y-1 border-t border-stone-800 p-1.5 text-xs">
-      <p className="text-[11px] text-stone-500">Columns left to right. A card belongs to the phase it sits in; move it to change phase.</p>
-      {phases.map((p, i) => (
-        <div key={p.id} className="flex items-center gap-1">
-          <span className="w-4 text-stone-500">{i + 1}.</span>
-          <input
-            aria-label={`Phase ${i + 1}`}
-            value={p.title}
-            onChange={(e) => setPhases(phases.map((x) => (x.id === p.id ? { ...x, title: e.target.value } : x)))}
-            onBlur={() => commit(phases)}
-            className="min-w-0 flex-1 rounded bg-stone-800 px-1.5 py-0.5 text-stone-100 outline-amber-400"
-          />
-          <button
-            aria-label={`Remove phase ${p.title}`}
-            className="text-stone-500 hover:text-red-400"
-            onClick={() => commit(phases.filter((x) => x.id !== p.id))}
-          >
-            <X size={12} />
-          </button>
-        </div>
-      ))}
-      <button
-        className="text-amber-300 hover:text-amber-200"
-        onClick={() => commit([...phases, { id: crypto.randomUUID().slice(0, 8), title: `Phase ${phases.length + 1}` }])}
-      >
-        + Add phase
-      </button>
     </div>
   )
 }
