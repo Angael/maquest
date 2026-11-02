@@ -9,10 +9,10 @@
  *   02 canvas    Escape to clear selection, button "Fit View"
  *   03 scene     card .react-flow__node[data-id=<id>]; aside "Inspector"
  *   04 character card click; aside "Inspector"
- *   05 edge      button "Select connection: <label>" (FloatingEdge label); group "When to show line names" > "Always" fallback
+ *   05 edge      button "Select connection: <label>" (FloatingEdge label); fallback: View popover (button /^View:/) > group "When to show line names" > "Always"
  *   06 tabs      middle-click on cards; tablist "Open nodes"
- *   07 filter    button "Advanced" (aria-expanded) inside the top-right filter panel
- *   08 add menu  button[title^="Add node"] (aria-haspopup=menu); menu "Add node"
+ *   07 view      button /^View:/ (top-right) opens the view popover; its "Lines" section expands
+ *   08 add menu  toolbar button "Add" (aria-haspopup=menu); menu "Add node"
  *   09 context   right-click on a card; role=menu
  *   10 palette   Ctrl/Cmd+K; placeholder "Search everything…"
  *   11-13 views  TopBar nav buttons "Backlog" / "Guidelines" / "Types"; guideline list button by title; Types listitem "Clue"
@@ -102,16 +102,19 @@ test('capture UI states', async ({ playwright }) => {
       const label = page.getByRole('button', { name: 'Select connection: old partners' })
       await card(ids.vess.id).click({ position: { x: 40, y: 16 } })
       if (!(await label.isVisible().catch(() => false))) {
+        await page.getByRole('button', { name: /^View:/ }).click()
         await page.getByRole('group', { name: 'When to show line names' }).getByRole('button', { name: 'Always', exact: true }).click()
+        await page.keyboard.press('Escape')
       }
       await label.click()
       await expect(page.getByRole('complementary', { name: 'Inspector' })).toBeVisible()
     })
     // Restore the default line-name mode in case the fallback switched it.
     await page
-      .getByRole('group', { name: 'When to show line names' })
-      .getByRole('button', { name: 'On hover / focus', exact: true })
+      .getByRole('button', { name: /^View:/ })
       .click()
+      .then(() => page.getByRole('group', { name: 'When to show line names' }).getByRole('button', { name: 'On hover', exact: true }).click())
+      .then(() => page.keyboard.press('Escape'))
       .catch(() => {})
 
     await shot('06-inspector-tabs', async () => {
@@ -132,17 +135,13 @@ test('capture UI states', async ({ playwright }) => {
     await reset(page)
 
     await shot('07-canvas-filter-advanced', async () => {
-      await page.getByRole('button', { name: 'Advanced' }).click()
-      await expect(page.getByRole('button', { name: 'Advanced' })).toHaveAttribute('aria-expanded', 'true')
+      await page.getByRole('button', { name: /^View:/ }).click()
+      await page.getByRole('button', { name: /^Lines.*\d/ }).click()
+      await expect(page.getByRole('group', { name: 'Graph view mode' })).toBeVisible()
     })
-    // The panel keeps its own state; collapse it again.
-    await page
-      .getByRole('button', { name: 'Advanced', expanded: true })
-      .click({ timeout: 2000 })
-      .catch(() => {})
 
     await shot('08-canvas-add-menu', async () => {
-      await page.getByTitle(/^Add node/).click()
+      await page.getByRole('toolbar', { name: 'Canvas', exact: true }).getByRole('button', { name: 'Add', exact: true }).click()
       await expect(page.getByRole('menu', { name: 'Add node' })).toBeVisible()
     })
 
