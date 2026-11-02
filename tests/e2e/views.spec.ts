@@ -7,8 +7,12 @@ test('captures an idea in the backlog, promotes it and deletes another', async (
 
   const capture = page.getByRole('textbox', { name: 'New idea' })
   await expect(capture).toBeFocused()
-  await capture.fill('The innkeeper is the lost heir\nShe hides the signet ring.')
+  await capture.fill('The innkeeper is the lost heir')
+  await page.keyboard.press('Shift+Enter')
+  await expect(page.getByRole('textbox', { name: 'Details' })).toBeFocused()
+  await page.keyboard.type('She hides the signet ring.')
   await page.keyboard.press('ControlOrMeta+Enter')
+  await expect(capture).toBeFocused()
   await expect.poll(() => project.listNodes().find((n) => n.type === 'idea')?.title).toBe('The innkeeper is the lost heir')
   const ideas = page.getByRole('list', { name: 'Ideas' })
   await expect(ideas).toContainText('She hides the signet ring.')

@@ -1,4 +1,4 @@
-import { memo, useMemo, useRef, useState, type Ref } from 'react'
+import { memo, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from 'react'
 import { ArrowUpRight, Lightbulb, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { NodeType, StoryNode } from '@maquest/core/schema'
@@ -20,7 +20,7 @@ export function Backlog() {
   const titles = useMemo(() => new Map((all ?? []).map((n) => [n.id, n.title])), [all])
   const ideas = useMemo(() => (all ?? []).filter((n) => n.type === 'idea').toSorted((a, b) => (b.created ?? '').localeCompare(a.created ?? '')), [all])
   const selected = useUI((s) => (s.selection?.kind === 'node' ? s.selection.id : null))
-  const capture = useRef<HTMLTextAreaElement>(null)
+  const capture = useRef<HTMLInputElement>(null)
 
   return (
     <div className="flex h-full flex-col">
@@ -47,47 +47,74 @@ export function Backlog() {
   )
 }
 
-function Capture({ ref }: { ref: Ref<HTMLTextAreaElement> }) {
+function Capture({ ref }: { ref: RefObject<HTMLInputElement | null> }) {
   const create = useAction(api.createNode)
-  const [text, setText] = useState('')
+  const [title, setTitle] = useState('')
+  const [details, setDetails] = useState('')
+  const detailsRef = useRef<HTMLTextAreaElement>(null)
+  const ready = !!title.trim()
   const add = () => {
-    const raw = text.trim()
-    if (!raw) return
-    const [first, ...rest] = raw.split('\n')
-    create.mutate([{ type: 'idea', title: first.trim().slice(0, TITLE_MAX), body: rest.join('\n').trim() || (first.length > TITLE_MAX ? first : '') }])
-    setText('')
+    if (!ready) return
+    const t = title.trim()
+    create.mutate([{ type: 'idea', title: t.slice(0, TITLE_MAX), body: details.trim() || (t.length > TITLE_MAX ? t : '') }])
+    setTitle('')
+    setDetails('')
+    ref.current?.focus()
+  }
+  const submitKeys = (e: KeyboardEvent<HTMLElement>) => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault()
+      add()
+    } else if (e.key === 'Escape') e.currentTarget.blur()
   }
   return (
     <form
       onSubmit={(e) => (e.preventDefault(), add())}
       className="rounded-lg bg-surface shadow-[inset_0_0_0_1px_var(--color-line)] transition-shadow duration-100 focus-within:shadow-[inset_0_0_0_1px_var(--color-line-strong),0_0_0_3px_var(--color-active)] hover:shadow-[inset_0_0_0_1px_var(--color-line-strong)]"
     >
-      <label htmlFor="backlog-capture" className="sr-only">
-        New idea
-      </label>
-      <textarea
-        id="backlog-capture"
+      <input
         ref={ref}
         autoFocus
-        rows={2}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
+        aria-label="New idea"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+          // Enter files a one-liner; Shift+Enter moves on to the details.
+          if (e.key === 'Enter' && e.shiftKey) {
+            e.preventDefault()
+            detailsRef.current?.focus()
+          } else if (e.key === 'Enter') {
             e.preventDefault()
             add()
-          } else if (e.key === 'Escape') e.currentTarget.blur()
+          } else submitKeys(e)
         }}
-        placeholder={'What if the innkeeper is the lost heir?\nDetails go on the next lines…'}
-        className="block max-h-72 min-h-16 w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-base leading-6 text-fg outline-none [field-sizing:content] focus-visible:outline-none! placeholder:text-fg-faint"
+        onPaste={(e) => {
+          // A pasted multi-line note splits into title + details.
+          const text = e.clipboardData.getData('text/plain').trim()
+          if (!text.includes('\n')) return
+          e.preventDefault()
+          const [first, ...rest] = text.split('\n')
+          setTitle(first.trim())
+          setDetails((d) => [d, rest.join('\n').trim()].filter(Boolean).join('\n'))
+        }}
+        placeholder="New idea, e.g. the innkeeper is the lost heir"
+        className="block h-11 w-full bg-transparent px-3.5 pt-1 font-serif text-lg font-semibold text-fg outline-none placeholder:font-sans placeholder:text-base placeholder:font-normal placeholder:text-fg-faint focus-visible:outline-none!"
       />
-      <div className="flex items-center gap-3 px-3.5 pt-1 pb-2.5">
-        <p className="flex-1 truncate text-xs text-fg-faint">The first line becomes the title.</p>
-        <Button type="submit" size="sm" variant={text.trim() ? 'primary' : 'subtle'} disabled={!text.trim()} className="gap-2 pr-1.5">
+      <textarea
+        ref={detailsRef}
+        aria-label="Details"
+        rows={1}
+        value={details}
+        onChange={(e) => setDetails(e.target.value)}
+        onKeyDown={submitKeys}
+        placeholder="Details (optional)"
+        className="block max-h-60 min-h-6 w-full resize-none bg-transparent px-3.5 text-sm leading-6 text-fg-muted outline-none [field-sizing:content] placeholder:text-fg-faint focus-visible:outline-none!"
+      />
+      <div className="flex items-center justify-end gap-3 px-3.5 pt-1.5 pb-2.5">
+        <Button type="submit" size="sm" variant={ready ? 'primary' : 'subtle'} disabled={!ready} className="gap-2 pr-1.5">
           Add idea
           <span className="flex items-center gap-0.5" aria-hidden>
-            <Kbd className={cn(text.trim() && 'bg-black/15 text-accent-fg')}>Ctrl</Kbd>
-            <Kbd className={cn(text.trim() && 'bg-black/15 text-accent-fg')}>↵</Kbd>
+            <Kbd className={cn(ready && 'bg-black/15 text-accent-fg')}>↵</Kbd>
           </span>
         </Button>
       </div>
