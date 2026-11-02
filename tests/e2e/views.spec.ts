@@ -19,7 +19,7 @@ test('captures an idea in the backlog, promotes it and deletes another', async (
 
   // Clicking an idea selects it in the inspector.
   await ideas.getByRole('button', { name: 'A storm closes the pass', exact: true }).click()
-  await expect(page.locator('#project-inspector input').first()).toHaveValue('A storm closes the pass')
+  await expect(page.getByRole('textbox', { name: 'Title' })).toHaveValue('A storm closes the pass')
 
   await ideas.getByRole('button', { name: 'Promote “The innkeeper is the lost heir”' }).click()
   await page.getByRole('menuitem', { name: 'Character' }).click()
