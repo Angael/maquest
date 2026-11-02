@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { icons, type LucideIcon } from 'lucide-react'
-import { projectTypes, typeInfo, type EdgeType, type NodeType, type TypeInfo } from '@maquest/core/schema'
+import { projectTypes, typeInfo, type EdgeType, type GroupColor, type NodeType, type Status, type TypeInfo } from '@maquest/core/schema'
 import { useConfig } from './queries'
 
 const kebab = (k: string) =>
@@ -32,17 +32,39 @@ export function useTypes() {
 
 export type EdgeKind = EdgeType | 'contains'
 
+/*
+ * Line colors: one quiet family (oklch L 0.72-0.84, C ~0.1) so lines stay distinguishable on bg-app without glowing.
+ * leads-to is the brand orange, the story's main thread. Hex, because React Flow derives marker ids from the color.
+ */
 export const EDGE_STYLE: Record<EdgeKind, { color: string; dash?: string; animated?: boolean; width?: number }> = {
-  contains: { color: '#57534e', dash: '2 4', width: 1 },
-  link: { color: '#a8a29e', width: 1.5 },
-  'leads-to': { color: '#f97316', animated: true, width: 2.5 },
-  'branches-to': { color: '#facc15', dash: '8 4', animated: true, width: 2 },
-  parallel: { color: '#38bdf8', dash: '12 4 2 4', width: 2 },
-  foreshadows: { color: '#c084fc', dash: '3 3', width: 2 },
-  involves: { color: '#60a5fa', width: 1.5 },
-  'located-at': { color: '#34d399', width: 1.5 },
-  'member-of': { color: '#a78bfa', width: 1.5 },
-  owns: { color: '#fbbf24', dash: '6 3', width: 1.5 },
-  relationship: { color: '#f472b6', width: 2 },
-  'clue-for': { color: '#2dd4bf', dash: '1 5', width: 2.5 },
+  contains: { color: '#5c5751', dash: '2 4', width: 1 },
+  link: { color: '#989189', width: 1.5 },
+  'leads-to': { color: '#f88a3d', animated: true, width: 2 },
+  'branches-to': { color: '#e7c869', dash: '8 4', animated: true, width: 1.75 },
+  parallel: { color: '#6dbddc', dash: '12 4 2 4', width: 1.75 },
+  foreshadows: { color: '#bb99e3', dash: '3 3', width: 1.75 },
+  involves: { color: '#7da6e3', width: 1.5 },
+  'located-at': { color: '#75c59b', width: 1.5 },
+  'member-of': { color: '#9e9ce1', width: 1.5 },
+  owns: { color: '#e4b572', dash: '6 3', width: 1.5 },
+  relationship: { color: '#e28dae', width: 1.75 },
+  'clue-for': { color: '#6ccac4', dash: '1 5', width: 2 },
+}
+
+/** Group frame colors: border (drawn at low alpha), near-invisible fill, lighter tint for the title. */
+export const GROUP_STYLE: Record<GroupColor, { border: string; fill: string; text: string }> = {
+  stone: { border: '#8b857f', fill: 'rgb(139 133 127 / 0.05)', text: '#aeaaa5' },
+  amber: { border: '#e4ac59', fill: 'rgb(228 172 89 / 0.045)', text: '#f2cf96' },
+  emerald: { border: '#6fbe95', fill: 'rgb(111 190 149 / 0.045)', text: '#a9e0c1' },
+  sky: { border: '#6bb6d9', fill: 'rgb(107 182 217 / 0.045)', text: '#a7d9f3' },
+  violet: { border: '#a390dc', fill: 'rgb(163 144 220 / 0.05)', text: '#c7bbf1' },
+  rose: { border: '#df7e86', fill: 'rgb(223 126 134 / 0.045)', text: '#f6aeb3' },
+}
+
+/** Status pills on cards: one quiet dot color per stage, idea → done. */
+export const STATUS_STYLE: Record<Status, { color: string; label: string }> = {
+  idea: { color: '#857f79', label: 'Idea' },
+  draft: { color: '#e8be62', label: 'Draft' },
+  revised: { color: '#70b4dc', label: 'Revised' },
+  done: { color: '#61c594', label: 'Done' },
 }
