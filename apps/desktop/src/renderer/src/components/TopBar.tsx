@@ -1,85 +1,228 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import clsx from 'clsx'
-import { Bot, FolderOpen, LogOut, Network, BookMarked, Lightbulb, Shapes } from 'lucide-react'
+import { Bot, BookMarked, Check, ChevronDown, Copy, FolderOpen, FolderSearch, Lightbulb, LogOut, Network, PanelLeft, Search, Shapes } from 'lucide-react'
 import { api } from '../lib/api'
-import { useCurrent, useNodes } from '../lib/queries'
+import { useCurrent, useNodes, useRecent } from '../lib/queries'
 import { useUI, type View } from '../lib/store'
-import { Button } from './ui'
-import { TitleBar } from './TitleBar'
+import { Button, IconButton, Menu, MenuItem, MenuLabel, MenuSeparator, Popover, Separator, Shortcut, cn } from './ui'
+import { Logo, TitleBar } from './TitleBar'
 import { LiveNotesButton } from './LiveNotes'
 
+/** Modifier key label for shortcut hints. */
+export const MOD = window.maquest.platform === 'darwin' ? '⌘' : 'Ctrl'
+
+const VIEWS: { id: View; label: string; icon: typeof Network }[] = [
+  { id: 'canvas', label: 'Canvas', icon: Network },
+  { id: 'backlog', label: 'Backlog', icon: Lightbulb },
+  { id: 'guidelines', label: 'Guidelines', icon: BookMarked },
+  { id: 'types', label: 'Types', icon: Shapes },
+]
+
 export function TopBar() {
-  const qc = useQueryClient()
-  const { data: current } = useCurrent()
-  const { data: nodes } = useNodes()
-  const { view, setView, select } = useUI()
-  const [agentOpen, setAgentOpen] = useState(false)
-  const backlog = nodes?.filter((n) => n.type === 'idea').length ?? 0
-
-  const tabs: { id: View; label: string; icon: typeof Network; badge?: number }[] = [
-    { id: 'canvas', label: 'Canvas', icon: Network },
-    { id: 'backlog', label: 'Backlog', icon: Lightbulb, badge: backlog },
-    { id: 'guidelines', label: 'Guidelines', icon: BookMarked },
-    { id: 'types', label: 'Types', icon: Shapes },
-  ]
-
   return (
     <TitleBar>
-      <div className="font-serif text-lg text-amber-400">Maquest</div>
-      <div className="text-sm text-stone-400">{current?.config.name}</div>
-      <nav className="ml-4 flex gap-1">
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setView(t.id)}
-            className={clsx(
-              'flex items-center gap-1.5 rounded-md px-3 py-1 text-sm',
-              view === t.id ? 'bg-stone-800 text-stone-100' : 'text-stone-400 hover:text-stone-200',
-            )}
-          >
-            <t.icon size={15} />
-            {t.label}
-            {!!t.badge && <span className="rounded-full bg-pink-500/20 px-1.5 text-[11px] text-pink-300">{t.badge}</span>}
-          </button>
-        ))}
-      </nav>
-      <div className="ml-auto flex items-center gap-1">
+      <ProjectMenu />
+      <SidebarToggle />
+      <Separator vertical className="mx-0.5" />
+      <ViewTabs />
+      <div className="ml-auto flex items-center gap-1 pr-1">
+        <SearchTrigger />
         <LiveNotesButton />
-        <div className="relative">
-          <Button onClick={() => setAgentOpen((o) => !o)}>
-            <Bot size={16} /> Agent
-          </Button>
-          {agentOpen && (
-            <div className="absolute top-10 right-0 z-50 w-[420px] space-y-2 rounded-lg border border-stone-700 bg-stone-900 p-4 text-sm shadow-2xl">
-              <div className="font-medium text-stone-100">Work with your AI agent</div>
-              <p className="text-stone-400">
-                This folder already has MCP configs (<code>.mcp.json</code>, <code>.codex/config.toml</code>, <code>.cursor/mcp.json</code>) and an{' '}
-                <code>AGENTS.md</code>. Start your agent inside the project folder and it will pick up the <b>maquest</b> tools automatically:
-              </p>
-              <pre className="overflow-x-auto rounded bg-stone-950 p-2 text-xs text-amber-200">
-                cd "{current?.root}"{'\n'}claude # or codex, cursor…
-              </pre>
-              <p className="text-stone-500">Edits the agent makes show up here instantly.</p>
-            </div>
-          )}
-        </div>
-        <Button title="Show in file manager" onClick={() => api.reveal()}>
-          <FolderOpen size={16} />
-        </Button>
-        <Button
-          title="Close project"
-          onClick={async () => {
-            await api.close()
-            select(null)
-            qc.removeQueries({ predicate: (q) => q.queryKey[0] !== 'app' })
-            qc.setQueryData(['app', 'current'], null)
-            void qc.invalidateQueries({ queryKey: ['app'] })
-          }}
-        >
-          <LogOut size={16} />
-        </Button>
+        <AgentPopover />
       </div>
     </TitleBar>
+  )
+}
+
+/** Forgets everything tied to the open project, so the next one (or the start screen) starts clean. */
+function useLeaveProject() {
+  const qc = useQueryClient()
+  /** `open` switches to another project and resolves falsy when nothing changed (a cancelled folder picker); without it the project closes. */
+  return async (open?: () => Promise<unknown>) => {
+    if (open) {
+      if (!(await open())) return
+    } else await api.close()
+    useUI.setState({ selection: null, selectedNodeIds: [], tabs: [], viewSelections: {}, guideline: null, board: 'main', storyScope: null })
+    qc.removeQueries({ predicate: (q) => q.queryKey[0] !== 'app' })
+    if (!open) qc.setQueryData(['app', 'current'], null)
+    await qc.invalidateQueries({ queryKey: ['app'] })
+  }
+}
+
+function ProjectMenu() {
+  const { data: current } = useCurrent()
+  const { data: recent } = useRecent()
+  const leave = useLeaveProject()
+  const others = recent?.filter((r) => r.root !== current?.root).slice(0, 6) ?? []
+  return (
+    <Menu
+      trigger={
+        <button
+          type="button"
+          aria-label={`Project: ${current?.config.name ?? ''}`}
+          className="flex h-7 max-w-64 min-w-0 items-center gap-2 rounded-md pr-1.5 pl-1 text-sm font-medium text-fg outline-none transition-colors duration-100 hover:bg-hover data-[popup-open]:bg-active"
+        >
+          <Logo className="size-5 shrink-0" />
+          <span className="truncate">{current?.config.name}</span>
+          <ChevronDown size={14} className="shrink-0 text-fg-subtle" aria-hidden />
+        </button>
+      }
+      className="w-64"
+    >
+      <MenuItem icon={FolderSearch} onClick={() => void api.reveal()}>
+        Show in file manager
+      </MenuItem>
+      <MenuItem icon={FolderOpen} onClick={() => void leave(() => api.pickFolder())}>
+        Open folder…
+      </MenuItem>
+      {others.length > 0 && (
+        <>
+          <MenuSeparator />
+          <MenuLabel>Switch to</MenuLabel>
+          {others.map((r) => (
+            <MenuItem key={r.root} onClick={() => void leave(() => api.open(r.root))}>
+              {r.config.name}
+            </MenuItem>
+          ))}
+        </>
+      )}
+      <MenuSeparator />
+      <MenuItem icon={LogOut} onClick={() => void leave()}>
+        Close project
+      </MenuItem>
+    </Menu>
+  )
+}
+
+function SidebarToggle() {
+  const open = useUI((s) => s.sidebarOpen)
+  useEffect(() => {
+    const handle = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'b') {
+        e.preventDefault()
+        const ui = useUI.getState()
+        ui.setSidebarOpen(!ui.sidebarOpen)
+      }
+    }
+    window.addEventListener('keydown', handle)
+    return () => window.removeEventListener('keydown', handle)
+  }, [])
+  return (
+    <IconButton
+      icon={PanelLeft}
+      label={open ? 'Hide sidebar' : 'Show sidebar'}
+      shortcut={`${MOD}+B`}
+      aria-expanded={open}
+      aria-controls="project-sidebar"
+      onClick={() => useUI.getState().setSidebarOpen(!open)}
+    />
+  )
+}
+
+function ViewTabs() {
+  const view = useUI((s) => s.view)
+  const setView = useUI((s) => s.setView)
+  const { data: nodes } = useNodes()
+  const ideas = useMemo(() => nodes?.reduce((count, n) => count + (n.type === 'idea' ? 1 : 0), 0) ?? 0, [nodes])
+  return (
+    <nav aria-label="Views" className="flex items-center gap-0.5">
+      {VIEWS.map(({ id, label, icon: Icon }) => {
+        const on = view === id
+        return (
+          <button
+            key={id}
+            type="button"
+            aria-current={on ? 'page' : undefined}
+            onClick={() => setView(id)}
+            className={cn(
+              'flex h-7 items-center gap-1.5 rounded-md px-2 text-sm font-medium outline-none transition-colors duration-100',
+              on ? 'bg-active text-fg' : 'text-fg-subtle hover:bg-hover hover:text-fg',
+            )}
+          >
+            <Icon size={14} aria-hidden className={on ? 'text-fg-muted' : undefined} />
+            {label}
+            {id === 'backlog' && ideas > 0 && (
+              <span className="tabular -mr-0.5 ml-0.5 rounded-[4px] bg-active px-1 text-2xs leading-4 text-fg-muted">{ideas}</span>
+            )}
+          </button>
+        )
+      })}
+    </nav>
+  )
+}
+
+function SearchTrigger() {
+  return (
+    <button
+      type="button"
+      onClick={() => useUI.getState().setPaletteOpen(true)}
+      className="mr-1 flex h-7 w-52 items-center gap-2 rounded-md bg-app/60 pr-1.5 pl-2 text-sm text-fg-faint shadow-[inset_0_0_0_1px_var(--color-line)] outline-none transition-[box-shadow,color] duration-100 hover:text-fg-subtle hover:shadow-[inset_0_0_0_1px_var(--color-line-strong)]"
+    >
+      <Search size={14} aria-hidden />
+      Search
+      <Shortcut keys={`${MOD}+K`} className="ml-auto" />
+    </button>
+  )
+}
+
+const AGENT_FILES = ['.mcp.json', '.codex/config.toml', '.cursor/mcp.json', 'AGENTS.md']
+
+function AgentPopover() {
+  const { data: current } = useCurrent()
+  const command = `cd "${current?.root ?? ''}" && claude`
+  return (
+    <Popover
+      className="w-[360px]"
+      trigger={
+        <Button className="data-[popup-open]:bg-active data-[popup-open]:text-fg">
+          <Bot size={16} aria-hidden />
+          Agent
+        </Button>
+      }
+    >
+      <div className="space-y-3 p-3">
+        <div className="space-y-1">
+          <h2 className="text-sm font-medium text-fg">Work with your AI agent</h2>
+          <p className="text-xs leading-5 text-fg-subtle">
+            Start Claude Code, Codex or Cursor in this folder. It picks up the Maquest tools on its own, and every edit it makes shows up here live.
+          </p>
+        </div>
+        <CopyCommand command={command} />
+        <p className="text-2xs leading-4 text-fg-faint">
+          Set up by{' '}
+          {AGENT_FILES.map((f, i) => (
+            <span key={f}>
+              <code className="font-mono text-fg-subtle">{f}</code>
+              {i < AGENT_FILES.length - 1 ? ', ' : ''}
+            </span>
+          ))}{' '}
+          in the project folder.
+        </p>
+      </div>
+    </Popover>
+  )
+}
+
+function CopyCommand({ command }: { command: string }) {
+  const [copied, setCopied] = useState(false)
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  useEffect(() => () => clearTimeout(timer.current), [])
+  return (
+    <div className="flex items-start gap-1 rounded-md bg-app py-1 pr-1 pl-2.5 shadow-[inset_0_0_0_1px_var(--color-line)]">
+      <code className="min-w-0 flex-1 py-1 font-mono text-xs leading-4 break-all text-fg-muted">{command}</code>
+      <IconButton
+        icon={copied ? Check : Copy}
+        size="sm"
+        label={copied ? 'Copied' : 'Copy command'}
+        className={cn(copied && 'text-success hover:text-success')}
+        onClick={() => {
+          void navigator.clipboard.writeText(command).then(() => {
+            setCopied(true)
+            clearTimeout(timer.current)
+            timer.current = setTimeout(() => setCopied(false), 1500)
+          })
+        }}
+      />
+    </div>
   )
 }
