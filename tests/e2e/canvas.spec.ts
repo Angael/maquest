@@ -120,6 +120,9 @@ test('boards are independent: remove keeps the entity, paste places a reference,
   expect(project.board(main).nodes).toContain(ids[0])
   // Duplicate creates a new entity.
   await card(created).click({ button: 'right' })
+  // Right-clicking a card opens its menu without selecting or focusing it.
+  await expect(card(created)).not.toHaveClass(/selected/)
+  await expect(card(created)).not.toBeFocused()
   await page.getByRole('menuitem', { name: /Duplicate/ }).click()
   await expect.poll(() => project.listNodes().length).toBe(4)
   expect(project.board('arc').nodes).toHaveLength(2)

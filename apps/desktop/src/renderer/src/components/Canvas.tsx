@@ -227,13 +227,13 @@ export function Canvas() {
     [duplicate, selectNodes],
   )
   const [nodeMenu, setNodeMenu] = useState<{ x: number; y: number; ids: string[] } | null>(null)
+  const middlePress = useRef<{ x: number; y: number } | null>(null)
   const openNodeMenu = (event: { preventDefault: () => void; clientX: number; clientY: number }, id?: string) => {
     event.preventDefault()
     if (readOnly) return
     const selected = useUI.getState().selectedNodeIds
     const ids = id && !selected.includes(id) ? [id] : selected
     if (!ids.length) return
-    if (id && !selected.includes(id)) selectNodes(ids)
     setAddMenu(null)
     setNodeMenu({ x: event.clientX, y: event.clientY, ids })
   }
@@ -890,11 +890,18 @@ export function Canvas() {
       className="canvas-workspace relative h-full w-full outline-none"
       tabIndex={0}
       onMouseDownCapture={(e) => {
-        // Middle click on a card opens it in a new inspector tab.
-        if (e.button !== 1) return
+        if (e.button === 0) return
+        // Middle and right presses never focus or select a card: they pan or open its menu.
+        if ((e.target as Element).closest('.react-flow__node')) e.preventDefault()
+        if (e.button === 1) middlePress.current = { x: e.clientX, y: e.clientY }
+      }}
+      onAuxClick={(e) => {
+        // A middle click (not a pan) on a card opens it in a new inspector tab.
+        const start = middlePress.current
+        middlePress.current = null
+        if (e.button !== 1 || !start || Math.hypot(e.clientX - start.x, e.clientY - start.y) > 4) return
         const card = (e.target as Element).closest('.react-flow__node:not(.react-flow__node-group)')?.getAttribute('data-id')
         if (!card || groupIdOf(card)) return
-        e.preventDefault()
         useUI.getState().openTab(entityOf(card))
       }}
       aria-label="Story canvas"
