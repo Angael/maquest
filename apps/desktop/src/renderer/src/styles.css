@@ -477,7 +477,7 @@ textarea::placeholder {
   @apply text-fg-faint italic;
 }
 .cm-md-table {
-  @apply my-3 overflow-x-auto;
+  @apply py-3 overflow-x-auto; /* Padding, not margin: CodeMirror cannot measure block widget margins, which skews click positions below. */
 }
 .cm-md-table table {
   @apply border-collapse font-sans text-sm;
