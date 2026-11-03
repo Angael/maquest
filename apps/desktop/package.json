@@ -60,10 +60,12 @@
     "appId": "com.angael.maquest",
     "productName": "Maquest",
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "resources"
     },
     "files": [
       "out/**/*",
+      "resources/icon.png",
       "package.json"
     ],
     "extraResources": [
@@ -80,7 +82,8 @@
     "win": {
       "target": [
         "nsis"
-      ]
+      ],
+      "icon": "resources/icon.png"
     },
     "nsis": {
       "oneClick": false,
@@ -92,7 +95,8 @@
         "tar.gz"
       ],
       "category": "Office",
-      "executableName": "maquest"
+      "executableName": "maquest",
+      "icon": "resources/icon.png"
     },
     "publish": {
       "provider": "github",
