@@ -1,5 +1,12 @@
 # @maquest/desktop
 
+## 0.9.1
+
+### Patch Changes
+
+- a5c14d5: Ship the Maquest app icon in Linux and Windows builds instead of the default Electron icon.
+- d58794c: Fix clicks in the editor landing on the line below when a rendered table sits above them.
+
 ## 0.9.0
 
 ### Minor Changes
