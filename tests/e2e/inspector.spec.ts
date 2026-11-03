@@ -104,3 +104,16 @@ test('properties: tag chips, custom fields and Esc to close', async ({ desktop }
   await page.keyboard.press('Escape')
   await expect(page.getByRole('complementary', { name: 'Inspector' })).toBeHidden()
 })
+
+test('clicks below a rendered table land on the clicked line', async ({ desktop }) => {
+  const { page, project, ids } = desktop
+  project.updateNode(ids[1], { body: '| STR | DEX |\n|---|---|\n| 9 | 16 |\n\n- First item ends here.\n- Second item.\n' })
+  await page.locator(`.react-flow__node[data-id="${ids[1]}"]`).click()
+  const editor = page.locator('.cm-content')
+  await expect(editor.locator('.cm-md-table table')).toBeVisible()
+  const box = (await editor.locator('.cm-line', { hasText: 'First item' }).boundingBox())!
+  // Near the bottom of the row, right of the text: a skewed height map puts this on the next line.
+  await page.mouse.click(box.x + box.width - 4, box.y + box.height - 3)
+  await page.keyboard.type('!')
+  await expect.poll(() => project.getNode(ids[1])?.body).toContain('ends here.!\n')
+})
