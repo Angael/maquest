@@ -1,5 +1,15 @@
 # @maquest/desktop
 
+## 0.10.0
+
+### Minor Changes
+
+- 2b9bbe7: Live notes now open from a floating button in the corner where the panel appears, animate in and out, and can be resized by dragging the top-left corner (the size is remembered).
+
+### Patch Changes
+
+- 6bcce6a: Moving the cursor onto a blank line in the editor no longer makes it taller and shifts the text.
+
 ## 0.9.1
 
 ### Patch Changes
