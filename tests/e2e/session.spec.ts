@@ -18,6 +18,15 @@ test('live notes save to live-notes.md and toggle with Ctrl+J', async ({ desktop
   await expect(panel).toBeHidden()
   await page.getByRole('button', { name: /Live notes/ }).click()
   await expect(panel).toBeVisible()
+  // Dragging the top-left corner grows the panel up and left.
+  const before = (await panel.boundingBox())!
+  await page.mouse.move(before.x + 2, before.y + 2)
+  await page.mouse.down()
+  await page.mouse.move(before.x - 60, before.y - 40, { steps: 4 })
+  await page.mouse.up()
+  const after = (await panel.boundingBox())!
+  expect(after.width).toBeGreaterThan(before.width + 40)
+  expect(after.height).toBeGreaterThan(before.height + 20)
 })
 
 test('switching views keeps the canvas viewport and selection', async ({ desktop }) => {

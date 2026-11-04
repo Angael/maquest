@@ -41,6 +41,8 @@ type UI = {
   setMinimap: (open: boolean) => void
   /** Live notes panel open. */
   liveNotesOpen: boolean
+  liveNotesSize: { width: number; height: number }
+  setLiveNotesSize: (size: { width: number; height: number }) => void
   setLiveNotesOpen: (open: boolean) => void
   /** Project sidebar shown (Ctrl+B) and its width in px. */
   sidebarOpen: boolean
@@ -84,6 +86,7 @@ export const useUI = create<UI>()(
       pendingFocus: null,
       viewSelections: {},
       liveNotesOpen: false,
+      liveNotesSize: { width: 380, height: 260 },
       sidebarOpen: true,
       sidebarWidth: 248,
       paletteOpen: false,
@@ -112,6 +115,7 @@ export const useUI = create<UI>()(
           return { tabs, selection: { kind: 'node', id: focus }, selectedNodeIds: [focus] }
         }),
       setLiveNotesOpen: (liveNotesOpen) => set({ liveNotesOpen }),
+      setLiveNotesSize: (liveNotesSize) => set({ liveNotesSize }),
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
       setSidebarWidth: (sidebarWidth) => set({ sidebarWidth }),
       setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
@@ -167,13 +171,27 @@ export const useUI = create<UI>()(
           referenceLines: false,
           layoutMode: 'smart' as const,
           liveNotesOpen: saved.liveNotesOpen ?? false,
+          liveNotesSize: saved.liveNotesSize ?? { width: 380, height: 260 },
           sidebarOpen: saved.sidebarOpen ?? true,
           sidebarWidth: saved.sidebarWidth ?? 248,
           minimap: saved.minimap ?? false,
         }
       },
-      partialize: ({ hiddenEdges, hiddenNodes, connectType, edgeLabels, referenceLines, layoutMode, liveNotesOpen, sidebarOpen, sidebarWidth, minimap }) => ({
+      partialize: ({
+        hiddenEdges,
+        hiddenNodes,
+        connectType,
+        edgeLabels,
+        referenceLines,
+        layoutMode,
         liveNotesOpen,
+        liveNotesSize,
+        sidebarOpen,
+        sidebarWidth,
+        minimap,
+      }) => ({
+        liveNotesOpen,
+        liveNotesSize,
         sidebarOpen,
         sidebarWidth,
         minimap,
