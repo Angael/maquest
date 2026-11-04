@@ -6,7 +6,6 @@ import { useCurrent, useNodes, useRecent } from '../lib/queries'
 import { useUI, type View } from '../lib/store'
 import { Button, IconButton, Menu, MenuItem, MenuLabel, MenuSeparator, Popover, Separator, Shortcut, cn } from './ui'
 import { Logo, TitleBar } from './TitleBar'
-import { LiveNotesButton } from './LiveNotes'
 
 /** Modifier key label for shortcut hints. */
 export const MOD = window.maquest.platform === 'darwin' ? '⌘' : 'Ctrl'
@@ -27,7 +26,6 @@ export function TopBar() {
       <ViewTabs />
       <div className="ml-auto flex items-center gap-1 pr-1">
         <SearchTrigger />
-        <LiveNotesButton />
         <AgentPopover />
       </div>
     </TitleBar>
