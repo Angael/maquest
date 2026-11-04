@@ -347,9 +347,10 @@ function build(view: EditorView, opts: LivePreviewOptions): DecorationSet {
     })
 
     // Blank separator lines render at roughly half height so paragraphs get prose spacing, not a full empty line.
+    // Keep the gap on the active line too, so moving the cursor across it does not shift the text.
     for (let pos = from; pos <= to;) {
       const l = state.doc.lineAt(pos)
-      if (!l.text.trim() && !isActive(l.from) && !code.some(([f, t]) => l.from >= f && l.from <= t)) decos.push(line('cm-md-gap').range(l.from))
+      if (!l.text.trim() && !code.some(([f, t]) => l.from >= f && l.from <= t)) decos.push(line('cm-md-gap').range(l.from))
       pos = l.to + 1
     }
 

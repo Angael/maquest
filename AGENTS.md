@@ -25,6 +25,7 @@ Layout:
 
 Workflow:
 
+- Git and GitHub are handled 100% by the agent: branches, commits, pushes, PRs, reviews, merges, conflicts, CI fixes, tags, and releases. Never ask the user to run Git or GitHub commands or do anything on GitHub by hand.
 - Agents own the complete delivery workflow: Git, changesets, pull requests, versioning, and releases. Do not hand routine delivery steps back to the user or ask for confirmation for them.
 - Commit as you go in small logical commits. After required checks pass, automatically push completed changes to the appropriate remote branch. Create, update, and merge PRs when needed by the repository workflow; resolve routine conflicts and check failures yourself. Do not rewrite shared history or discard unrelated work.
 - Before committing, run `pnpm check:fix` and fix lint errors rather than disabling rules.
