@@ -1,11 +1,28 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
-import { Bot, BookMarked, Check, ChevronDown, Copy, FolderOpen, FolderSearch, Lightbulb, LogOut, Network, PanelLeft, Search, Shapes } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  Bot,
+  BookMarked,
+  Check,
+  ChevronDown,
+  Copy,
+  FolderOpen,
+  FolderSearch,
+  GitBranch,
+  Lightbulb,
+  LoaderCircle,
+  LogOut,
+  Network,
+  PanelLeft,
+  Search,
+  Shapes,
+} from 'lucide-react'
 import { api } from '../lib/api'
 import { useCurrent, useNodes, useRecent } from '../lib/queries'
 import { useUI, type View } from '../lib/store'
 import { Button, IconButton, Menu, MenuItem, MenuLabel, MenuSeparator, Popover, Separator, Shortcut, cn } from './ui'
 import { Logo, TitleBar } from './TitleBar'
+import { syncProject } from './SyncToast'
 
 /** Modifier key label for shortcut hints. */
 export const MOD = window.maquest.platform === 'darwin' ? '⌘' : 'Ctrl'
@@ -26,6 +43,7 @@ export function TopBar() {
       <ViewTabs />
       <div className="ml-auto flex items-center gap-1 pr-1">
         <SearchTrigger />
+        <GitSyncButton />
         <AgentPopover />
       </div>
     </TitleBar>
@@ -160,6 +178,31 @@ function SearchTrigger() {
       Search
       <Shortcut keys={`${MOD}+K`} className="ml-auto" />
     </button>
+  )
+}
+
+/** Pulls and pushes the project's git repo on demand; hidden when the folder is not a git repo. */
+function GitSyncButton() {
+  const { data: current } = useCurrent()
+  const root = current?.root
+  const qc = useQueryClient()
+  const { data: isRepo } = useQuery({ queryKey: ['app', 'isGitRepo', root], queryFn: () => api.isGitRepo(), enabled: !!root })
+  const [syncing, setSyncing] = useState(false)
+  if (!isRepo) return null
+  return (
+    <IconButton
+      icon={syncing ? LoaderCircle : GitBranch}
+      label={syncing ? 'Syncing with git remote…' : 'Sync with git remote'}
+      aria-busy={syncing}
+      className={cn(syncing && '[&_svg]:animate-spin')}
+      onClick={() => {
+        if (syncing) return
+        setSyncing(true)
+        void syncProject({ manual: true, isCurrent: () => qc.getQueryData<{ root: string } | null>(['app', 'current'])?.root === root }).finally(() =>
+          setSyncing(false),
+        )
+      }}
+    />
   )
 }
 

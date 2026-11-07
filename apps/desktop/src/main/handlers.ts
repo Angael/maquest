@@ -23,7 +23,7 @@ import {
   type Position,
 } from '@maquest/core'
 import { ProjectHistory } from './history'
-import { syncFromRemote } from './gitSync'
+import { isGitRepo, syncFromRemote } from './gitSync'
 
 let current: Project | null = null
 let watcher: FSWatcher | null = null
@@ -92,6 +92,8 @@ export const handlers = {
     current = null
     history = new ProjectHistory()
   },
+  /** Whether the project folder is inside a git work tree; gates the sync button. */
+  isGitRepo: () => isGitRepo(p().root),
   /** Pulls remote commits into the project's git repo when that is conflict-free; see gitSync.ts. */
   syncFromRemote: async () => {
     const root = p().root

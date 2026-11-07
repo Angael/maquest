@@ -66,4 +66,15 @@ test.describe('git push on open', () => {
     const localHead = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: project.root }).toString().trim()
     expect(remoteHead).toBe(localHead)
   })
+
+  test('the title bar sync button confirms when already in sync', async ({ desktop: { page } }) => {
+    await expect(page.locator('[data-sonner-toast]')).toContainText('Local changes pushed to remote')
+    await page.getByRole('button', { name: 'Sync with git remote' }).click()
+    await expect(page.locator('[data-sonner-toast]').filter({ hasText: 'Project is in sync with remote' })).toBeVisible()
+  })
+})
+
+test('no sync button outside a git repo', async ({ desktop: { page } }) => {
+  await expect(page.getByRole('button', { name: 'Search' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Sync with git remote' })).toHaveCount(0)
 })

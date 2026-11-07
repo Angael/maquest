@@ -78,6 +78,12 @@ function fetchReason(err: unknown) {
   return err instanceof GitError ? err.message : 'Fetching from the remote failed'
 }
 
+/** Whether `root` is inside a git work tree (false when git is missing). */
+export async function isGitRepo(root: string): Promise<boolean> {
+  if (!fs.existsSync(root)) return false
+  return (await tryGit(root, ['rev-parse', '--is-inside-work-tree'])) === 'true'
+}
+
 const inProgress = new Map<string, Promise<SyncResult>>()
 
 /**
