@@ -1,5 +1,12 @@
 # @maquest/desktop
 
+## 0.11.1
+
+### Patch Changes
+
+- 7cdadfa: Empty lines in markdown editors now have the same height as text lines, so pressing Enter or moving the cursor across them no longer makes the text below jump.
+- 0720f26: Typing a bare list marker (`1.`, `-`) and pressing Enter no longer erases the line in markdown editors and live notes.
+
 ## 0.11.0
 
 ### Minor Changes
