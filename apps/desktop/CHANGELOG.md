@@ -1,5 +1,11 @@
 # @maquest/desktop
 
+## 0.11.0
+
+### Minor Changes
+
+- 9da96a0: Add a git sync button to the title bar. It pulls safe remote updates and pushes local commits on demand, and only appears when the project folder is a git repository.
+
 ## 0.10.0
 
 ### Minor Changes
