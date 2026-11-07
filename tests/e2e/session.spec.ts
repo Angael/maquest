@@ -117,3 +117,20 @@ test('middle click opens nodes as inspector tabs', async ({ desktop }) => {
   await expect(tabs.getByRole('tab')).toHaveText(['Cellar'])
   await expect(page.getByRole('textbox', { name: 'Title' })).toHaveValue('Cellar')
 })
+
+test('typing bare list markers line by line keeps every line', async ({ desktop }) => {
+  const { page, ids } = desktop
+  await page.locator(`.react-flow__node[data-id="${ids[1]}"]`).click()
+  const editor = page.locator('.cm-content')
+  await editor.click()
+  await page.keyboard.press('ControlOrMeta+End')
+  await page.keyboard.press('Enter')
+  await page.keyboard.press('Enter')
+  for (const n of ['1.', '2.', '3.']) {
+    await page.keyboard.type(n)
+    await page.keyboard.press('Enter')
+  }
+  await expect(editor).toContainText('1.')
+  await expect(editor).toContainText('2.')
+  await expect(editor).toContainText('3.')
+})

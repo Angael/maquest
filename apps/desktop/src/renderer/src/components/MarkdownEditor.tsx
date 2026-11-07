@@ -1,7 +1,10 @@
 import { memo, useCallback, useLayoutEffect, useEffect, useMemo, useRef, useState } from 'react'
 import CodeMirror, { EditorView } from '@uiw/react-codemirror'
 import { openImage } from './Lightbox'
-import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
+import { insertNewlineContinueMarkup, markdown, markdownLanguage } from '@codemirror/lang-markdown'
+import { insertNewlineAndIndent } from '@codemirror/commands'
+import { Prec } from '@codemirror/state'
+import { keymap } from '@codemirror/view'
 import { languages } from '@codemirror/language-data'
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -14,6 +17,27 @@ import { cn } from './ui'
 
 const NO_NODES: { id: string; title: string }[] = []
 const embed = (paths: string[]) => paths.map((p) => `![${p.split('/').pop()}](${p})`).join('\n')
+
+/**
+ * Enter on a bare list marker the user just typed (`1.`, `-`, no trailing space) keeps the line.
+ * CodeMirror's default treats it as an empty item and deletes the marker, so `1.` Enter `2.` Enter
+ * would wipe each line. With a trailing space (`1. `) the default "exit the list" behavior stays.
+ */
+const listEnter = Prec.highest(
+  keymap.of([
+    {
+      key: 'Enter',
+      run: (view) => {
+        const { state } = view
+        const sel = state.selection.main
+        if (!sel.empty) return insertNewlineContinueMarkup(view)
+        const line = state.doc.lineAt(sel.head)
+        if (sel.head === line.to && /^\s*(\d+[.)]|[-*+])$/.test(line.text)) return insertNewlineAndIndent(view)
+        return insertNewlineContinueMarkup(view)
+      },
+    },
+  ]),
+)
 
 /** Inserts dropped or pasted images/videos as markdown embeds. */
 const mediaHandlers = EditorView.domEventHandlers({
@@ -128,6 +152,7 @@ export const MarkdownEditor = memo(function MarkdownEditor({
   const extensions = useMemo(
     () => [
       markdown({ base: markdownLanguage, codeLanguages: languages }),
+      listEnter,
       EditorView.lineWrapping,
       mediaHandlers,
       editorTheme,

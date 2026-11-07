@@ -13,6 +13,7 @@
     "typecheck": "tsc -p ."
   },
   "dependencies": {
+    "@codemirror/commands": "^6.11.1",
     "@maquest/core": "workspace:*",
     "chokidar": "^6.0.0",
     "electron-updater": "^6.8.11",
