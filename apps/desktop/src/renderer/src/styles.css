@@ -434,9 +434,6 @@ textarea::placeholder {
 .cm-md-codeblock {
   @apply bg-surface px-3! font-mono text-[0.85em] leading-relaxed text-fg;
 }
-.cm-md-gap {
-  line-height: 0.75;
-}
 .cm-md-li {
   padding-left: 1.25em !important;
   text-indent: -1.25em;
