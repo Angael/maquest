@@ -88,8 +88,8 @@ const inProgress = new Map<string, Promise<SyncResult>>()
 
 /**
  * Brings the git repo containing `root` up to date with its upstream branch, but only when that is safe:
- * a fast-forward, or a merge that `git merge-tree` proves conflict-free. Local uncommitted edits are kept;
- * git itself refuses (without touching anything) if the incoming commits would overwrite them.
+ * a fast-forward, or a merge that `git merge-tree` proves conflict-free. Uncommitted changes inside the project
+ * folder are committed first so they get pushed; edits elsewhere in the repo are kept as they are.
  */
 export function syncFromRemote(root: string): Promise<SyncResult> {
   const key = path.resolve(root)
@@ -143,6 +143,38 @@ async function doPush({ top, remote, upstream, mergeRef }: PushContext): Promise
   return { status: 'pushed', upstream, commits: ahead }
 }
 
+/** A commit identity even for users who never configured one, rather than failing. */
+async function identity(top: string) {
+  return (await tryGit(top, ['config', 'user.email'])) ? [] : ['-c', 'user.name=Maquest', '-c', 'user.email=maquest@localhost']
+}
+
+/**
+ * Commits every uncommitted change inside the project folder (new, edited and deleted files, honouring
+ * .gitignore) so edits made in the app or by agents, like live notes, reach the remote. Changes elsewhere
+ * in the repo, and anything the user staged outside the project folder, are left untouched.
+ */
+async function commitProjectChanges(root: string, top: string) {
+  await git(root, ['add', '-A', '--', '.'])
+  // Nothing staged under the project folder: diff exits 0.
+  const dirty = await git(root, ['diff', '--cached', '--quiet', '--', '.']).then(
+    () => false,
+    () => true,
+  )
+  if (!dirty) return
+  await git(top, [
+    ...(await identity(top)),
+    '-c',
+    'commit.gpgsign=false',
+    'commit',
+    '--quiet',
+    '--no-verify',
+    '-m',
+    'Save project changes',
+    '--',
+    path.relative(top, root) || '.',
+  ])
+}
+
 async function doPull(root: string): Promise<PullResult | (PullResult & { ctx: PushContext })> {
   if (!fs.existsSync(root)) return { status: 'skipped', reason: 'Project folder is missing' }
   const top = await git(root, ['rev-parse', '--show-toplevel']).catch((err: unknown) => {
@@ -165,6 +197,12 @@ async function doPull(root: string): Promise<PullResult | (PullResult & { ctx: P
   }
   if (await tryGit(top, ['ls-files', '--unmerged']).then((out) => out !== null && out !== ''))
     return { status: 'blocked', reason: 'The repository has unresolved conflicts' }
+
+  try {
+    await commitProjectChanges(root, top)
+  } catch (err) {
+    return { status: 'failed', reason: `Saving local changes failed: ${err instanceof Error ? err.message : String(err)}` }
+  }
 
   const remote = await tryGit(top, ['config', `branch.${branch}.remote`])
   try {
@@ -194,8 +232,7 @@ async function doPull(root: string): Promise<PullResult | (PullResult & { ctx: P
   try {
     if (ahead) {
       // A merge commit needs an identity; fall back to a neutral one rather than failing for users who never set it.
-      const ident = (await tryGit(top, ['config', 'user.email'])) ? [] : ['-c', 'user.name=Maquest', '-c', 'user.email=maquest@localhost']
-      await git(top, [...ident, 'merge', '--no-edit', '--no-verify', '--no-autostash', upstream], 60_000)
+      await git(top, [...(await identity(top)), 'merge', '--no-edit', '--no-verify', '--no-autostash', upstream], 60_000)
     } else await git(top, ['merge', '--ff-only', '--no-autostash', upstream], 60_000)
   } catch (err) {
     // Leave the repo as we found it if git got as far as starting a merge.
