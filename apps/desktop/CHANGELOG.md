@@ -1,5 +1,11 @@
 # @maquest/desktop
 
+## 0.11.4
+
+### Patch Changes
+
+- 7f05017: Large canvases stay smoother: cards and lines off screen are no longer drawn, selecting a card only redraws the cards and lines whose highlight changes, and card images decode in the background.
+
 ## 0.11.3
 
 ### Patch Changes
