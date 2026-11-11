@@ -75,6 +75,19 @@ test('leaves conflicting diverged history alone', async (t) => {
   assert.equal(run(local, 'status', '--porcelain'), '')
 })
 
+test('commits uncommitted project changes, including new files, and pushes them', async (t) => {
+  const { local, other, remote } = repos(t)
+  fs.mkdirSync(path.join(local, 'project'))
+  fs.writeFileSync(path.join(local, 'project', 'live-notes.md'), 'note\n')
+  fs.writeFileSync(path.join(local, 'b.md'), 'outside\n')
+  const result = await syncFromRemote(path.join(local, 'project'))
+  assert.equal(result.push?.status, 'pushed')
+  assert.equal(run(remote, 'show', 'main:project/live-notes.md'), 'note')
+  assert.equal(run(local, 'status', '--porcelain'), 'M b.md')
+  run(other, 'pull', '-q')
+  assert.equal(fs.readFileSync(path.join(other, 'project', 'live-notes.md'), 'utf8'), 'note\n')
+})
+
 test('refuses when uncommitted edits touch incoming files', async (t) => {
   const { local, other } = repos(t)
   commit(other, 'a.md', 'remote\n')

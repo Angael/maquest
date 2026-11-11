@@ -32,7 +32,7 @@ test.describe('git sync on open', () => {
   })
 
   test('pulls remote changes and shows a toast', async ({ desktop: { page } }) => {
-    await expect(page.locator('[data-sonner-toast]')).toContainText('Project updated to the latest version')
+    await expect(page.locator('[data-sonner-toast]').filter({ hasText: 'Project updated to the latest version' })).toBeVisible()
     await expect(page.locator('.react-flow__node').filter({ hasText: 'Attic' })).toBeVisible()
   })
 })
