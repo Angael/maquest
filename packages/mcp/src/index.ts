@@ -68,7 +68,7 @@ function liveNotesNotice(): string {
   if (notes === seenLiveNotes) return ''
   seenLiveNotes = notes
   if (!notes) return ''
-  return `IMPORTANT: the author updated their live notes (${LIVE_NOTES_FILE}, written mid-session in the Maquest app). Deal with them before continuing: fold them into the project (write/connect, backlog for loose ideas) or ask about anything unclear, then say what you did.\n<live-notes>\n${notes}\n</live-notes>\n\n`
+  return `IMPORTANT: the author updated their live notes (${LIVE_NOTES_FILE}, written mid-session in the Maquest app). Deal with them before continuing. For each item, first check whether the project already reflects it (it may have been handled earlier). Fold unhandled items into the project (write/connect, backlog for loose ideas), and ask the author about anything unclear or that you decide not to do. Once every item is handled, clear the notes with delete({ liveNotes: true }); if some are still open, leave them and raise them with the author. Say what you did.\n<live-notes>\n${notes}\n</live-notes>\n\n`
 }
 
 function safe<A>(fn: (a: A) => string | Promise<string>) {
@@ -218,7 +218,7 @@ Capture structure eagerly: turn what the author says into project changes right 
 Connection labels are short names for the relationship (max ${EDGE_LABEL_MAX} chars). Never put status or TODOs in labels; use the node's status, tags or body.
 Boards are separate canvases (e.g. one per arc or investigation); each shows only the nodes placed on it.
 Edits apply immediately to markdown files on disk, and the Maquest app updates live.
-The author keeps quick live notes in the app during sessions. When they change, tool results start with an IMPORTANT live-notes notice: treat it as top priority.`,
+The author keeps quick live notes in the app during sessions. When they change, tool results start with an IMPORTANT live-notes notice: treat it as top priority. Notes in the overview are still pending: check whether the project already reflects them, clear them with delete({ liveNotes: true }) if so, otherwise act on them or bring them up with the author.`,
   },
 )
 
@@ -246,7 +246,7 @@ server.registerTool(
       (() => {
         const notes = p.liveNotes().trim()
         if (!notes || notes !== seenLiveNotes) return '' // A changed note is already shown as the notice above.
-        return `## Live notes (from the author, ${LIVE_NOTES_FILE})\n${notes}`
+        return `## Live notes (from the author, ${LIVE_NOTES_FILE}; pending until cleared)\n${notes}`
       })(),
       `## Outline\n${outlineText(p.outline()) || '(no stories yet)'}`,
       (() => {
@@ -432,9 +432,10 @@ server.registerTool(
   {
     title: 'Delete nodes',
     description:
-      'Delete nodes and their connections. Children are detached unless recursive=true. Reports nodes whose bodies still link to a deleted node. Prefer moving unwanted author content into the backlog over deleting it.',
+      "Delete nodes and their connections. Children are detached unless recursive=true. Reports nodes whose bodies still link to a deleted node. Prefer moving unwanted author content into the backlog over deleting it. liveNotes=true clears the author's live notes once every item in them is handled.",
     inputSchema: {
-      ids: z.array(z.string()).min(1),
+      ids: z.array(z.string()).optional(),
+      liveNotes: z.boolean().optional().describe('Clear the live notes (only after all items are done or confirmed with the author)'),
       recursive: z.boolean().optional(),
       replaceWith: z
         .string()
@@ -443,8 +444,14 @@ server.registerTool(
     },
     annotations: { destructiveHint: true },
   },
-  safe(({ ids, recursive, replaceWith }) => {
+  safe(({ ids = [], liveNotes, recursive, replaceWith }) => {
     const p = project()
+    if (!ids.length && !liveNotes) throw new Error('Pass ids and/or liveNotes=true')
+    if (liveNotes) {
+      p.setLiveNotes('')
+      seenLiveNotes = ''
+    }
+    if (!ids.length) return 'live notes cleared'
     const deleted: string[] = []
     // Ids already removed as descendants of an earlier recursive delete are skipped.
     for (const id of ids) if (!deleted.includes(id)) deleted.push(...p.deleteNode(id, { recursive, replaceWith }))
@@ -452,7 +459,11 @@ server.registerTool(
       const from = p.linksTo(id)
       return from.length ? [`- [[${id}]] still linked from: ${from.map((n) => n.id).join(', ')}`] : []
     })
-    return [`deleted: ${deleted.join(', ')}`, dangling.length ? `Dangling links (edit them or delete with replaceWith):\n${dangling.join('\n')}` : '']
+    return [
+      liveNotes ? 'live notes cleared' : '',
+      `deleted: ${deleted.join(', ')}`,
+      dangling.length ? `Dangling links (edit them or delete with replaceWith):\n${dangling.join('\n')}` : '',
+    ]
       .filter(Boolean)
       .join('\n')
   }),

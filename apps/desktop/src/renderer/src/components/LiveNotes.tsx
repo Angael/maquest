@@ -120,12 +120,13 @@ export function LiveNotesPanel() {
             </div>
             <IconButton icon={X} size="sm" label="Close live notes" shortcut="Esc" tooltipSide="top" onClick={close} />
           </header>
-          <div className="min-h-0 flex-1 overflow-y-auto px-3.5 pb-3 [&>div]:border-none [&>div]:bg-transparent [&>div>div]:px-0">
+          <div className="min-h-0 flex-1 px-3.5 pb-3 [&>div]:border-none [&>div]:bg-transparent [&>div>div]:px-0">
             <MarkdownEditor
               label="Live notes"
               placeholder="Quick notes during the session…"
               minHeight="80px"
               hint={false}
+              fill
               value={draft}
               onChange={(text) => {
                 dirty.current = true

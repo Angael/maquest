@@ -130,6 +130,7 @@ export const MarkdownEditor = memo(function MarkdownEditor({
   minHeight = '240px',
   hint = true,
   variant = 'boxed',
+  fill = false,
 }: {
   value: string
   onChange: (v: string) => void
@@ -138,6 +139,8 @@ export const MarkdownEditor = memo(function MarkdownEditor({
   minHeight?: string
   hint?: boolean
   variant?: 'boxed' | 'document'
+  /** Fill the parent's height; the editor scrolls internally when content overflows. */
+  fill?: boolean
 }) {
   const { data: nodes = NO_NODES } = useNodes()
   const [focused, setFocused] = useState(false)
@@ -168,6 +171,7 @@ export const MarkdownEditor = memo(function MarkdownEditor({
     <div
       className={cn(
         'relative',
+        fill && 'flex h-full flex-col',
         doc
           ? 'px-4 pt-1'
           : 'rounded-md bg-surface/60 px-3 shadow-[inset_0_0_0_1px_var(--color-line)] focus-within:shadow-[inset_0_0_0_1px_var(--color-line-strong)]',
@@ -175,7 +179,7 @@ export const MarkdownEditor = memo(function MarkdownEditor({
       onFocus={() => setFocused(true)}
       onBlur={(e) => !e.currentTarget.contains(e.relatedTarget) && setFocused(false)}
     >
-      <div className={doc ? 'max-w-[70ch]' : undefined}>
+      <div className={cn(doc && 'max-w-[70ch]', fill && 'min-h-0 flex-1 [&>div]:h-full')}>
         <CodeMirror
           value={value}
           onChange={handleChange}
@@ -183,6 +187,7 @@ export const MarkdownEditor = memo(function MarkdownEditor({
           extensions={extensions}
           basicSetup={basicSetup}
           minHeight={minHeight}
+          height={fill ? '100%' : undefined}
           placeholder={placeholder}
           aria-label={label}
           onCreateEditor={setView}
