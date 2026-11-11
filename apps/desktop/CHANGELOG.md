@@ -1,5 +1,11 @@
 # @maquest/desktop
 
+## 0.11.2
+
+### Patch Changes
+
+- cb67c1d: Compile the app's interface with React Compiler for fewer unnecessary re-renders.
+
 ## 0.11.1
 
 ### Patch Changes
