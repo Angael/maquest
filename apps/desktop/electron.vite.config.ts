@@ -1,6 +1,7 @@
 import { resolve } from 'node:path'
 import { defineConfig } from 'electron-vite'
-import react from '@vitejs/plugin-react'
+import react, { reactCompilerPreset } from '@vitejs/plugin-react'
+import babel from '@rolldown/plugin-babel'
 import tailwindcss from '@tailwindcss/vite'
 
 // @maquest/core ships TS sources, so bundle it instead of externalizing.
@@ -11,6 +12,6 @@ export default defineConfig({
   preload: { build },
   renderer: {
     resolve: { alias: { '@': resolve(__dirname, 'src/renderer/src') } },
-    plugins: [react(), tailwindcss()],
+    plugins: [react(), babel({ presets: [reactCompilerPreset()] }), tailwindcss()],
   },
 })
