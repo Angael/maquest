@@ -38,3 +38,27 @@ export const VIEW_MODES: { label: string; hint: string; icon: LucideIcon; nodes:
     edges: ['link', 'involves', 'located-at', 'member-of', 'owns', 'relationship'],
   },
 ]
+
+const sameValue = (a: unknown, b: unknown) => {
+  if (Object.is(a, b)) return true
+  if (!a || !b || typeof a !== 'object' || typeof b !== 'object' || Array.isArray(a) !== Array.isArray(b)) return false
+  const ka = Object.keys(a)
+  if (ka.length !== Object.keys(b).length) return false
+  return ka.every((k) => Object.is((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]))
+}
+
+/**
+ * Returns `next` with every item that matches its previous version (by id, comparing fields one level deep) swapped
+ * for that previous object, so React Flow and memoized cards and lines skip work for items that did not change.
+ */
+export function reuseItems<T extends { id: string }>(cache: Map<string, T>, next: T[]): T[] {
+  const out = next.map((item) => {
+    const prev = cache.get(item.id)
+    if (!prev) return item
+    const keys = Object.keys(item) as (keyof T)[]
+    return keys.length === Object.keys(prev).length && keys.every((k) => sameValue(prev[k], item[k])) ? prev : item
+  })
+  cache.clear()
+  for (const item of out) cache.set(item.id, item)
+  return out
+}

@@ -60,7 +60,7 @@ import { ViewMenu } from './canvas/ViewMenu'
 import { AddNodeMenu, NodeMenu } from './canvas/menus'
 import { PhaseLanes } from './canvas/PhaseLanes'
 import { hoverEdge, hoverNode } from './canvas/hover'
-import { FIT_VIEW, cardSize, isCard, type AnyFlowNode, type CardFlowNode } from './canvas/shared'
+import { FIT_VIEW, cardSize, isCard, reuseItems, type AnyFlowNode, type CardFlowNode } from './canvas/shared'
 
 const nodeTypes = { card: StoryCard, frame: GroupFrame }
 const edgeTypes = { floating: FloatingEdge }
@@ -362,19 +362,24 @@ export function Canvas() {
   const updateGroup = useAction(api.updateGroup)
   const deleteGroup = useAction(api.deleteGroup)
   const createGroup = useAction(api.createGroup)
-  const flowNodes = useMemo<CardFlowNode[]>(() => {
-    const counters: Record<string, number> = {}
-    const defaults = new Map<string, { x: number; y: number }>()
-    for (const n of all) defaults.set(n.id, defaultPosition(typeIds.indexOf(n.type), (counters[n.type] = (counters[n.type] ?? -1) + 1)))
+  // Reference chips and clue counts depend on the graph only, so selecting a card keeps them (and memoized cards) intact.
+  const { refs, clues } = useMemo(() => {
     const byId = new Map(all.map((n) => [n.id, n]))
     const refs = new Map<string, CardRef[]>()
     if (!referenceLines)
       for (const e of graph?.edges ?? []) {
         const target = byId.get(e.target)
         if (!isReferenceEdge(e.type) || hiddenEdges.includes(e.type) || !target) continue
-        refs.set(e.source, [...(refs.get(e.source) ?? []), { edge: e.id, type: e.type, id: target.id, title: target.title, nodeType: target.type }])
+        const list = refs.get(e.source) ?? []
+        list.push({ edge: e.id, type: e.type, id: target.id, title: target.title, nodeType: target.type })
+        refs.set(e.source, list)
       }
-    const clues = clueCounts(graph?.edges ?? [])
+    return { refs, clues: clueCounts(graph?.edges ?? []) }
+  }, [all, graph, referenceLines, hiddenEdges])
+  const flowNodes = useMemo<CardFlowNode[]>(() => {
+    const counters: Record<string, number> = {}
+    const defaults = new Map<string, { x: number; y: number }>()
+    for (const n of all) defaults.set(n.id, defaultPosition(typeIds.indexOf(n.type), (counters[n.type] = (counters[n.type] ?? -1) + 1)))
     return cards.map(({ key, node: n }) => ({
       id: key,
       type: 'card',
@@ -387,7 +392,7 @@ export function Canvas() {
       },
       selected: selectedNodeIds.includes(key),
     }))
-  }, [all, cards, graph, board, selectedNodeIds, focus, referenceLines, hiddenEdges, typeIds])
+  }, [all, cards, board, selectedNodeIds, focus, refs, clues, typeIds])
   // Disk (via queries) owns positions and the zustand store owns selection; React Flow only reports
   // measurements and in-flight drags, kept here until the saved layout catches up.
   const [local, setLocal] = useState<Record<string, LocalNode>>({})
@@ -525,28 +530,31 @@ export function Canvas() {
     }
     return out
   }, [readOnly, cards, sizes, typeIds])
+  // Previous items, reused when unchanged (a stable cache, not render state).
+  const [nodeCache] = useState(() => new Map<string, AnyFlowNode>())
   const nodes = useMemo<AnyFlowNode[]>(
-    () => [
-      ...groupNodes.map((node) => {
-        const entry = local[node.id]
-        return entry
-          ? {
-              ...node,
-              position: entry.position ?? node.position,
-              width: entry.size?.width ?? node.width,
-              height: entry.size?.height ?? node.height,
-              measured: entry.size ?? entry.measured ?? node.measured,
-            }
-          : node
-      }),
-      ...flowNodes.map((node) => {
-        const entry = local[node.id]
-        const fixed = allLayout?.get(node.id)
-        if (fixed) return { ...node, position: fixed, measured: entry?.measured }
-        return entry ? { ...node, position: entry.position ?? node.position, measured: entry.measured, dragging: entry.dragging } : node
-      }),
-    ],
-    [groupNodes, flowNodes, local, allLayout],
+    () =>
+      reuseItems(nodeCache, [
+        ...groupNodes.map((node) => {
+          const entry = local[node.id]
+          return entry
+            ? {
+                ...node,
+                position: entry.position ?? node.position,
+                width: entry.size?.width ?? node.width,
+                height: entry.size?.height ?? node.height,
+                measured: entry.size ?? entry.measured ?? node.measured,
+              }
+            : node
+        }),
+        ...flowNodes.map((node) => {
+          const entry = local[node.id]
+          const fixed = allLayout?.get(node.id)
+          if (fixed) return { ...node, position: fixed, measured: entry?.measured }
+          return entry ? { ...node, position: entry.position ?? node.position, measured: entry.measured, dragging: entry.dragging } : node
+        }),
+      ]),
+    [nodeCache, groupNodes, flowNodes, local, allLayout],
   )
   const changeNodes = useCallback(
     (changes: NodeChange<AnyFlowNode>[]) => {
@@ -642,6 +650,7 @@ export function Canvas() {
     }
   }, [flowNodes, flow, board])
 
+  const [edgeCache] = useState(() => new Map<string, FloatingFlowEdge>())
   const edges = useMemo<FloatingFlowEdge[]>(() => {
     const ids = new Set(visible.map((n) => n.id))
     const style = (kind: EdgeKind, id: string) => {
@@ -699,7 +708,9 @@ export function Canvas() {
     const pairs = new Map<string, string[]>()
     for (const e of shown) {
       const key = [e.source, e.target].toSorted().join('\0')
-      pairs.set(key, [...(pairs.get(key) ?? []), e.id])
+      const list = pairs.get(key) ?? []
+      list.push(e.id)
+      pairs.set(key, list)
     }
     for (const e of shown) {
       const group = pairs.get([e.source, e.target].toSorted().join('\0'))!
@@ -717,8 +728,8 @@ export function Canvas() {
           ...style(e.type, e.id),
         })
     }
-    return out
-  }, [visible, keysOf, graph, hiddenEdges, selection, focus, referenceLines, edgeLabels])
+    return reuseItems(edgeCache, out)
+  }, [edgeCache, visible, keysOf, graph, hiddenEdges, selection, focus, referenceLines, edgeLabels])
   const connectionType = useCallback(
     (c: Connection | FlowEdge) => {
       const source = flow.getNode(c.source)?.data as CardData | undefined
@@ -1000,6 +1011,7 @@ export function Canvas() {
         panOnDrag={[1]}
         deleteKeyCode={null}
         minZoom={0.1}
+        onlyRenderVisibleElements
         proOptions={{ hideAttribution: true }}
         colorMode="dark"
       >

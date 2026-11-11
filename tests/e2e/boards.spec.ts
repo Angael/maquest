@@ -55,6 +55,9 @@ test('the Overview canvas shows every node and cannot be edited', async ({ deskt
   const before = JSON.stringify(project.graph())
   const card = page.locator(`.react-flow__node[data-id="${ids[0]}"]`)
   await card.click()
+  // The inspector now covers part of the canvas, and off-screen cards are not rendered.
+  await page.getByRole('button', { name: 'Fit view' }).click()
+  await page.waitForTimeout(400)
   const box = (await card.boundingBox())!
   await page.mouse.move(box.x + 20, box.y + 20)
   await page.mouse.down()

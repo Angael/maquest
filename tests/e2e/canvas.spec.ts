@@ -189,6 +189,9 @@ test('auto-layout runs the chosen style and remembers it', async ({ desktop }) =
   const { page, project } = desktop
   const ids = [...desktop.ids, ...['Attic', 'Garden', 'Stable', 'Chapel', 'Well', 'Gate'].map((title) => project.createNode({ type: 'location', title }).id)]
   project.setLayout(Object.fromEntries(ids.map((id, i) => [id, { x: 100, y: 100 + i * 200 }])))
+  // Off-screen cards are not rendered, so bring the whole column into view first.
+  await expect.poll(() => page.locator('.react-flow__node').count()).toBeGreaterThan(2)
+  await page.getByRole('button', { name: 'Fit view' }).click()
   await expect(page.locator('.react-flow__node').filter({ hasText: 'Gate' })).toBeVisible()
   const style = page.getByRole('button', { name: 'Auto-layout style' })
   await style.click()
@@ -232,6 +235,9 @@ test('cards in nested groups follow saved layouts after the groups are dragged',
   const members = JSON.stringify(project.board().groups.map((g) => [g.id, g.parent, g.nodes.toSorted()]))
   // A saved layout from elsewhere (auto layout, an agent) must move the carried cards on screen too.
   project.setLayout({ [ids[0]]: { x: 2000, y: 2000 }, [ids[1]]: { x: 2400, y: 2000 }, [attic]: { x: 2000, y: 2400 } }, board)
+  // Off-screen cards are not rendered; fit the view so the moved cards are on screen.
+  await expect(card(attic)).toHaveCount(0)
+  await page.getByRole('button', { name: 'Fit view' }).click()
   for (const id of [...ids, attic])
     await expect
       .poll(async () => {

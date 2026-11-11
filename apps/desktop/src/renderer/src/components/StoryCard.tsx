@@ -70,6 +70,8 @@ export const StoryCard = memo(function StoryCard({ data, selected }: NodeProps<N
             <img
               src={mediaUrl(cover)}
               alt=""
+              loading="lazy"
+              decoding="async"
               className="block max-h-40 w-full rounded-t-lg object-cover"
               draggable={false}
               onDoubleClick={() => openImage(mediaUrl(cover))}
