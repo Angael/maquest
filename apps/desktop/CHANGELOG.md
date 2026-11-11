@@ -1,5 +1,11 @@
 # @maquest/desktop
 
+## 0.11.3
+
+### Patch Changes
+
+- 97f3acd: The live notes editor now fills the whole panel and scrolls on its own when notes outgrow it. Agents check whether live notes are already handled and clear them once done, or raise open items with you.
+
 ## 0.11.2
 
 ### Patch Changes
