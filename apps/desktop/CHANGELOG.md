@@ -1,5 +1,11 @@
 # @maquest/desktop
 
+## 0.12.0
+
+### Minor Changes
+
+- 0bc2330: The image viewer has a zoom bar: a smooth slider for precise zoom, zoom in/out buttons, the current percentage, and one-click "100%" (actual pixels) and "Fit" buttons.
+
 ## 0.11.5
 
 ### Patch Changes
