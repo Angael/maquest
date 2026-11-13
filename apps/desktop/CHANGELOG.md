@@ -1,5 +1,11 @@
 # @maquest/desktop
 
+## 0.12.1
+
+### Patch Changes
+
+- 02b25cb: Two-finger touchpad scrolling now pans the canvas in every direction; pinch zooms. With a mouse wheel, hold Ctrl to zoom.
+
 ## 0.12.0
 
 ### Minor Changes
