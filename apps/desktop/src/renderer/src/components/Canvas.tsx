@@ -6,6 +6,7 @@ import {
   MarkerType,
   Panel,
   ReactFlow,
+  PanOnScrollMode,
   SelectionMode,
   useReactFlow,
   type Connection,
@@ -1009,6 +1010,8 @@ export function Canvas() {
         multiSelectionKeyCode={['Control', 'Meta', 'Shift']}
         selectionKeyCode={null}
         panOnDrag={[1]}
+        panOnScroll
+        panOnScrollMode={PanOnScrollMode.Free}
         deleteKeyCode={null}
         minZoom={0.1}
         onlyRenderVisibleElements
