@@ -34,6 +34,17 @@ import {
   Status,
   type OutlineNode,
   type StoryNode,
+  READ_BUDGET,
+  LiveNotesChangedError,
+  applyGroupTree,
+  bodyHeadings,
+  clipLines,
+  connectNodes,
+  packByBudget,
+  sliceBody,
+  writeNodes,
+  type BatchResult,
+  type Outcome,
 } from '@maquest/core'
 
 function arg(name: string) {
@@ -54,32 +65,86 @@ function project(): Project {
 
 const text = (s: string) => ({ content: [{ type: 'text' as const, text: s }] })
 
-/** Wraps a handler so errors come back to the agent as readable tool errors. */
+/**
+ * The live notes as last delivered to this agent inside a tool result. Only content that actually went out in a
+ * response counts as seen: running a handler, or building a notice that is then discarded, does not.
+ */
 let seenLiveNotes = ''
 
 /** The author's live notes when they changed since this agent last saw them, as a priority notice. */
-function liveNotesNotice(): string {
+function liveNotesNotice(): { notice: string; notes?: string } {
   let notes: string
   try {
     notes = project().liveNotes().trim()
   } catch {
-    return ''
+    return { notice: '' }
   }
-  if (notes === seenLiveNotes) return ''
-  seenLiveNotes = notes
-  if (!notes) return ''
-  return `IMPORTANT: the author updated their live notes (${LIVE_NOTES_FILE}, written mid-session in the Maquest app). Deal with them before continuing. For each item, first check whether the project already reflects it (it may have been handled earlier). Fold unhandled items into the project (write/connect, backlog for loose ideas), and ask the author about anything unclear or that you decide not to do. Once every item is handled, clear the notes with delete({ liveNotes: true }); if some are still open, leave them and raise them with the author. Say what you did.\n<live-notes>\n${notes}\n</live-notes>\n\n`
+  if (notes === seenLiveNotes) return { notice: '' }
+  if (!notes) return { notice: '', notes }
+  return {
+    notes,
+    notice: `IMPORTANT: the author updated their live notes (${LIVE_NOTES_FILE}, written mid-session in the Maquest app). Deal with them before continuing. For each item, first check whether the project already reflects it (it may have been handled earlier). Fold unhandled items into the project (write/connect, backlog for loose ideas), and ask the author about anything unclear or that you decide not to do. Once every item is handled, clear the notes with delete({ liveNotes: true }); if some are still open, leave them and raise them with the author. Say what you did.\n<live-notes>\n${notes}\n</live-notes>\n\n`,
+  }
 }
 
+/** Wraps a handler so errors come back to the agent as readable tool errors. */
 function safe<A>(fn: (a: A) => string | Promise<string>) {
   return async (a: A) => {
     try {
       const out = await fn(a)
-      return text(liveNotesNotice() + out)
+      const { notice, notes } = liveNotesNotice()
+      // Marked seen only here, as the notice goes out together with the result.
+      if (notes !== undefined) seenLiveNotes = notes
+      return text(notice + out)
     } catch (e) {
       return { ...text(`Error: ${(e as Error).message}`), isError: true }
     }
   }
+}
+
+/** Item numbers as compact ranges: "#3", "#5–#9". */
+function itemRanges(indexes: number[]) {
+  const out: string[] = []
+  for (let k = 0; k < indexes.length; k++) {
+    let j = k
+    while (j + 1 < indexes.length && indexes[j + 1] === indexes[j] + 1) j++
+    out.push(j > k ? `#${indexes[k] + 1}–#${indexes[j] + 1}` : `#${indexes[k] + 1}`)
+    k = j
+  }
+  return out.join(', ')
+}
+
+/**
+ * Batch results: one line per applied item when all went through; otherwise an error that says, item by item,
+ * what was saved, what failed and what did not run, so a retry resends only what is needed.
+ */
+function batchText<R>(r: BatchResult<R>, ok: (result: R) => string, noun = 'item'): string {
+  const failed = r.outcomes.filter((o) => o.status === 'failed')
+  const line = (o: Outcome<R>) =>
+    o.status === 'applied' ? `#${o.index + 1} ${ok(o.result)}` : o.status === 'failed' ? `#${o.index + 1} failed: ${o.error}` : ''
+  if (!failed.length) return r.outcomes.map(line).join('\n')
+  const notRun = r.outcomes.filter((o) => o.status === 'not-run').map((o) => o.index)
+  if (r.rejected) {
+    throw new Error(
+      [
+        `Nothing was written: ${failed.length} of ${r.outcomes.length} ${noun}s failed validation (checked against the earlier ${noun}s of this batch). Fix them and resend the whole batch.`,
+        ...failed.map(line),
+        notRun.length ? `Not run (valid): ${itemRanges(notRun)}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    )
+  }
+  const applied = r.outcomes.filter((o) => o.status === 'applied')
+  throw new Error(
+    [
+      `Batch stopped at ${noun} #${failed[0].index + 1}: ${applied.length} applied and saved, 1 failed, ${notRun.length} not run. Do not resend the applied ${noun}s; resend only the failed and not-run ones.`,
+      ...r.outcomes.filter((o) => o.status !== 'not-run').map(line),
+      notRun.length ? `Not run: ${itemRanges(notRun)}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n'),
+  )
 }
 
 const line = (n: StoryNode) => `- ${n.id} [${n.type}${n.status ? `, ${n.status}` : ''}] ${n.title}${n.summary ? ` — ${n.summary}` : ''}`
@@ -106,7 +171,7 @@ function outlineText(nodes: OutlineNode[], depth = 0): string {
     .join('\n')
 }
 
-function nodeText(p: Project, n: StoryNode): string {
+function nodeText(p: Project, n: StoryNode, body?: { heading: string; text: string }): string {
   const titles = new Map(p.listNodes().map((x) => [x.id, x.title]))
   const edges = p.edgesOf(n.id).map((e) => {
     const out = e.source === n.id
@@ -135,7 +200,7 @@ function nodeText(p: Project, n: StoryNode): string {
     meta.join('\n'),
     edges.length ? `## Connections\n${edges.join('\n')}` : '',
     children.length ? `## Children\n${children.join('\n')}` : '',
-    `## Body\n${n.body.trim() || '(empty)'}`,
+    body ? `## ${body.heading}\n${body.text}` : `## Body\n${n.body.trim() || '(empty)'}`,
   ]
     .filter(Boolean)
     .join('\n\n')
@@ -318,19 +383,77 @@ server.registerTool(
   }),
 )
 
+/** A node whose full text is over the read budget: everything but the body, plus how to read the body in parts. */
+function oversizedText(p: Project, n: StoryNode, size: number, budget: number) {
+  const headings = bodyHeadings(n.body)
+  const lines = n.body.split('\n').length
+  const shown = headings.slice(0, 150).map((h) => `- line ${h.line}: ${'#'.repeat(h.level)} ${h.title}`)
+  return nodeText(p, n, {
+    heading: 'Body (not shown: too large for one read)',
+    text: [
+      `The node is ${size.toLocaleString('en')} chars (body ${n.body.length.toLocaleString('en')} chars in ${lines} lines), over this read's budget of ${budget.toLocaleString('en')}.`,
+      `Read part of the body with read({ ids: ["${n.id}"], section: "<heading>" }) or read({ ids: ["${n.id}"], lines: { from: 1, to: 200 } }), or read the file directly (read-only; write changes with "write"): ${p.resolve(n.path)}`,
+      headings.length
+        ? `Headings:\n${shown.join('\n')}${headings.length > shown.length ? `\n- +${headings.length - shown.length} more` : ''}`
+        : 'The body has no headings; read it by lines.',
+    ].join('\n'),
+  })
+}
+
 server.registerTool(
   'read',
   {
     title: 'Read nodes',
-    description:
-      "Full content of nodes: metadata, fields, connections (with edge ids), children and markdown body. Reading scenes also returns the author's style guideline.",
-    inputSchema: { ids: z.array(z.string()).min(1) },
+    description: `Full content of nodes: metadata, fields, connections (with edge ids), children and markdown body. Reading scenes also returns the author's style guideline. Output stays within maxChars (default ${READ_BUDGET.toLocaleString('en')}): whole nodes only; nodes that don't fit are listed at the end to read in another call; a node too large on its own comes back with a heading outline so you can read one section or a line range of its body. Unknown ids are reported with suggestions; the other nodes are still returned.`,
+    inputSchema: {
+      ids: z.array(z.string()).min(1),
+      maxChars: z.number().int().min(2000).optional().describe(`Output budget in characters (default ${READ_BUDGET})`),
+      section: z.string().optional().describe('With one id: only this body section (heading title; up to the next heading of the same or a higher level)'),
+      lines: z
+        .object({ from: z.number().int().min(1), to: z.number().int().min(1).optional() })
+        .optional()
+        .describe('With one id: only these body lines (1-based, inclusive; combines with section)'),
+    },
     annotations: { readOnlyHint: true },
   },
-  safe(({ ids }) => {
+  safe(({ ids, maxChars, section, lines }) => {
     const p = project()
-    const nodes = ids.map((id) => p.requireNode(id))
-    return nodes.map((n) => nodeText(p, n)).join('\n\n---\n\n') + (nodes.some((n) => n.type === 'scene') ? styleReminder(p) : '')
+    const budget = maxChars ?? READ_BUDGET
+    const found: StoryNode[] = []
+    const missing: string[] = []
+    for (const id of new Set(ids)) {
+      const n = p.getNode(id)
+      if (n) found.push(n)
+      else missing.push(p.nodeNotFound(id).message)
+    }
+    if (!found.length) throw new Error(missing.join('\n'))
+    const notFound = missing.length ? `\n\n---\n${missing.join('\n')}` : ''
+    const reminder = found.some((n) => n.type === 'scene') ? styleReminder(p) : ''
+
+    if (section !== undefined || lines) {
+      if (ids.length !== 1) throw new Error('section and lines read part of one node: pass exactly one id')
+      const n = found[0]
+      const part = sliceBody(n.body, { section, from: lines?.from, to: lines?.to })
+      const frame = nodeText(p, n, { heading: '', text: '' }).length + 200
+      const clip = clipLines(part.text, Math.max(500, budget - frame))
+      const last = part.from + clip.lines - 1
+      const more = clip.clipped
+        ? `\n\n(Cut at line ${last} to stay within ${budget} chars; continue with lines: { from: ${last + 1}${lines?.to || section ? `, to: ${part.to}` : ''} }.)`
+        : ''
+      return nodeText(p, n, { heading: `Body (lines ${part.from}–${last} of ${part.total})`, text: clip.text + more }) + notFound + reminder
+    }
+
+    const parts = found.map((n) => {
+      const full = nodeText(p, n)
+      return { n, text: full.length > budget ? oversizedText(p, n, full.length, budget) : full, size: full.length }
+    })
+    const SEP = '\n\n---\n\n'
+    const { included, omitted } = packByBudget(parts, budget, SEP.length)
+    const out = included.map((x) => x.text).join(SEP)
+    const left = omitted.length
+      ? `\n\n---\nNot returned, to stay within ${budget.toLocaleString('en')} chars (read them in another call): ${omitted.map((x) => `${x.n.id} (${x.size.toLocaleString('en')} chars${x.size > budget ? ', too large on its own: a read of it alone returns its outline' : ''})`).join(', ')}`
+      : ''
+    return (out || '(nothing fit in the budget)') + left + notFound + reminder
   }),
 )
 
@@ -340,7 +463,14 @@ const warn = (n: StoryNode) =>
     .join('')
 
 const WriteItem = z.object({
-  id: z.string().optional().describe('Existing node id to update. Omit to create a new node.'),
+  id: z
+    .string()
+    .optional()
+    .describe('Existing node id to update. With create: true, the id of the new node. Omit to create a node with an id made from its title.'),
+  create: z
+    .boolean()
+    .optional()
+    .describe('Create a new node with the given id (fails if that id exists). Without it, id always means an existing node, never a new one.'),
   newId: z.string().optional().describe('On update: rename the node id. Children, connections, board cards and [[links]] in other nodes follow.'),
   type: NodeType.optional().describe(
     `Required when creating: ${NODE_TYPES.join(', ')} or a custom type listed in overview. Changing it on update converts the node.`,
@@ -359,6 +489,12 @@ const WriteItem = z.object({
   pinned: z.boolean().optional().describe('Keep this node fixed during automatic canvas layout'),
   fields: z.record(z.string(), z.string().nullable()).optional().describe('Merged into the existing fields; null removes a field'),
   body: z.string().optional().describe('Markdown body (replaces the existing body)'),
+  bodyFile: z
+    .string()
+    .optional()
+    .describe(
+      'Instead of body, for long prose: path of a UTF-8 markdown file on the machine running Maquest (absolute, or relative to the project root) whose content replaces the body. Only read, never changed or deleted; no frontmatter.',
+    ),
   appendBody: z.string().optional().describe('Markdown appended to the body'),
   edits: z
     .array(
@@ -383,46 +519,18 @@ server.registerTool(
   'write',
   {
     title: 'Create or update nodes',
-    description: `Batch create/update nodes. Types: story, chapter, scene, note, character, location, faction, item, idea (backlog), media. New nodes get starter templates (fields like want/need/flaw for characters, goal/conflict/outcome for scenes). Markdown bodies may embed media: ![alt](media/file.png). Links to other nodes: [[node-id]].`,
+    description: `Batch create/update nodes. Types: story, chapter, scene, note, character, location, faction, item, idea (backlog), media. New nodes get starter templates (fields like want/need/flaw for characters, goal/conflict/outcome for scenes). Markdown bodies may embed media: ![alt](media/file.png). Links to other nodes: [[node-id]]. The whole batch is checked first, in order, so items may use ids created or renamed earlier in it; if any item fails the check, nothing is written. Results are per item (#n): when a batch stops part-way, it says which items were saved, which failed and which did not run.`,
     inputSchema: { nodes: z.array(WriteItem).min(1) },
   },
   safe(({ nodes }) => {
     const p = project()
-    let prose = false
-    const out = nodes
-      .map((n) => {
-        const wroteBody = n.body !== undefined || n.appendBody !== undefined || !!n.edits?.length
-        const place = (id: string) => {
-          for (const b of n.boards ?? []) p.updateBoard(p.board(b).id, { addNodes: [id] })
-          return n.boards?.length ? ` on ${n.boards.join(', ')}` : ''
-        }
-        if (n.id) {
-          const { id, newId, board: _board, boards: _boards, ...patch } = n
-          let r = p.updateNode(id, patch)
-          if (newId) r = p.renameNode(r.id, newId)
-          prose ||= wroteBody && r.type === 'scene'
-          return `updated ${r.id}${r.id !== id ? ` (renamed from ${id})` : ''} (${r.type}) ${r.title}${place(r.id)}${warn(r)}`
-        }
-        if (!n.type || !n.title) throw new Error('Creating a node requires type and title')
-        if (n.edits?.length || n.newId) throw new Error('edits and newId only apply when updating (pass id)')
-        const { board, boards: _boards, newId: _newId, edits: _edits, ...input } = n
-        const target = p.board(board).id
-        const r = p.createNode({
-          ...input,
-          type: n.type,
-          title: n.title,
-          parent: n.parent ?? undefined,
-          status: n.status ?? undefined,
-          clock: n.clock ?? undefined,
-          fields: n.fields && Object.fromEntries(Object.entries(n.fields).filter((e): e is [string, string] => e[1] !== null)),
-          body: n.appendBody ? `${n.body ?? ''}${n.appendBody}` : n.body,
-        })
-        p.updateBoard(target, { addNodes: [r.id] })
-        place(r.id)
-        prose ||= wroteBody && r.type === 'scene'
-        return `created ${r.id} (${r.type}) ${r.title} on ${[target, ...(n.boards ?? []).filter((b) => b !== target)].join(', ')}${warn(r)}`
-      })
-      .join('\n')
+    const r = writeNodes(p, nodes)
+    const out = batchText(r, (w) =>
+      w.action === 'created'
+        ? `created ${w.node.id} (${w.node.type}) ${w.node.title} on ${w.boards.join(', ')}${warn(w.node)}`
+        : `updated ${w.node.id}${w.renamedFrom ? ` (renamed from ${w.renamedFrom})` : ''} (${w.node.type}) ${w.node.title}${w.boards.length ? ` on ${w.boards.join(', ')}` : ''}${warn(w.node)}`,
+    )
+    const prose = r.outcomes.some((o) => o.status === 'applied' && o.result.wroteBody && o.result.node.type === 'scene')
     return out + (prose ? styleReminder(p) : '')
   }),
 )
@@ -435,7 +543,10 @@ server.registerTool(
       "Delete nodes and their connections. Children are detached unless recursive=true. Reports nodes whose bodies still link to a deleted node. Prefer moving unwanted author content into the backlog over deleting it. liveNotes=true clears the author's live notes once every item in them is handled.",
     inputSchema: {
       ids: z.array(z.string()).optional(),
-      liveNotes: z.boolean().optional().describe('Clear the live notes (only after all items are done or confirmed with the author)'),
+      liveNotes: z
+        .boolean()
+        .optional()
+        .describe('Clear the live notes (only after all items are done or confirmed with the author). Refused if the notes changed since you last saw them.'),
       recursive: z.boolean().optional(),
       replaceWith: z
         .string()
@@ -448,8 +559,18 @@ server.registerTool(
     const p = project()
     if (!ids.length && !liveNotes) throw new Error('Pass ids and/or liveNotes=true')
     if (liveNotes) {
-      p.setLiveNotes('')
-      seenLiveNotes = ''
+      // Checked before any node is deleted, so a rejected call changes nothing.
+      try {
+        p.clearLiveNotes(seenLiveNotes)
+        seenLiveNotes = ''
+      } catch (e) {
+        if (!(e instanceof LiveNotesChangedError)) throw e
+        // The notes go out in this error, so from here on they count as seen.
+        seenLiveNotes = e.current
+        throw new Error(
+          `${e.message} The author added or changed notes after you last saw them; ${ids.length ? 'no nodes were deleted either. ' : ''}Handle the current notes below, then call delete({ liveNotes: true }) again.\n<live-notes>\n${e.current}\n</live-notes>`,
+        )
+      }
     }
     if (!ids.length) return 'live notes cleared'
     const deleted: string[] = []
@@ -473,7 +594,7 @@ server.registerTool(
   'connect',
   {
     title: 'Manage connections',
-    description: `Add, update or remove graph connections between nodes. Edge types:\n${EDGE_TYPES.map((t) => `- ${t}: ${EDGE_DESCRIPTIONS[t]}`).join('\n')}\nLabels name the connection in a few words (e.g. "betrays", "rivals since childhood"; max ${EDGE_LABEL_MAX} chars). Don't put status, TODOs or notes in labels. ${REFERENCE_EDGE_TYPES.join('/')} are shown as chips on the source card, so point them from the scene/idea/character to the entity.`,
+    description: `Add, update or remove graph connections between nodes. All ops are checked before any is applied; results are per op (#n). Edge types:\n${EDGE_TYPES.map((t) => `- ${t}: ${EDGE_DESCRIPTIONS[t]}`).join('\n')}\nLabels name the connection in a few words (e.g. "betrays", "rivals since childhood"; max ${EDGE_LABEL_MAX} chars). Don't put status, TODOs or notes in labels. ${REFERENCE_EDGE_TYPES.join('/')} are shown as chips on the source card, so point them from the scene/idea/character to the entity.`,
     inputSchema: {
       ops: z
         .array(
@@ -491,25 +612,16 @@ server.registerTool(
         .min(1),
     },
   },
-  safe(({ ops }) => {
-    const p = project()
-    return ops
-      .map((o) => {
-        if (o.action === 'add') {
-          if (!o.source || !o.target) throw new Error('add requires source and target')
-          const e = p.addEdge({ source: o.source, target: o.target, type: o.type, label: o.label, sourceHandle: o.sourceHandle, targetHandle: o.targetHandle })
-          return `edge ${e.id}: ${e.source} -${e.type}${e.label ? ` "${e.label}"` : ''}-> ${e.target}`
-        }
-        if (!o.id) throw new Error(`${o.action} requires edge id (see "read" output)`)
-        if (o.action === 'remove') {
-          p.removeEdge(o.id)
-          return `removed edge ${o.id}`
-        }
-        const e = p.updateEdge(o.id, o)
-        return `updated edge ${e.id}: ${e.source} -${e.type}${e.label ? ` "${e.label}"` : ''}-> ${e.target}`
-      })
-      .join('\n')
-  }),
+  safe(({ ops }) =>
+    batchText(
+      connectNodes(project(), ops),
+      ({ action, edge: e }) =>
+        action === 'removed'
+          ? `removed edge ${e.id}`
+          : `${action === 'updated' ? 'updated edge' : 'edge'} ${e.id}: ${e.source} -${e.type}${e.label ? ` "${e.label}"` : ''}-> ${e.target}`,
+      'op',
+    ),
+  ),
 )
 
 server.registerTool(
@@ -517,7 +629,7 @@ server.registerTool(
   {
     title: 'Boards (canvases)',
     description:
-      "Boards are separate canvases over the same nodes. Each board shows only the nodes placed on it; none is special, and removing a node from a board keeps it in the project. A board may have phase columns (acts, left to right) — a node's phase is the column it sits in. Groups are bordered areas on a board (rooms, cities, chapters), may nest, and always contain their cards. Actions: list, read (nodes by phase, plus groups with size and position), create (title, phases?, nodes?), update (title?, phases? as ordered titles, removeNodes?), place (nodes onto the board, optionally into a phase or group), group (create a group: title, nodes?, parent?, color?; or edit one given group: title?, nodes? to add, removeNodes?, parent?, color?), ungroup (remove the group frame, keep its cards), layout (auto-arrange the whole board: groups pack their content, shrink to fit and never overlap; pinned cards stay; mode?), delete. Maquest positions cards itself: build groups outermost first, each in one call with all its nodes and its parent, rather than many small edits; after restructuring groups, run layout.",
+      "Boards are separate canvases over the same nodes. Each board shows only the nodes placed on it; none is special, and removing a node from a board keeps it in the project. A board may have phase columns (acts, left to right) — a node's phase is the column it sits in. Groups are bordered areas on a board (rooms, cities, chapters), may nest, and always contain their cards. Actions: list, read (nodes by phase, plus groups with size and position), create (title, phases?, nodes?), update (title?, phases? as ordered titles, removeNodes?), place (nodes onto the board, optionally into a phase or group), group (create a group: title, nodes?, parent?, color?; or edit one given group: title?, nodes? to add, removeNodes?, parent?, color?; or build a whole nested tree at once with groups, then lay out the board), ungroup (remove the group frame, keep its cards), layout (auto-arrange the whole board: groups pack their content, shrink to fit and never overlap; pinned cards stay; mode?), delete. Maquest positions cards itself: to organize a board, prefer one group call with the whole groups tree (it runs layout after) over many small edits; after restructuring groups by hand, run layout.",
     inputSchema: {
       action: z.enum(['list', 'read', 'create', 'update', 'place', 'group', 'ungroup', 'layout', 'delete']),
       id: z.string().optional().describe('Board id (default: the first board)'),
@@ -529,13 +641,33 @@ server.registerTool(
       group: z.string().optional().describe('Group id or title (place, group, ungroup)'),
       parent: z.string().nullable().optional().describe('Parent group id to nest in; null = top level (group)'),
       color: GroupColor.optional(),
+      groups: z
+        .array(
+          z.object({
+            title: z.string(),
+            nodes: z.array(z.string()).optional().describe('Cards in this group (placed on the board if needed)'),
+            parent: z
+              .string()
+              .nullable()
+              .optional()
+              .describe(
+                'Title of another group in this list, or an existing group id/title; null = top level. Omit: top level for new groups, unchanged for existing ones',
+              ),
+            color: GroupColor.optional(),
+          }),
+        )
+        .min(1)
+        .optional()
+        .describe(
+          'group: nested groups to build in one call. A title matching an existing group on the board extends that group; others are created. Checked first (nothing changes if any entry is wrong), then the board is laid out (mode).',
+        ),
       mode: z
         .enum(['smart', 'grid', 'flow-right', 'flow-down', 'classic'])
         .optional()
         .describe('layout: smart (default; flow where linked, grid otherwise), grid, flow-right, flow-down, classic'),
     },
   },
-  safe(async ({ action, id, title, phases, nodes, phase, removeNodes, group, parent, color, mode }) => {
+  safe(async ({ action, id, title, phases, nodes, phase, removeNodes, group, parent, color, groups, mode }) => {
     const p = project()
     switch (action) {
       case 'list':
@@ -561,6 +693,18 @@ server.registerTool(
       }
       case 'group': {
         const board = p.board(id).id
+        if (groups) {
+          if (group || title || nodes || removeNodes || parent !== undefined || color)
+            throw new Error('groups builds a whole tree; pass the group details inside it')
+          const r = await applyGroupTree(p, board, groups, mode ?? 'smart')
+          return (
+            batchText(
+              r,
+              (g) => `${g.action} group ${g.id}: ${g.title}${g.parent ? ` (in ${g.parent})` : ''}, ${g.nodes} card${g.nodes === 1 ? '' : 's'}`,
+              'group',
+            ) + (r.arranged ? `\narranged ${board} (${mode ?? 'smart'})${hints(p, board)}` : '')
+          )
+        }
         if (group) {
           const g = p.updateGroup(board, group, { title, color, parent, addNodes: nodes, removeNodes })
           return `updated group ${g.id}: ${g.title}${hints(p, board)}`
@@ -698,7 +842,7 @@ server.registerTool(
     }
     const p = project()
     const all = types ? p.setTypes(types) : undefined
-    const c = name || kind || description !== undefined ? p.updateConfig({ name, kind, description }) : p.config()
+    const c = name || kind || description !== undefined ? p.updateConfig({ name, kind, ...(description !== undefined && { description }) }) : p.config()
     return `project: ${c.name} (${c.kind})${all ? `\ntypes: ${all.map((t) => t.id).join(', ')}` : ''}`
   }),
 )
