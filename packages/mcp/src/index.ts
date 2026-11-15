@@ -50,6 +50,8 @@ import {
   WIDGETS,
   detectedLine,
   fieldSummary,
+  itemFields,
+  recordsText,
   extraRows,
   isEmptyValue,
   type FieldDef,
@@ -224,6 +226,7 @@ function fieldsText(type: TypeInfo | undefined, n: StoryNode): string[] {
   const defined = (type?.fields ?? []).flatMap((def) => {
     const v = n.fields[def.key]
     if (isEmptyValue(v)) return def.required ? [`${def.key}: (missing, required)`] : []
+    if (def.widget === 'records') return [`${def.key}: ${Array.isArray(v) ? v.length : 0} records\n${recordsText(def, v).replaceAll(/^## /gm, '### ')}`]
     return [`${def.key}: ${fieldSummary(def, v)}`]
   })
   const free = extraRows(type ?? { fields: [] }, n.fields).map(
@@ -301,7 +304,7 @@ function boardText(p: Project, b: Board) {
 }
 
 /** A field as agents need it: key, widget and its settings, e.g. `hp* [meter, max 40] "HP"`. */
-function fieldText(f: FieldDef) {
+function fieldText(f: FieldDef): string {
   const settings = [
     f.widget,
     f.style,
@@ -310,6 +313,8 @@ function fieldText(f: FieldDef) {
     f.min !== undefined && `min ${f.min}`,
     f.max !== undefined && `max ${f.max}`,
     f.modifier && `modifier (v-${f.modifier.base})/${f.modifier.step}`,
+    f.widget === 'records' && `item { ${itemFields(f).fields.map(fieldText).join('; ')} }`,
+    f.groupBy && `grouped by ${f.groupBy}`,
     f.hint && `e.g. ${f.hint}`,
   ].filter(Boolean)
   return `${f.key}${f.required ? '*' : ''} [${settings.join(', ')}]${f.label ? ` "${f.label}"` : ''}`
@@ -324,7 +329,7 @@ function sheetsText(p: Project) {
       const tabs = t.tabs.map((x) =>
         x.kind === 'fields'
           ? `${x.title} (fields${x.fields || x.sections ? `: ${[...(x.fields ?? []), ...(x.sections ?? []).flatMap((s) => s.fields)].join(', ')}` : ''})`
-          : `${x.title}${x.kind === 'cards' ? ' (cards)' : ''}`,
+          : x.title,
       )
       return [`- ${t.id}${t.fields.length ? `: ${t.fields.map(fieldText).join('; ')}` : ''}`, tabs.length ? `  tabs: ${tabs.join(', ')}` : '']
         .filter(Boolean)
@@ -433,7 +438,7 @@ server.registerTool(
       (() => {
         const custom = p.types().filter((t) => !t.builtin)
         return custom.length
-          ? `## Custom types\n${custom.map((t) => `- ${t.id}: ${t.label}${t.library ? ' [library: cards with the same name link here]' : ''}`).join('\n')}`
+          ? `## Custom types\n${custom.map((t) => `- ${t.id}: ${t.label}${t.library ? ' [library: records with the same name link here]' : ''}`).join('\n')}`
           : ''
       })(),
       sheetsText(p),
@@ -646,7 +651,7 @@ server.registerTool(
   {
     title: 'Create or update nodes',
     description: `Batch create/update nodes. Types: story, chapter, scene, note, character, location, faction, item, idea (backlog), media. New nodes get starter templates (fields like want/need/flaw for characters, goal/conflict/outcome for scenes). Markdown bodies may embed media: ![alt](media/file.png). Links to other nodes: [[node-id]].
-Entity sheets: each H1 heading (# Title) of a body is a tab in the app; keep one topic per tab (e.g. # Backstory, # Notes) and put numbers and structured data in fields, not in the body. In tabs a type configures as cards, each entry is a card: ## headings group them ("Actions", "Allies", "2/day"), ### Name {meta, …} starts one with its description below (bullets like "- **Name** (meta) — text" work too). Reference text shared by several sheets belongs in one node of a library type (overview marks them); a card named like a library node, or ### [[id]], shows that node's text, so sheets only add local changes.
+Entity sheets: each H1 heading (# Title) of a body is a tab in the app; keep one topic per tab (e.g. # Backstory, # Notes) and put numbers and structured data in fields, not in the body. Lists of things with the same shape (abilities, spells, moves, inventory) go in a records field as [{ name, text, …item keys }]; a records field is written whole. Reference text shared by several sheets belongs in one node of a library type (overview marks them); a record named like a library node, or "[[id]]", shows that node's text, so records only add local changes.
 Results list what Maquest detected about the written nodes (broken links, missing required fields…): fix those or tell the author. The whole batch is checked first, in order, so items may use ids created or renamed earlier in it; if any item fails the check, nothing is written. Results are per item (#n): when a batch stops part-way, it says which items were saved, which failed and which did not run.`,
     inputSchema: { nodes: z.array(WriteItem).min(1) },
   },
@@ -950,11 +955,11 @@ server.registerTool(
         .record(z.string(), TypeDef.partial().nullable())
         .optional()
         .describe(
-          `Add or change node types by id; each setting given replaces the current one, null resets it. Settings: label, plural, color (#rrggbb), icon (lucide name), dir and body (custom types only), library (reference text that same-named cards link to), extends (another type id to inherit fields, and tabs unless set), omit (inherited field keys to drop), fields, tabs.
-fields: what the type's sheet holds, in order: a key (plain text) or { key, label?, widget, hint?, required?, badge? (chip on the canvas card), aliases? (other names checks map to the key), options? (allowed values), keys?/labels? (sub-keys or table columns and their labels), min?/max?, style?, modifier? ({ base, step }: scores show floor((v-base)/step)), signed?, color? }. With extends, an entry with an inherited key changes just the settings it gives.
-Widgets (${WIDGETS.join(', ')}): text "label: value" (options make a choice); subtitle (italic line under the title); quote; stat (big tile: 40 or { value, note }); toggle (true/false); meter (5, "5/9" or { value, max }; style bar|ring|dots|boxes|clock); scores ({ key: number }; style grid|bars|radar|dots); pairs (named values as chips, { Stealth: 6 }); tags; list; refs (node ids); table ([{ column: value }]).
-tabs: the sheet in order. { title, kind: "fields", fields?: [keys] | sections?: [{ title?, fields: [keys] }] } shows fields with their widgets (with no list: every field no other fields tab lists); { title, kind: "prose" | "cards", aliases? } is the body's # Title section, as markdown or as cards. Fields in no tab show as properties under the title.
-Example: {"character": {"fields": [{"key": "hp", "label": "HP", "widget": "meter", "required": true, "badge": true}, {"key": "social", "widget": "scores", "style": "radar", "keys": ["knowledge", "guts", "charm"], "max": 5}], "tabs": [{"title": "Stats", "kind": "fields"}, {"title": "Moves", "kind": "cards"}, {"title": "Story"}]}, "spell": {"label": "Spell", "library": true}}. null as a type resets a built-in or removes an empty custom type.`,
+          `Add or change node types by id; each setting given replaces the current one, null resets it. Settings: label, plural, color (#rrggbb), icon (lucide name), dir and body (custom types only), library (reference text that same-named records link to), extends (another type id to inherit fields, and tabs unless set), omit (inherited field keys to drop), fields, tabs.
+fields: what the type's sheet holds, in order: a key (plain text) or { key, label?, widget, hint?, required?, badge? (chip on the canvas card), aliases? (other names checks map to the key), options? (allowed values), keys?/labels? (sub-keys or table columns and their labels), min?/max?, style?, modifier? ({ base, step }: scores show floor((v-base)/step)), signed?, color?, item?/titleKey?/textKey?/groupBy? (records) }. With extends, an entry with an inherited key changes just the settings it gives.
+Widgets (${WIDGETS.join(', ')}): text "label: value" (options make a choice); subtitle (italic line under the title); quote; stat (big tile: 40 or { value, note }); toggle (true/false); meter (5, "5/9" or { value, max }; style bar|ring|dots|boxes|clock); scores ({ key: number }; style grid|bars|radar|dots); pairs (named values as chips, { Stealth: 6 }); tags; list; refs (node ids); table ([{ column: value }]); records (a searchable list of records, [{ name, text, … }]: item is the schema of one record, fields of any other widget, and checks report records that don't fit it or have other keys; name (titleKey) is required, text (textKey) is the markdown description, groupBy an item key whose options order the groups; style list|cards (tiles with the text on hover); toggles and meters in records set with a click).
+tabs: the sheet in order. { title, kind: "fields", fields?: [keys] | sections?: [{ title?, fields: [keys] }] } shows fields with their widgets (with no list: every field no other fields tab lists); { title, kind: "prose", aliases? } is the body's # Title section as markdown. Fields in no tab show as properties under the title.
+Example: {"character": {"fields": [{"key": "hp", "label": "HP", "widget": "meter", "required": true, "badge": true}, {"key": "social", "widget": "scores", "style": "radar", "keys": ["knowledge", "guts", "charm"], "max": 5}, {"key": "moves", "widget": "records", "groupBy": "kind", "item": [{"key": "kind", "options": ["Basic", "Special"], "required": true}, "cost", {"key": "uses", "widget": "meter", "style": "dots"}]}], "tabs": [{"title": "Stats", "kind": "fields", "fields": ["hp", "social"]}, {"title": "Moves", "kind": "fields", "fields": ["moves"]}, {"title": "Story"}]}, "spell": {"label": "Spell", "library": true}}. null as a type resets a built-in or removes an empty custom type.`,
         ),
       checks: z
         .record(z.string(), z.unknown())

@@ -153,24 +153,51 @@ test('types: invalid fields and tabs are rejected when set and reported when han
   assert.match(p.check().issues.find((i) => i.rule === 'config-invalid')!.message, /types\.character: field hp: style/)
 })
 
-test('shared cards: copies across sheets, and copies of a library node', () => {
+test('shared records: copies across sheets, and copies of a library node', () => {
   const p = tmp()
-  p.setTypes({ character: { tabs: [{ title: 'Spells', kind: 'cards' }] } })
+  p.setTypes({ character: { fields: [{ key: 'spells', widget: 'records', item: ['level'] }] } })
   const text = 'A bright streak flashes to a point you choose and blossoms into an explosion of flame. '.repeat(3)
-  const a = p.createNode({ type: 'character', title: 'Mage', body: `# Spells\n### Fireball\n${text}\n# Notes\nx\n` })
-  const b = p.createNode({ type: 'character', title: 'Priest', body: `# Spells\n- **Fireball** (lvl 3) — ${text}\n# Notes\ny\n` })
+  const a = p.createNode({ type: 'character', title: 'Mage', fields: { spells: [{ name: 'Fireball', text }] } })
+  const b = p.createNode({ type: 'character', title: 'Priest', fields: { spells: [{ name: 'Fireball', level: 3, text }] } })
   p.updateBoard('main', { addNodes: [a.id, b.id] })
-  const before = p.check().issues.filter((i) => i.rule === 'shared-card')
+  const before = p.check().issues.filter((i) => i.rule === 'shared-record')
   assert.equal(before.length, 2)
   assert.match(before[0].hint!, /library type/)
   p.setTypes({ spell: { label: 'Spell', library: true } })
   p.createNode({ type: 'spell', title: 'Fireball', body: text })
-  const after = p.check().issues.filter((i) => i.rule === 'shared-card')
+  const after = p.check().issues.filter((i) => i.rule === 'shared-record')
   assert.deepEqual(
     after.map((i) => i.node),
     [a.id, b.id],
   )
   assert.match(after[0].message, /library node fireball/)
+})
+
+test('records are checked against their item schema; cards tabs are reported', () => {
+  const p = tmp()
+  p.setTypes({
+    character: {
+      fields: [{ key: 'moves', widget: 'records', groupBy: 'kind', item: [{ key: 'kind', options: ['Basic', 'Special'] }] }],
+      tabs: [{ title: 'Moves', kind: 'fields', fields: ['moves'] }],
+    },
+  })
+  assert.throws(() => p.setTypes({ character: { tabs: [{ title: 'Old', kind: 'cards' }] } }), /cards tabs are gone/)
+  // A config written by hand with a cards tab still loads, and the tab is reported.
+  const config = p.config()
+  fs.writeFileSync(
+    path.join(p.root, 'maquest.json'),
+    JSON.stringify({
+      ...config,
+      types: { character: { ...config.types!.character, tabs: [...config.types!.character.tabs!, { title: 'Old', kind: 'cards' }] } },
+    }),
+  )
+  const n = p.createNode({ type: 'character', title: 'Ash', fields: { moves: [{ name: 'Strike', kind: 'Basik' }, { text: 'no name' }] } })
+  p.updateBoard('main', { addNodes: [n.id] })
+  const issues = p.check().issues
+  const invalid = issues.find((i) => i.rule === 'field-invalid')!
+  assert.equal(invalid.message, 'moves: #1 (Strike) kind: expected one of Basic, Special; #2 lacks name')
+  assert.equal(invalid.open, 'Moves')
+  assert.match(issues.find((i) => i.rule === 'config-invalid')!.message, /tab Old: cards tabs are gone/)
 })
 
 test('custom checks require fields, tags and edges', () => {
@@ -186,7 +213,7 @@ test('custom checks require fields, tags and edges', () => {
 
 test('custom checks look inside one tab: match, forbid and allowed headings', () => {
   const p = tmp()
-  p.setTypes({ character: { tabs: [{ title: 'Abilities', kind: 'cards', aliases: ['Zdolności'] }, { title: 'Tactics' }] } })
+  p.setTypes({ character: { tabs: [{ title: 'Abilities', aliases: ['Zdolności'] }, { title: 'Tactics' }] } })
   const body = '# Zdolności\n## Traits\n- **Morale:** flees at half HP\n## As a companion\n- **Bless** (lvl 1)\n# Notes\nMorale is high.\n'
   const n = p.createNode({ type: 'character', title: 'Anselm', body })
   const clean = p.createNode({ type: 'character', title: 'Bram', body: '# Abilities\n## Traits\n- **Keen Smell** — advantage\n# Tactics\nFlees at half HP.\n' })
@@ -221,4 +248,36 @@ test('unreadable node files are reported', () => {
   const files = p.check().issues.filter((i) => i.rule === 'invalid-file')
   assert.equal(files.length, 2)
   assert.match(files.map((i) => i.message).join('\n'), /broken\.md: frontmatter is not valid YAML[\s\S]*wrong\.md: type "location" does not belong/)
+})
+
+test('custom checks scoped to a fields tab read its fields, records as markdown', () => {
+  const p = tmp()
+  p.setTypes({
+    character: {
+      fields: [{ key: 'abilities', widget: 'records', groupBy: 'kind', item: ['kind'] }],
+      tabs: [{ title: 'Abilities', kind: 'fields', fields: ['abilities'] }, { title: 'Tactics' }],
+    },
+  })
+  const n = p.createNode({
+    type: 'character',
+    title: 'Anselm',
+    fields: {
+      abilities: [
+        { name: 'Morale', kind: 'Traits', text: 'flees' },
+        { name: 'Bless', kind: 'As a companion' },
+      ],
+    },
+  })
+  p.updateBoard('main', { addNodes: [n.id] })
+  p.setChecks({}, [
+    { id: 'abilities-only', message: 'Only rules', types: ['character'], tab: 'Abilities', forbid: '\\*\\*(morale|tactics)', headings: ['Traits', 'Actions'] },
+    { id: 'has-abilities', message: 'Needs abilities', types: ['character'], require: { tabs: ['Abilities'] } },
+  ])
+  assert.deepEqual(
+    p
+      .check()
+      .issues.filter((i) => (i.node === n.id && i.rule.startsWith('abilities')) || i.rule === 'has-abilities')
+      .map((i) => i.message),
+    ['Only rules (contains in Abilities "**Morale"; unexpected headings in Abilities: ## As a companion)'],
+  )
 })

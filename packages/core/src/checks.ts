@@ -731,7 +731,9 @@ function customMissing(c: CustomCheck, n: StoryNode, graph: Graph, type: SheetTy
   const scoped = wanted
     ? [
         ...sections.filter((s) => s.title !== null && wanted.some((t) => sameTab(s.title!, t, tabDefs))),
-        ...fieldTabs.filter((f) => f.text && wanted.some((t) => normalizeName(t) === normalizeName(f.title))).map((f) => ({ title: f.title, lines: f.text.split('\n') })),
+        ...fieldTabs
+          .filter((f) => f.text && wanted.some((t) => normalizeName(t) === normalizeName(f.title)))
+          .map((f) => ({ title: f.title, lines: f.text.split('\n') })),
       ]
     : undefined
   if (scoped && !scoped.length) return out
