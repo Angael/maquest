@@ -222,6 +222,7 @@ export function Popover({
   className,
   open,
   onOpenChange,
+  hover,
 }: {
   trigger: ReactElement
   children: ReactNode
@@ -230,10 +231,12 @@ export function Popover({
   className?: string
   open?: boolean
   onOpenChange?: (open: boolean) => void
+  /** Also open on hover after a delay (a click keeps it open). */
+  hover?: boolean
 }) {
   return (
     <BasePopover.Root open={open} onOpenChange={onOpenChange ? (o) => onOpenChange(o) : undefined}>
-      <BasePopover.Trigger render={trigger} />
+      <BasePopover.Trigger render={trigger} openOnHover={hover} delay={hover ? 350 : undefined} closeDelay={hover ? 120 : undefined} />
       <BasePopover.Portal>
         <BasePopover.Positioner side={side} align={align} sideOffset={6} className="z-[60]">
           <BasePopover.Popup className={cn(popupSurface, 'popup-motion p-0', className)}>{children}</BasePopover.Popup>

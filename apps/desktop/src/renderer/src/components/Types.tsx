@@ -1,10 +1,11 @@
 import { useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { Check, Pipette, RotateCcw, Trash2 } from 'lucide-react'
-import { TYPE_ID, typeInfo, type TypeDef } from '@maquest/core/schema'
+import { TYPE_ID, typeInfo, type TabDef, type TypeDef } from '@maquest/core/schema'
+import { ABILITY_TAB_NAMES, normalizeName } from '@maquest/core/sheet'
 import { api } from '../lib/api'
-import { useAction, useConfig, useNodes } from '../lib/queries'
+import { useAction, useConfig, useNodes, useSystems } from '../lib/queries'
 import { useTypes, type TypeStyle } from '../lib/styles'
-import { Button, Input, Label, Textarea, Tooltip, cn } from './ui'
+import { Button, Input, Label, Select, Textarea, Tooltip, cn } from './ui'
 import { IconPicker } from './views/IconPicker'
 import { CreateButton, ListGroup, PageHeader, TwoPane, listRow } from './views/ViewLayout'
 
@@ -23,7 +24,7 @@ const SWATCHES: [string, string][] = [
   ['#a8a29e', 'Stone'],
 ]
 
-type Change = Partial<Record<keyof TypeDef, string | string[] | null>>
+type Change = Partial<Record<keyof TypeDef, string | string[] | boolean | TabDef[] | null>>
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e)).replace(/^Error invoking remote method 'api': (Error: )?/, '')
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
@@ -230,6 +231,8 @@ function TypeEditor({
           <IconPicker value={t.iconName} color={t.color} onChange={(icon) => save({ icon })} />
         </section>
 
+        <SheetSettings t={t} save={save} />
+
         {!t.builtin && (
           <section className="space-y-4">
             <div>
@@ -307,6 +310,95 @@ function TypeEditor({
 }
 
 /** Swatches as a radio group (arrow keys move the choice) plus a custom color well. */
+const titles = (s: string) =>
+  s
+    .split(',')
+    .map((x) => x.trim())
+    .filter(Boolean)
+
+/** Statblock system, body tabs and library flag of a type. */
+function SheetSettings({ t, save }: { t: TypeStyle; save: (change: Change | null) => void }) {
+  const systems = useSystems()
+  const current = t.tabs.map((x) => x.title).join(', ')
+  const abilities = t.tabs
+    .filter((x) => x.kind === 'abilities')
+    .map((x) => x.title)
+    .join(', ')
+  const [tabs, setTabs] = useState(current)
+  const [abilityTabs, setAbilityTabs] = useState(abilities)
+  const [seen, setSeen] = useState({ current, abilities })
+  if (seen.current !== current || seen.abilities !== abilities) {
+    setSeen({ current, abilities })
+    setTabs(current)
+    setAbilityTabs(abilities)
+  }
+  const commitTabs = (list: string, abilityList: string) => {
+    const kinds = new Set(titles(abilityList).map(normalizeName))
+    const next: TabDef[] = titles(list).map((title) => {
+      const old = t.tabs.find((x) => x.title === title)
+      const kind = kinds.has(normalizeName(title)) || (!abilityList.trim() && ABILITY_TAB_NAMES.includes(normalizeName(title))) ? 'abilities' : 'prose'
+      return { ...old, title, kind }
+    })
+    if (JSON.stringify(next) !== JSON.stringify(t.tabs)) save({ tabs: next.length ? next : null })
+  }
+  return (
+    <section className="space-y-4">
+      <div>
+        <h3 className="text-sm font-medium text-fg">Sheet</h3>
+        <p className="mt-0.5 text-xs text-fg-subtle">How {t.plural.toLowerCase()} show in the inspector: a statblock tab and the body's # headings as tabs.</p>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <Label>Statblock system</Label>
+          <Select aria-label="Statblock system" value={t.system ?? ''} onChange={(e) => save({ system: e.target.value || null })}>
+            <option value="">None</option>
+            {[...systems.values()].map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.label}
+              </option>
+            ))}
+            {t.system && !systems.has(t.system) && <option value={t.system}>{t.system} (unknown)</option>}
+          </Select>
+        </div>
+        {!t.builtin && (
+          <label className="flex items-end gap-2 pb-1.5 text-sm text-fg-muted">
+            <input type="checkbox" checked={t.library} className="size-4 accent-[var(--color-accent)]" onChange={(e) => save({ library: e.target.checked })} />
+            Rules library
+            <span className="text-xs text-fg-faint">(spells, conditions)</span>
+          </label>
+        )}
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <Label>Tabs</Label>
+          <Input
+            aria-label="Tabs"
+            placeholder="Abilities, Backstory, Notes"
+            value={tabs}
+            onChange={(e) => setTabs(e.target.value)}
+            onKeyDown={blurOnEnter}
+            onBlur={() => commitTabs(tabs, abilityTabs)}
+          />
+        </div>
+        <div>
+          <Label>Shown as ability cards</Label>
+          <Input
+            aria-label="Ability tabs"
+            placeholder="Abilities"
+            value={abilityTabs}
+            onChange={(e) => setAbilityTabs(e.target.value)}
+            onKeyDown={blurOnEnter}
+            onBlur={() => commitTabs(tabs, abilityTabs)}
+          />
+        </div>
+      </div>
+      <p className="-mt-2 text-xs text-fg-faint">
+        Comma separated, in order. New {t.plural.toLowerCase()} start with these headings; other # headings in a body still become tabs.
+      </p>
+    </section>
+  )
+}
+
 function ColorPicker({ value, onChange }: { value: string; onChange: (color: string) => void }) {
   const group = useRef<HTMLDivElement>(null)
   const current = value.toLowerCase()

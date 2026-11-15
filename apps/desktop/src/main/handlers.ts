@@ -21,6 +21,7 @@ import {
   type GroupPatch,
   type LayoutExtras,
   type Position,
+  type QuickFix,
 } from '@maquest/core'
 import { ProjectHistory } from './history'
 import { isGitRepo, syncFromRemote } from './gitSync'
@@ -276,6 +277,17 @@ export const handlers = {
   defaultGuideline: (id: string) => p().defaultGuideline(id),
   setGuideline: (id: string, patch: { title?: string; body?: string; scope?: GuidelineScope; disabled?: boolean }) => p().setGuideline(id, patch),
   resetGuideline: (id: string) => p().resetGuideline(id),
+  /** Maquest checks over the whole project (the Problems menu). */
+  checks: () => p().check(),
+  /** Applies a quick fix from an issue as one undo step. */
+  applyFix: async (fix: QuickFix) => {
+    if (fix.kind !== 'arrange') return history.record(p(), () => void p().applyFix(fix))
+    const plan = await p().planArrange(fix.board)
+    history.record(p(), () => p().setLayout(plan.positions, plan.board, { groups: plan.groups }))
+  },
+  /** Changes check rule settings (null resets a rule). */
+  setChecks: (patch: Record<string, unknown>) => p().setChecks(patch),
+  setSystems: (patch: Record<string, unknown>) => p().setSystems(patch),
   importMedia: (absPath: string) => p().importMedia(absPath),
   writeMedia: (name: string, data: Uint8Array) => p().writeMedia(name, data),
   listMedia: () => p().listMedia(),

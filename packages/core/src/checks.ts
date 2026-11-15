@@ -523,7 +523,7 @@ export function runChecks(input: CheckInput): CheckReport {
     const minChars = Number(opts('shared-ability').minChars ?? 120)
     const library = abilityLibrary(nodes, types)
     const libraryTypes = types.filter((t) => t.library)
-    const seen = new Map<string, { node: string; name: string }[]>()
+    const seen = new Map<string, { node: string; name: string; text: string }[]>()
     for (const n of nodes) {
       if (typeOf.get(n.type)?.library || muted(n, 'shared-ability')) continue
       for (const a of bodyAbilities(n.body, typeOf.get(n.type)?.tabs)) {
@@ -539,10 +539,12 @@ export function runChecks(input: CheckInput): CheckReport {
           })
           continue
         }
-        seen.set(key, [...(seen.get(key) ?? []), { node: n.id, name: a.name }])
+        seen.set(key, [...(seen.get(key) ?? []), { node: n.id, name: a.name, text: a.text }])
       }
     }
-    for (const copies of seen.values()) {
+    for (const all of seen.values()) {
+      // Same name is not enough ("Tactics" differs per sheet): a copy needs similar text in another node.
+      const copies = all.filter((c) => all.some((o) => o.node !== c.node && similar(o.text, c.text)))
       const where = [...new Set(copies.map((c) => c.node))]
       if (where.length < 2) continue
       const lib = libraryTypes[0]
@@ -683,6 +685,23 @@ export function runChecks(input: CheckInput): CheckReport {
 }
 
 const count = (issues: Issue[], s: Severity) => issues.filter((i) => i.severity === s).length
+
+const wordSet = (s: string) =>
+  new Set(
+    normalizeName(s)
+      .split(' ')
+      .filter((w) => w.length >= 4),
+  )
+
+/** Rough text similarity: shared longer words over all of them (Jaccard). */
+function similar(a: string, b: string) {
+  const x = wordSet(a)
+  const y = wordSet(b)
+  if (!x.size || !y.size) return false
+  let shared = 0
+  for (const w of x) if (y.has(w)) shared++
+  return shared / (x.size + y.size - shared) >= 0.3
+}
 
 /** Whether an H1 section renders as ability cards (configured, or a default ability heading). */
 function isAbilityTab(title: string, tabs: readonly TabDef[]) {

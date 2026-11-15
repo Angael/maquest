@@ -1,8 +1,9 @@
-import { memo, type CSSProperties } from 'react'
+import { memo, useMemo, type CSSProperties } from 'react'
 import { Handle, Position, useConnection, type Node, type NodeProps } from '@xyflow/react'
 import { Maximize2, Pin, Search } from 'lucide-react'
 import { openImage } from './Lightbox'
-import { useAction } from '../lib/queries'
+import { useAction, useSystems } from '../lib/queries'
+import { isEmptyStat, statLabel, statSummary, statText, systemIdOf } from '@maquest/core/sheet'
 import type { EdgeType, NodeType, StoryNode } from '@maquest/core/schema'
 import { useUI } from '../lib/store'
 import { ClockDial } from './ClockDial'
@@ -33,6 +34,15 @@ export const StoryCard = memo(function StoryCard({ data, selected }: NodeProps<N
   const clock = n.clock
   const status = n.status ? STATUS_STYLE[n.status] : null
   const summary = n.summary || n.fields.role
+  const systems = useSystems()
+  const badges = useMemo(() => {
+    const id = systemIdOf(n, S)
+    const system = id ? systems.get(id) : undefined
+    if (!system || !n.stats) return []
+    return system.stats
+      .filter((d) => d.badge && !isEmptyStat(n.stats![d.key]))
+      .map((d) => ({ key: d.key, label: statLabel(d), value: statText(n.stats![d.key]).value || statSummary(d, n.stats![d.key]) }))
+  }, [n, S, systems])
 
   const pin = (
     <button
@@ -112,6 +122,16 @@ export const StoryCard = memo(function StoryCard({ data, selected }: NodeProps<N
             {summary && (
               <div data-card-summary className="mt-1 text-xs leading-[1.45] break-words text-fg-muted">
                 {summary}
+              </div>
+            )}
+            {badges.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1 text-2xs" data-card-stats>
+                {badges.map((b) => (
+                  <span key={b.key} className="tabular inline-flex h-5 max-w-full items-center gap-1 rounded bg-hover px-1.5 text-fg-muted">
+                    <span className="text-fg-subtle">{b.label}</span>
+                    <span className="truncate">{b.value}</span>
+                  </span>
+                ))}
               </div>
             )}
             {(clock || data.clues !== undefined) && (

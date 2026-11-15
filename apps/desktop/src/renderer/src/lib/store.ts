@@ -28,6 +28,9 @@ type UI = {
   layoutMode: LayoutMode
   /** Node the canvas should center on once it is rendered. */
   pendingFocus: string | null
+  /** A sheet tab to open once the node's inspector shows it (e.g. from the Problems menu). Not persisted. */
+  sheetRequest: { id: string; tab: 'stats'; edit: boolean } | null
+  requestSheet: (r: { id: string; tab: 'stats'; edit: boolean } | null) => void
   /** Selection each view had when it was left, restored on return. */
   viewSelections: Partial<Record<View, { selection: Selection; selectedNodeIds: string[] }>>
   /** Nodes pinned as inspector tabs. */
@@ -84,6 +87,8 @@ export const useUI = create<UI>()(
       referenceLines: false,
       layoutMode: 'smart',
       pendingFocus: null,
+      sheetRequest: null,
+      requestSheet: (sheetRequest) => set({ sheetRequest }),
       viewSelections: {},
       liveNotesOpen: false,
       liveNotesSize: { width: 380, height: 260 },

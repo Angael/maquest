@@ -23,6 +23,7 @@ import { useUI, type View } from '../lib/store'
 import { Button, IconButton, Menu, MenuItem, MenuLabel, MenuSeparator, Popover, Separator, Shortcut, cn } from './ui'
 import { Logo, TitleBar } from './TitleBar'
 import { syncProject } from './SyncToast'
+import { ProblemsMenu } from './Problems'
 
 /** Modifier key label for shortcut hints. */
 export const MOD = window.maquest.platform === 'darwin' ? '⌘' : 'Ctrl'
@@ -42,6 +43,7 @@ export function TopBar() {
       <Separator vertical className="mx-0.5" />
       <ViewTabs />
       <div className="ml-auto flex items-center gap-1 pr-1">
+        <ProblemsMenu />
         <SearchTrigger />
         <GitSyncButton />
         <AgentPopover />

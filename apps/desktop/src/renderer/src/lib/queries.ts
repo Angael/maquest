@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react'
 import { QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ALL_BOARD, MAIN_BOARD, type Board, type Graph, type StoryNode } from '@maquest/core/schema'
+import { resolveSystems } from '@maquest/core/sheet'
 import { api } from './api'
 import { useUI } from './store'
 
@@ -8,9 +9,32 @@ export const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: Infinity, refetchOnWindowFocus: false } },
 })
 
+/** How long file changes settle before checks rerun; agents often write several files in a row. */
+const CHECKS_DEBOUNCE = 600
+
 /** Files on disk are the source of truth: any change (app, agent via MCP, git) refetches everything. */
 export function useLiveProject() {
-  useEffect(() => window.maquest.onChanged(() => void queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] !== 'app' })), [])
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const off = window.maquest.onChanged(() => {
+      void queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] !== 'app' && q.queryKey[0] !== 'checks' })
+      clearTimeout(timer)
+      timer = setTimeout(() => void queryClient.invalidateQueries({ queryKey: ['checks'] }), CHECKS_DEBOUNCE)
+    })
+    return () => {
+      off()
+      clearTimeout(timer)
+    }
+  }, [])
+}
+
+/** Maquest checks for the open project, rerun (debounced) whenever files change. */
+export const useChecks = () => useQuery({ queryKey: ['checks'], queryFn: () => api.checks() })
+
+/** Statblock systems: presets plus the project's own. */
+export function useSystems() {
+  const { data: config } = useConfig()
+  return useMemo(() => resolveSystems(config?.systems).systems, [config])
 }
 
 export const useCurrent = () => useQuery({ queryKey: ['app', 'current'], queryFn: () => api.current() })

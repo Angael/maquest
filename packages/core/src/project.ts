@@ -572,8 +572,8 @@ export class Project {
     })
   }
 
-  /** Applies a quick fix from a check issue. */
-  async applyFix(fix: QuickFix) {
+  /** Applies a quick fix from a check issue (arrange is async: use planArrange, or await this). */
+  applyFix(fix: QuickFix): void | Promise<void> {
     switch (fix.kind) {
       case 'place':
         this.updateBoard(this.board(fix.board).id, { addNodes: [fix.node] })
@@ -615,8 +615,7 @@ export class Project {
         return
       }
       case 'arrange':
-        await this.arrangeBoard(fix.board)
-        return
+        return this.arrangeBoard(fix.board)
     }
   }
 
@@ -1024,6 +1023,12 @@ export class Project {
    * as blocks, shrink-wrapped, without overlaps; pinned cards stay put. Card sizes default to CARD_SIZE.
    */
   async arrangeBoard(boardId?: string, mode: LayoutMode = 'smart', sizes?: CardSizes) {
+    const plan = await this.planArrange(boardId, mode, sizes)
+    this.setLayout(plan.positions, plan.board, { groups: plan.groups, sizes })
+  }
+
+  /** The positions and group rectangles `arrangeBoard` would save, without saving them. */
+  async planArrange(boardId?: string, mode: LayoutMode = 'smart', sizes?: CardSizes) {
     const b = this.board(boardId)
     const nodes = new Map(this.listNodes().map((n) => [n.id, n]))
     const size = sizeOf(sizes)
@@ -1035,7 +1040,7 @@ export class Project {
       .edges.filter((e) => first.has(e.source) && first.has(e.target))
       .map((e) => ({ source: first.get(e.source)!, target: first.get(e.target)! }))
     const { positions, groups } = await arrange(b, cards, edges, { mode })
-    this.setLayout(positions, b.id, { groups, sizes })
+    return { board: b.id, positions, groups }
   }
 
   // ---------- groups ----------

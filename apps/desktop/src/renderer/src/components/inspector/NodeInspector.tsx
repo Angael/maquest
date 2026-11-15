@@ -13,6 +13,7 @@ import { InspectorHeader, useCopy } from './Header'
 import { GhostSelect, GhostText, PropertyRow, TagInput, ghost, oneLine } from './fields'
 import { BoardsProperty, ClockProperty, MediaProperty, STATUSES, STATUS_LABEL, StatusDot, attachMedia } from './properties'
 import { Connections, Contains } from './Connections'
+import { Sheet, useSheet } from '../sheet/Sheet'
 
 type Draft = Pick<StoryNode, 'title' | 'summary' | 'body' | 'fields' | 'tags'>
 /** Unsaved changes; `fields` holds only changed keys, null marking removal. */
@@ -148,14 +149,25 @@ export function NodeInspector({ id }: { id: string }) {
         />
       </div>
 
-      <div className="mx-4 mt-3 border-t border-line" />
-      <MarkdownEditor value={draft.body} onChange={changeBody} variant="document" label="Content" placeholder="Start writing…" minHeight="160px" />
+      <BodyArea node={node} body={draft.body} onBody={changeBody} />
 
       <div className="mt-6 space-y-5 px-4">
         <Contains items={children} />
         <Connections id={id} byId={byId} />
       </div>
     </div>
+  )
+}
+
+/** The body: a tabbed sheet for entities with a statblock or several H1 sections, otherwise one document editor. */
+function BodyArea({ node, body, onBody }: { node: StoryNode; body: string; onBody: (body: string) => void }) {
+  const { tabs } = useSheet(node, body)
+  if (tabs.length) return <Sheet node={node} body={body} onBody={onBody} />
+  return (
+    <>
+      <div className="mx-4 mt-3 border-t border-line" />
+      <MarkdownEditor value={body} onChange={onBody} variant="document" label="Content" placeholder="Start writing…" minHeight="160px" />
+    </>
   )
 }
 
