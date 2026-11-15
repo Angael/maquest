@@ -7,7 +7,20 @@ A desktop app for writing stories, novels, screenplays and tabletop RPG campaign
 - Backlog for raw ideas, which you can promote to anything later
 - Images and videos on the canvas, embedded in markdown, and attached to nodes
 - Built-in writing guidelines (general, RPG, screenplay) that each project can override; also editable by the agent. An "Author's style" guideline captures the author's voice: the agent fills it in from their pages and corrections and sees it whenever it reads or writes scenes
+- Entity sheets: statblocks for any game system, body sections as tabs, and abilities as hoverable cards
+- Maquest checks: project-wide health checks (broken links, nodes on no board, missing statblocks…) for you and the agent
 - Everything is plain markdown and JSON in a folder, so it works with git
+
+## Sheets and statblocks
+
+- A type can use a **statblock system** (Types view → Sheet, or `types.<id>.system` in `maquest.json`). Presets: `dnd-2024`, `pf2e`, `osr`, `blades`, `coc7`, `generic`. A project can define its own or extend a preset under `systems` (e.g. relabel stats in another language). Values live in the node's frontmatter as `stats:`, so numbers stay out of free-form fields and the body.
+- Each `# Heading` of a body is a tab next to the statblock. Types can list their tabs in order (`tabs`); tabs named like Abilities, Actions, Spells (or configured with `kind: abilities`) render as **ability cards**: `## Group` headings group them, `### Name {meta, …}` or a bullet starting with a bold name is one ability. Hover a card for the full text; click to keep it open.
+- Mark a type as a **rules library** (e.g. Spells) and same-named ability cards show that node's text, so rules text lives once and sheets keep only campaign changes.
+- Reading is the default. The pencil edits the statblock or the ability text, prose tabs edit in place, and the document icon edits the whole body at once.
+
+## Maquest checks
+
+The warning/error button in the title bar lists what Maquest detected: broken links and connections, nodes on no board, empty groups, missing or malformed statblocks, stats still kept in fields, rules text copied between sheets, overlong documents, too few clues and more. Issues name the node, say why and what to do, and offer quick fixes or "ignore for this node". Rules are set per project (severity, options, scope by type or tag, and declarative custom checks) in `maquest.json` under `checks` and `customChecks`, or in the menu's Rules tab. Checks rerun shortly after any change. Agents see the same report through `overview({ checks: true })` and after each write.
 
 ## Canvas and editing
 

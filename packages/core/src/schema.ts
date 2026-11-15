@@ -61,6 +61,12 @@ export const NodeMeta = z.object({
   /** Free-form typed fields, e.g. role/goal for characters. */
   fields: z.record(z.string(), z.string()).default({}),
   clock: Clock.optional(),
+  /** Statblock system for this node, overriding its type's (see ProjectConfig.systems). */
+  system: z.string().optional(),
+  /** Structured statblock values keyed by the system's stat keys (numbers, text, maps, lists). */
+  stats: z.record(z.string(), z.unknown()).optional(),
+  /** Per-node check settings: rule ids (or "*") Maquest should not report for this node. */
+  checks: z.object({ off: z.array(z.string()).default([]) }).optional(),
   created: z.string().optional(),
   updated: z.string().optional(),
 })
@@ -334,6 +340,109 @@ export type ProjectKind = z.infer<typeof ProjectKind>
 
 const HEX_COLOR = /^#[0-9a-f]{6}$/i
 
+export const TAB_KINDS = ['prose', 'abilities'] as const
+/** A body tab: the H1 heading `title` (or one of its aliases) and how its content renders. */
+export const TabDef = z.object({
+  title: z.string().min(1),
+  kind: z.enum(TAB_KINDS).default('prose'),
+  aliases: z.array(z.string()).optional(),
+})
+export type TabDef = z.infer<typeof TabDef>
+
+// ---------- statblocks ----------
+
+/**
+ * How one stat renders: `subtitle` (italic line under the title, e.g. "Small humanoid"), `stat` (a key fact tile:
+ * AC, HP, Speed), `line` (label: value, e.g. Senses), `scores` (a grid of numbers, optionally with modifiers),
+ * `bonuses` (named numbers as chips: saves, skills), `tags` (chips: resistances, traits), `track` (current/max bar).
+ */
+export const STAT_KINDS = ['subtitle', 'stat', 'line', 'scores', 'bonuses', 'tags', 'track'] as const
+export const StatKind = z.enum(STAT_KINDS)
+export type StatKind = z.infer<typeof StatKind>
+/** Stat keys: letters (any script), digits, dashes and underscores. */
+export const STAT_KEY = /^[\p{L}\p{N}_-]+$/u
+
+const StatFields = {
+  label: z.string().optional(),
+  kind: StatKind.optional(),
+  /** scores: the keys in order (e.g. str…cha); bonuses: suggested keys. */
+  keys: z.array(z.string()).optional(),
+  /** Display labels of sub-keys, e.g. { str: "STR" }. */
+  labels: z.record(z.string(), z.string()).optional(),
+  /** scores: derived modifier shown next to each score. */
+  modifier: z.enum(['d20', 'none']).optional(),
+  /** bonuses: show numbers with a sign (+2). Default true. */
+  signed: z.boolean().optional(),
+  /** track: default maximum when the value has none. */
+  max: z.number().optional(),
+  required: z.boolean().optional(),
+  /** Shown as a chip on the node's canvas card. */
+  badge: z.boolean().optional(),
+  /** Legacy field names that hold this stat (case-insensitive), so checks can offer to move them. */
+  aliases: z.array(z.string()).optional(),
+  /** What goes here, for agents and placeholders. */
+  hint: z.string().optional(),
+}
+export const StatDef = z.object({ key: z.string().regex(STAT_KEY), ...StatFields })
+export type StatDef = z.infer<typeof StatDef> & { kind: StatKind }
+
+/** A statblock system. `extends` starts from another system; `stats` with an existing key change that stat. */
+export const SystemDef = z.object({
+  label: z.string().optional(),
+  extends: z.string().optional(),
+  /** Label of the statblock tab (default "Stats"). */
+  tab: z.string().optional(),
+  stats: z.array(z.object({ key: z.string().regex(STAT_KEY), ...StatFields })).default([]),
+  /** Stat keys of the base system to drop. */
+  omit: z.array(z.string()).optional(),
+})
+export type SystemDef = z.infer<typeof SystemDef>
+
+// ---------- checks ----------
+
+export const SEVERITIES = ['error', 'warn', 'info'] as const
+export const Severity = z.enum(SEVERITIES)
+export type Severity = z.infer<typeof Severity>
+export const RuleLevel = z.enum([...SEVERITIES, 'off'])
+export type RuleLevel = z.infer<typeof RuleLevel>
+/** A rule's setting in ProjectConfig.checks: a level, or [level, options]. */
+export const RuleSetting = z.union([RuleLevel, z.tuple([RuleLevel]), z.tuple([RuleLevel, z.record(z.string(), z.unknown())])])
+export type RuleSetting = z.infer<typeof RuleSetting>
+
+/** A declarative project check: nodes it applies to must have everything in `require` and nothing in `forbid`. */
+export const CustomCheck = z.object({
+  id: z.string().regex(TYPE_ID, 'check ids are lowercase slugs'),
+  severity: Severity.default('warn'),
+  message: z.string().min(1),
+  hint: z.string().optional(),
+  types: z.array(z.string()).optional(),
+  tags: z.array(z.string()).optional(),
+  excludeTags: z.array(z.string()).optional(),
+  require: z
+    .object({
+      fields: z.array(z.string()).optional(),
+      stats: z.array(z.string()).optional(),
+      /** At least one of these tags. */
+      tags: z.array(z.string()).optional(),
+      summary: z.boolean().optional(),
+      body: z.boolean().optional(),
+      media: z.boolean().optional(),
+      parent: z.boolean().optional(),
+      /** A connection of each of these types (either direction). */
+      edges: z.array(z.string()).optional(),
+      /** Body tabs (H1 headings) that must exist. */
+      tabs: z.array(z.string()).optional(),
+    })
+    .optional(),
+  /** Text that must not appear in the body or fields (regular expression, case-insensitive). */
+  forbid: z.string().optional(),
+  maxWords: z.number().int().positive().optional(),
+})
+export type CustomCheck = z.infer<typeof CustomCheck>
+
+/** Custom type ids that are rules libraries unless configured otherwise. */
+export const LIBRARY_TYPE_IDS = ['spell', 'ability', 'power', 'feat', 'condition', 'talent', 'move', 'technique']
+
 /** Look of a node type: built-in defaults; projects may override any of these and add their own types. */
 export const TypeDef = z.object({
   label: z.string().min(1).optional(),
@@ -350,8 +459,17 @@ export const TypeDef = z.object({
   fields: z.array(z.string().min(1)).optional(),
   /** Custom types only: starter body for new nodes. */
   body: z.string().optional(),
+  /** Statblock system its nodes use (a preset like "dnd-2024" or one defined in ProjectConfig.systems). */
+  system: z.string().optional(),
+  /** Body tabs: H1 headings of the body shown as tabs, in this order; `abilities` tabs render as ability cards. */
+  tabs: z.array(TabDef).optional(),
+  /** Reusable rules text (spells, abilities, conditions): ability cards with the same name link to these nodes. */
+  library: z.boolean().optional(),
 })
 export type TypeDef = z.infer<typeof TypeDef>
+
+/** Settings of built-in types that projects may change. */
+export const BUILTIN_TYPE_KEYS = ['label', 'plural', 'color', 'icon', 'system', 'tabs', 'library'] as const
 
 export const BUILTIN_TYPE_DEFS: Record<BuiltinType, { label: string; plural: string; color: string; icon: string }> = {
   story: { label: 'Story', plural: 'Stories', icon: 'book-open', color: '#f59e0b' },
@@ -379,6 +497,10 @@ export type TypeInfo = {
   entity: boolean
   fields: string[]
   body: string
+  system?: string
+  tabs: TabDef[]
+  /** Reusable rules text; ability cards link to these nodes by name. */
+  library: boolean
 }
 
 const titleCase = (s: string) => s.replaceAll('-', ' ').replace(/^./, (c) => c.toUpperCase())
@@ -398,6 +520,9 @@ export function typeInfo(id: NodeType, def: TypeDef = {}): TypeInfo {
       entity: (ENTITY_TYPES as readonly string[]).includes(id),
       fields: [],
       body: '',
+      system: def.system,
+      tabs: def.tabs ?? [],
+      library: def.library ?? false,
     }
   }
   const label = def.label ?? titleCase(id)
@@ -412,6 +537,9 @@ export function typeInfo(id: NodeType, def: TypeDef = {}): TypeInfo {
     entity: true,
     fields: def.fields ?? [],
     body: def.body ?? '',
+    system: def.system,
+    tabs: def.tabs ?? [],
+    library: def.library ?? LIBRARY_TYPE_IDS.includes(id),
   }
 }
 
@@ -427,6 +555,15 @@ export const ProjectConfig = z.object({
   description: z.string().optional(),
   /** Overrides for built-in types and definitions of custom ones, keyed by type id. */
   types: z.record(NodeType, TypeDef).optional(),
+  /**
+   * Statblock systems by id, adding to or overriding the presets (see sheet.ts). Kept raw here so one bad entry
+   * never makes the whole config unreadable; checks report invalid entries.
+   */
+  systems: z.record(z.string(), z.unknown()).optional(),
+  /** Check rules: rule id → "error" | "warn" | "info" | "off", or [severity, options]. Validated by the checks. */
+  checks: z.record(z.string(), z.unknown()).optional(),
+  /** Project-defined declarative checks (see CustomCheck). */
+  customChecks: z.array(z.unknown()).optional(),
   version: z.literal(1).default(1),
 })
 export type ProjectConfig = z.infer<typeof ProjectConfig>
