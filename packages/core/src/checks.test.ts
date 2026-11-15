@@ -6,7 +6,12 @@ import test from 'node:test'
 import { Project } from './project'
 import { detectedLine } from './checks'
 
-const tmp = () => Project.init(fs.mkdtempSync(path.join(os.tmpdir(), 'maquest-checks-')), { name: 'Checks' })
+const tmp = (statuses = false) => {
+  const p = Project.init(fs.mkdtempSync(path.join(os.tmpdir(), 'maquest-checks-')), { name: 'Checks' })
+  // Most tests are about other rules; the status rule has its own test.
+  if (!statuses) p.setChecks({ 'missing-status': 'off' })
+  return p
+}
 const rules = (p: Project, node?: string) =>
   p
     .check()
@@ -19,6 +24,19 @@ test('a fresh project with placed nodes is clean', () => {
   p.updateBoard('main', { addNodes: [n.id] })
   assert.deepEqual(p.check().issues, [])
   assert.equal(detectedLine(p.check().counts), '')
+})
+
+test('every node should have a status (warn by default, media skipped)', () => {
+  const p = tmp(true)
+  const hall = p.createNode({ type: 'location', title: 'Hall' })
+  const done = p.createNode({ type: 'location', title: 'Done', status: 'done' })
+  p.updateBoard('main', { addNodes: [hall.id, done.id] })
+  assert.deepEqual(
+    p.check().issues.map((i) => [i.rule, i.node, i.severity]),
+    [['missing-status', hall.id, 'warn']],
+  )
+  p.updateNode(hall.id, { status: 'draft' })
+  assert.deepEqual(rules(p), [])
 })
 
 test('integrity: broken links, connections and cards, with fixes', async () => {
@@ -67,7 +85,7 @@ test('rules are configurable and nodes can opt out', () => {
   const n = p.createNode({ type: 'note', title: 'Long', body: 'word '.repeat(30) })
   p.updateBoard('main', { addNodes: [n.id] })
   assert.deepEqual(rules(p), [])
-  p.setChecks({ 'long-body': ['error', { maxWords: 10 }], 'missing-summary': 'info' })
+  p.setChecks({ 'long-body': ['error', { maxWords: 10 }], 'missing-summary': 'info', 'missing-status': 'off' })
   assert.deepEqual(
     p.check().issues.map((i) => [i.rule, i.severity]),
     [

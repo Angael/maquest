@@ -1,9 +1,9 @@
 /**
- * Entity sheets: field values and their widgets, the tabs of a node, and cards. Browser-safe (no Node imports), so
+ * Entity sheets: field values and their widgets, records, and the tabs of a node. Browser-safe (no Node imports), so
  * the app renders exactly what the MCP server and the checks see. Nothing here knows any game or genre: types define
  * their fields and tabs in maquest.json.
  */
-import type { FieldDef, StoryNode, TabDef, TypeInfo, Widget } from './schema'
+import { itemFields, type FieldDef, type StoryNode, type TabDef, type TypeInfo, type Widget } from './schema'
 
 // ---------- values ----------
 
@@ -198,6 +198,10 @@ export function fieldSummary(def: FieldDef, v: unknown): string {
       const { columns, rows } = tableRows(def, v)
       return rows.map((r) => columns.map((c) => r[c.key] ?? '').join(' | ')).join('; ')
     }
+    case 'records': {
+      const groups = recordGroups(def, recordList(def, v))
+      return groups.map((g) => `${g.title ? `${g.title}: ` : ''}${g.records.map((r) => r.name).join(', ')}`).join('; ')
+    }
     default: {
       const t = noted(v)
       return t.note ? `${t.value} (${t.note})` : t.value
@@ -244,6 +248,8 @@ export function fieldProblem(def: FieldDef, v: unknown): string | null {
       return toBool(v) === null ? 'expected yes or no (true/false)' : null
     case 'table':
       return Array.isArray(v) && v.every((r) => isMap(r) || isEmptyValue(r)) ? null : 'expected a list of rows like [{ name: …, … }]'
+    case 'records':
+      return recordProblems(def, v).slice(0, 3).join('; ') || null
     case 'tags': {
       const bad = listItems(v).filter((t) => !allowed(t))
       return bad.length ? `${bad.join(', ')} not ${choices()}` : null
@@ -365,7 +371,7 @@ export type SheetType = { fields: readonly FieldDef[]; tabs: readonly TabDef[] }
 
 export type SheetTab =
   | { kind: 'fields'; key: string; title: string; sections: FieldSection[] }
-  | { kind: 'prose' | 'cards'; key: string; title: string; section: number; text: string }
+  | { kind: 'prose'; key: string; title: string; section: number; text: string }
 
 /** Whether a heading names a tab (by title or alias). */
 export const tabMatches = (def: Pick<TabDef, 'title' | 'aliases'>, title: string) =>
@@ -412,7 +418,7 @@ export function propertyRows(type: SheetType, values: Record<string, unknown> = 
 }
 
 /**
- * The tabs of a node, in the type's order: fields tabs always, prose and cards tabs when the body has their section.
+ * The tabs of a node, in the type's order: fields tabs always, prose tabs when the body has their section.
  * The text before the first heading is "Overview", ahead of the body tabs; sections the type doesn't name follow at
  * the end. Without fields tabs, a body needs at least two H1 sections to get tabs, so plain documents stay one editor.
  */
@@ -433,7 +439,7 @@ export function sheetTabs(body: string, type: SheetType = { fields: [], tabs: []
     for (const { s, i } of withHeading) {
       if (used.has(i) || !tabMatches(def, s.title!)) continue
       used.add(i)
-      out.push({ kind: def.kind, key: `s${i}:${s.title}`, title: s.title!, section: i, text: sectionText(s) })
+      out.push({ kind: 'prose', key: `s${i}:${s.title}`, title: s.title!, section: i, text: sectionText(s) })
     }
   }
   for (const { s, i } of withHeading) if (!used.has(i)) out.push({ kind: 'prose', key: `s${i}:${s.title}`, title: s.title!, section: i, text: sectionText(s) })
@@ -449,138 +455,127 @@ export function sheetTabs(body: string, type: SheetType = { fields: [], tabs: []
   return out
 }
 
-// ---------- cards ----------
+// ---------- records ----------
 
-export type Card = {
+export type RecordEntry = {
+  /** Position in the list. */
+  index: number
+  /** Display name; a [[link]] in it is resolved to `ref`. */
   name: string
-  /** Node id from a [[link]] in the name. */
+  /** Node id from a [[link]] name. */
   ref?: string
-  /** Short facts shown as chips: level, cost, range, uses. */
-  meta: string[]
+  /** The group (value of the groupBy key), if the field groups. */
+  group?: string
   /** Markdown description. */
   text: string
+  /** The record's own values, by item key. */
+  values: Record<string, unknown>
 }
-export type CardGroup = { title: string | null; intro: string; cards: Card[] }
+export type RecordGroup = { title?: string; records: RecordEntry[] }
 
-const LINK = /^\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/
+const LINK = /^\s*\[\[([^\]|]+)(?:\|([^\]]+))?\]\]\s*(.*)$/
 
-/** "Name {a, b}" / "[[id|Name]] {a}" / "**Name**" → name, ref, meta. */
-function cardHead(raw: string): Pick<Card, 'name' | 'ref' | 'meta'> {
-  let s = raw.trim()
-  let meta: string[] = []
-  const braces = /\s*\{([^}]*)\}\s*$/.exec(s)
-  if (braces) {
-    meta = splitMeta(braces[1])
-    s = s.slice(0, braces.index).trim()
-  }
-  s = s
-    .replaceAll(/^\*+|\*+$/g, '')
-    .replace(/[.:]$/, '')
-    .trim()
-  const link = LINK.exec(s)
-  if (link) {
-    const rest = s.slice(link[0].length).trim()
-    return { name: (link[2] ?? link[1]).trim() + (rest ? ` ${rest}` : ''), ref: link[1].trim(), meta }
-  }
-  return { name: s, meta }
-}
-
-const splitMeta = (s: string) =>
-  s
-    .split(/[,;·|]/)
-    .map((x) => x.trim())
-    .filter(Boolean)
-
-/** A bullet or paragraph that starts with a bold name (or a [[link]]): "- **Fireball** (lvl 3) — text". */
-function cardLine(line: string): Card | null {
-  const m = /^(?:[-*+]\s+)?(?:(\*{2,3})(.+?)\1|(\[\[[^\]]+\]\]))(.*)$/.exec(line)
-  if (!m) return null
-  const head = cardHead(m[2] ?? m[3])
-  if (!head.name) return null
-  let rest = m[4].trim()
-  const paren = /^\(([^)]*)\)/.exec(rest)
-  if (paren) {
-    head.meta = [...head.meta, ...splitMeta(paren[1])]
-    rest = rest.slice(paren[0].length).trim()
-  }
-  rest = rest.replace(/^(?:[—–:-]|\.(?!\d))\s*/, '')
-  return { ...head, text: rest }
+/** The records of a records field, in order (entries that aren't maps are skipped). */
+export function recordList(def: FieldDef, v: unknown): RecordEntry[] {
+  if (!Array.isArray(v)) return []
+  const title = def.titleKey ?? 'name'
+  const text = def.textKey ?? 'text'
+  return v.flatMap((raw, index) => {
+    if (!isMap(raw)) return []
+    let name = plainText(raw[title]).trim()
+    let ref: string | undefined
+    const link = LINK.exec(name)
+    if (link) {
+      ref = link[1].trim()
+      name = `${(link[2] ?? link[1]).trim()}${link[3] ? ` ${link[3]}` : ''}`
+    }
+    const group = def.groupBy ? plainText(raw[def.groupBy]).trim() || undefined : undefined
+    return [{ index, name, ...(ref && { ref }), ...(group && { group }), text: plainText(raw[text]).trim(), values: raw }]
+  })
 }
 
-/**
- * Cards from a cards tab. H2 headings group them (e.g. "Reactions", "1/day", "Allies"); each H3 is one card with its
- * content as the description, `### Name {meta, …}`; bullets or paragraphs that start with a bold name are cards too,
- * so plain markdown lists work as is. Other text stays as the group's intro.
- */
-export function parseCards(text: string): { intro: string; groups: CardGroup[] } {
-  const groups: CardGroup[] = [{ title: null, intro: '', cards: [] }]
-  const intro: string[][] = [[]]
-  let current: Card | null = null
-  let fromLine = false
-  let fence: string | null = null
-  const close = () => {
-    if (current) current.text = current.text.trim()
-    current = null
+/** Records by group: groups in the order of the groupBy field's options, then others as they first appear. */
+export function recordGroups(def: FieldDef, records: readonly RecordEntry[]): RecordGroup[] {
+  if (!def.groupBy) return records.length ? [{ records: [...records] }] : []
+  const order = itemFields(def).fields.find((f) => f.key === def.groupBy)?.options ?? []
+  const groups = new Map<string, RecordEntry[]>()
+  for (const o of order) groups.set(normalizeName(o), [])
+  const titles = new Map(order.map((o) => [normalizeName(o), o]))
+  for (const r of records) {
+    const key = normalizeName(r.group ?? '')
+    if (!titles.has(key)) titles.set(key, r.group ?? '')
+    groups.set(key, [...(groups.get(key) ?? []), r])
   }
-  for (const line of text.split('\n')) {
-    const f = /^\s*(```|~~~)/.exec(line)
-    if (f) fence = fence === null ? f[1] : fence === f[1] ? null : fence
-    const inFence = fence !== null || !!f
-    const h = inFence ? null : /^(#{2,6})\s+(.+?)\s*#*\s*$/.exec(line)
-    if (h && h[1].length === 2) {
-      close()
-      groups.push({ title: h[2], intro: '', cards: [] })
-      intro.push([])
-      continue
-    }
-    if (h && h[1].length === 3) {
-      close()
-      current = { ...cardHead(h[2]), text: '' }
-      fromLine = false
-      groups.at(-1)!.cards.push(current)
-      continue
-    }
-    const asLine: Card | null = !inFence && !(current && !fromLine) ? cardLine(line) : null
-    if (asLine) {
-      close()
-      current = asLine
-      fromLine = true
-      groups.at(-1)!.cards.push(current)
-      continue
-    }
-    if (current && fromLine) {
-      // Bullet cards continue on indented or plain lines; a blank line, another bullet or a heading ends them.
-      if (!line.trim() || /^[-*+]\s|^\d+[.)]\s|^#/.test(line)) close()
-      else {
-        ;(current as Card).text += `\n${line.trim()}`
-        continue
-      }
-    }
-    if (current) (current as Card).text += `\n${line}`
-    else intro.at(-1)!.push(line)
-  }
-  close()
-  groups.forEach((g, i) => (g.intro = intro[i].join('\n').trim()))
-  return { intro: groups[0].intro, groups: groups.filter((g, i) => i === 0 || g.cards.length || g.intro) }
+  return [...groups].filter(([, rs]) => rs.length).map(([key, rs]) => ({ ...(titles.get(key) && { title: titles.get(key) }), records: rs }))
 }
 
-/** Card names → library nodes (types marked `library`), by normalized title. */
-export function cardLibrary(nodes: readonly StoryNode[], types: readonly Pick<TypeInfo, 'id' | 'library'>[]): Map<string, StoryNode> {
+/** The item fields shown as facts next to a record's name: all but its name, description and group. */
+export function recordFacts(def: FieldDef): FieldDef[] {
+  const skip = new Set([def.titleKey ?? 'name', def.textKey ?? 'text', def.groupBy])
+  return itemFields(def).fields.filter((f) => !skip.has(f.key))
+}
+
+/** Everything wrong with a records value: its shape, then each record against the item fields. */
+export function recordProblems(def: FieldDef, v: unknown): string[] {
+  if (isEmptyValue(v)) return []
+  if (!Array.isArray(v)) return ['expected a list of records like [{ name: …, text: … }]']
+  const fields = itemFields(def).fields
+  const known = new Set(fields.map((f) => f.key))
+  const out: string[] = []
+  v.forEach((raw, i) => {
+    const name = isMap(raw) ? plainText(raw[def.titleKey ?? 'name']).trim() : ''
+    const at = `#${i + 1}${name ? ` (${name})` : ''}`
+    if (!isMap(raw)) {
+      out.push(`${at} is not a record`)
+      return
+    }
+    const missing = fields.filter((f) => f.required && isEmptyValue(raw[f.key])).map((f) => f.key)
+    if (missing.length) out.push(`${at} lacks ${missing.join(', ')}`)
+    const unknown = Object.keys(raw).filter((k) => !known.has(k))
+    if (unknown.length) out.push(`${at} has keys the item doesn't define: ${unknown.join(', ')} (item: ${[...known].join(', ')})`)
+    for (const f of fields) {
+      const problem = fieldProblem(f, raw[f.key])
+      if (problem) out.push(`${at} ${f.key}: ${problem}`)
+    }
+  })
+  return out
+}
+
+/** One record as a markdown line: "- **Name** (fact, fact) — description". */
+export function recordLine(def: FieldDef, r: RecordEntry): string {
+  const facts = recordFacts(def)
+    .filter((f) => !isEmptyValue(r.values[f.key]))
+    .map((f) => fieldSummary(f, r.values[f.key]))
+  const name = r.ref ? `[[${r.ref}${r.name !== r.ref ? `|${r.name}` : ''}]]` : r.name
+  return `- **${name}**${facts.length ? ` (${facts.join(', ')})` : ''}${r.text ? ` — ${r.text.replaceAll(/\s*\n\s*/g, ' ')}` : ''}`
+}
+
+/** A records value as markdown: "## Group" headings and one line per record. */
+export function recordsText(def: FieldDef, v: unknown): string {
+  return recordGroups(def, recordList(def, v))
+    .map((g) => [...(g.title ? [`## ${g.title}`] : []), ...g.records.map((r) => recordLine(def, r))].join('\n'))
+    .join('\n\n')
+}
+
+/** Library node titles → nodes (types marked `library`), by normalized title. */
+export function libraryIndex(nodes: readonly StoryNode[], types: readonly Pick<TypeInfo, 'id' | 'library'>[]): Map<string, StoryNode> {
   const lib = new Set(types.filter((t) => t.library).map((t) => t.id))
   const out = new Map<string, StoryNode>()
   for (const n of nodes) if (lib.has(n.type)) out.set(normalizeName(n.title), n)
   return out
 }
 
-/** The library or linked node a card refers to: its [[link]], else a library node with the same name. */
-export function cardNode(a: Pick<Card, 'name' | 'ref'>, library: Map<string, StoryNode>, byId: Map<string, StoryNode>): StoryNode | undefined {
-  if (a.ref) return byId.get(a.ref)
-  return library.get(normalizeName(a.name))
+/** The node a record refers to: its [[link]], else a library node with the same name. */
+export function libraryNode(r: Pick<RecordEntry, 'name' | 'ref'>, library: Map<string, StoryNode>, byId: Map<string, StoryNode>): StoryNode | undefined {
+  if (r.ref) return byId.get(r.ref)
+  return library.get(normalizeName(r.name))
 }
 
-/** Cards of every cards tab in a body. */
-export function bodyCards(body: string, tabs: readonly TabDef[] = []): Card[] {
-  return sheetTabs(body, { fields: [], tabs })
-    .filter((t) => t.kind === 'cards')
-    .flatMap((t) => (t.kind === 'cards' ? parseCards(t.text).groups.flatMap((g) => g.cards) : []))
+/** The text of a fields tab, for checks scoped to it: one "Label: value" line per field, records as markdown. */
+export function fieldsTabText(sections: readonly FieldSection[], values: Record<string, unknown>): string {
+  return sections
+    .flatMap((s) => s.fields)
+    .filter((f) => !isEmptyValue(values[f.key]))
+    .map((f) => (f.widget === 'records' ? recordsText(f, values[f.key]) : `${fieldLabel(f)}: ${fieldSummary(f, values[f.key])}`))
+    .join('\n')
 }

@@ -155,7 +155,7 @@ test('checks: overview summarizes, checks: true lists issues, writes report the 
   })
   assert.equal(typed.isError, false, typed.text)
   assert.match(typed.text, /monster \(3 fields\)/)
-  const created = await call('write', { nodes: [{ type: 'monster', title: 'Wight', body: 'Serves [[theron]].' }] })
+  const created = await call('write', { nodes: [{ type: 'monster', title: 'Wight', status: 'draft', body: 'Serves [[theron]].' }] })
   assert.equal(created.isError, false, created.text)
   assert.match(created.text, /Maquest detected for these nodes[\s\S]*wight \[broken-link\]: links to \[\[theron\]\][\s\S]*wight \[field-missing\]: lacks AC/)
 

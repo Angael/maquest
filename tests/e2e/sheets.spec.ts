@@ -106,6 +106,7 @@ test('fields read as a sheet of widgets, edit through a form or a click, and car
 
 test('the problems menu lists what Maquest detected, with quick fixes and ignore', async ({ desktop }) => {
   const { page, project, ids } = desktop
+  project.setChecks({ 'missing-status': 'off' })
   project.createNode({ type: 'character', title: 'Loner' })
   project.updateNode(ids[0], { body: 'Stairs lead to [[attic]].' })
   project.updateNode('wight', { fields: { hp: null } })

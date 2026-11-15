@@ -21,18 +21,21 @@ import {
   typeProblems,
 } from './schema'
 import {
-  bodyCards,
-  cardLibrary,
   fieldForKey,
+  fieldLayout,
+  fieldsTabText,
   fieldLabel,
   fieldProblem,
   isEmptyValue,
+  libraryIndex,
+  libraryNode,
   normalizeName,
   plainText,
+  recordList,
   refIds,
   splitSections,
-  tabMatches,
   tabOfField,
+  type SheetType,
 } from './sheet'
 import { suggestIds } from './project'
 
@@ -229,6 +232,15 @@ export const RULES: RuleMeta[] = [
     options: [{ key: 'excludeTypes', label: 'Skip types', type: 'types', default: ['idea', 'media'] }, scope[0], scope[2]],
   },
   {
+    id: 'missing-status',
+    title: 'Missing status',
+    category: 'content',
+    level: 'warn',
+    description: 'A node has no status (idea, draft, revised, done), so progress on the project is invisible.',
+    fix: 'Give every node a status (write status: "draft"); set it as you create the node.',
+    options: [{ key: 'excludeTypes', label: 'Skip types', type: 'types', default: ['media'] }, scope[0], scope[2]],
+  },
+  {
     id: 'todo-marker',
     title: 'Open TODOs',
     category: 'content',
@@ -270,12 +282,12 @@ export const RULES: RuleMeta[] = [
     fix: "Move the value to the field's key (write fields: { key: value, oldKey: null }).",
   },
   {
-    id: 'shared-card',
-    title: 'Copied card text',
+    id: 'shared-record',
+    title: 'Copied record text',
     category: 'sheets',
     level: 'warn',
-    description: 'The same card is written out in several nodes, or copies a library node, instead of being shared.',
-    fix: 'Create one node of a library type with the full text and keep only the name (plus local changes) on each sheet; cards with the same name link to it automatically.',
+    description: 'The same record (an ability, spell, item…) is written out in several nodes, or copies a library node, instead of being shared.',
+    fix: 'Create one node of a library type with the full text and keep only the name (plus local changes) in each record; records with the same name link to it automatically.',
     options: [{ key: 'minChars', label: 'Min copied chars', type: 'number', default: 120 }],
   },
   {
@@ -499,27 +511,32 @@ export function runChecks(input: CheckInput): CheckReport {
       emit({ rule: 'field-missing', node: n.id, message: `lacks ${missing.map(fieldLabel).join(', ')}`, open: tabOfField(type!, missing[0].key) })
   }
 
-  if (level('shared-card') !== 'off') {
-    const minChars = Number(opts('shared-card').minChars ?? 120)
-    const library = cardLibrary(nodes, types)
+  if (level('shared-record') !== 'off') {
+    const minChars = Number(opts('shared-record').minChars ?? 120)
+    const library = libraryIndex(nodes, types)
     const libraryTypes = types.filter((t) => t.library)
     const seen = new Map<string, { node: string; name: string; text: string }[]>()
     for (const n of nodes) {
-      if (typeOf.get(n.type)?.library || muted(n, 'shared-card')) continue
-      for (const a of bodyCards(n.body, typeOf.get(n.type)?.tabs)) {
-        if (a.text.length < minChars) continue
-        const key = normalizeName(a.name)
-        const lib = a.ref ? byId.get(a.ref) : library.get(key)
-        if (lib && libraryTypes.some((t) => t.id === lib.type)) {
-          emit({
-            rule: 'shared-card',
-            node: n.id,
-            message: `"${a.name}" repeats rules text that the library node ${lib.id} holds`,
-            hint: `Keep only the name (and campaign-specific changes) on ${n.id}; the card shows ${lib.id}'s text.`,
-          })
-          continue
+      const type = typeOf.get(n.type)
+      if (!type || type.library || muted(n, 'shared-record')) continue
+      for (const def of type.fields) {
+        if (def.widget !== 'records') continue
+        for (const r of recordList(def, n.fields[def.key])) {
+          if (r.text.length < minChars) continue
+          const lib = libraryNode(r, library, byId)
+          if (lib && libraryTypes.some((t) => t.id === lib.type)) {
+            emit({
+              rule: 'shared-record',
+              node: n.id,
+              message: `${def.key}: "${r.name}" repeats text that the library node ${lib.id} holds`,
+              hint: `Keep only the name (and changes specific to ${n.id}) in the record; the sheet shows ${lib.id}'s text.`,
+              open: tabOfField(type, def.key),
+            })
+            continue
+          }
+          const key = normalizeName(r.name)
+          seen.set(key, [...(seen.get(key) ?? []), { node: n.id, name: r.name, text: r.text }])
         }
-        seen.set(key, [...(seen.get(key) ?? []), { node: n.id, name: a.name, text: a.text }])
       }
     }
     for (const all of seen.values()) {
@@ -530,12 +547,12 @@ export function runChecks(input: CheckInput): CheckReport {
       const lib = libraryTypes[0]
       for (const id of where)
         emit({
-          rule: 'shared-card',
+          rule: 'shared-record',
           node: id,
           message: `"${copies[0].name}" is written out in ${where.length} nodes (${where.join(', ')})`,
           hint: lib
-            ? `Create a ${lib.id} node "${copies[0].name}" with the full text and keep only the name on each sheet.`
-            : `Add a library type (project types: { "<id>": { "label": "…", "library": true } }), create a "${copies[0].name}" node with the full text, and keep only the name on each sheet.`,
+            ? `Create a ${lib.id} node "${copies[0].name}" with the full text and keep only the name in each record.`
+            : `Add a library type (project types: { "<id>": { "label": "…", "library": true } }), create a "${copies[0].name}" node with the full text, and keep only the name in each record.`,
         })
     }
   }
@@ -581,10 +598,7 @@ export function runChecks(input: CheckInput): CheckReport {
   // ---- content ----
   const maxWords = Number(opts('long-body').maxWords ?? 1200)
   for (const n of subjects('long-body')) {
-    // Cards tabs are reference material; only narrative text counts.
-    const sections = splitSections(n.body)
-    const narrative = sections.filter((s) => !s.title || !isCardsTab(s.title, typeOf.get(n.type)?.tabs ?? []))
-    const count = words(narrative.flatMap((s) => s.lines).join('\n'))
+    const count = words(n.body)
     if (count > maxWords) emit({ rule: 'long-body', node: n.id, message: `body is ${count} words (limit ${maxWords})` })
   }
 
@@ -595,6 +609,7 @@ export function runChecks(input: CheckInput): CheckReport {
   }
 
   for (const n of subjects('missing-summary', (x) => !x.summary?.trim())) emit({ rule: 'missing-summary', node: n.id, message: 'has no summary' })
+  for (const n of subjects('missing-status', (x) => !x.status)) emit({ rule: 'missing-status', node: n.id, message: 'has no status' })
 
   for (const n of subjects('todo-marker')) {
     const line = n.body.split('\n').findIndex((l) => TODO.test(l))
@@ -635,7 +650,7 @@ export function runChecks(input: CheckInput): CheckReport {
       if (c.types && !c.types.includes(n.type)) continue
       if (c.tags && !c.tags.some((t) => n.tags.includes(t))) continue
       if (c.excludeTags?.some((t) => n.tags.includes(t))) continue
-      const missing = customMissing(c, n, graph, typeOf.get(n.type)?.tabs ?? [])
+      const missing = customMissing(c, n, graph, typeOf.get(n.type) ?? { fields: [], tabs: [] })
       if (missing.length) issues.push({ rule: c.id, severity: c.severity, node: n.id, message: `${c.message} (${missing.join('; ')})`, hint: c.hint })
     }
   }
@@ -683,10 +698,10 @@ function similar(a: string, b: string) {
   return shared / (x.size + y.size - shared) >= 0.3
 }
 
-/** Whether an H1 section renders as cards. */
-const isCardsTab = (title: string, tabs: readonly TabDef[]) => tabs.some((d) => d.kind === 'cards' && tabMatches(d, title))
-
-function customMissing(c: CustomCheck, n: StoryNode, graph: Graph, tabDefs: readonly TabDef[]): string[] {
+function customMissing(c: CustomCheck, n: StoryNode, graph: Graph, type: SheetType): string[] {
+  const tabDefs = type.tabs
+  // Fields tabs by title, with the text of their filled fields.
+  const fieldTabs = [...fieldLayout(type)].map(([title, layout]) => ({ title, text: fieldsTabText(layout, n.fields) }))
   const out: string[] = []
   const r = c.require
   if (r?.fields) {
@@ -704,13 +719,21 @@ function customMissing(c: CustomCheck, n: StoryNode, graph: Graph, tabDefs: read
     if (gone.length) out.push(`no ${gone.join(', ')} connection`)
   }
   const sections = splitSections(n.body)
+  // A fields tab counts as there when one of its fields has a value.
+  const filledTab = (t: string) => fieldTabs.some((f) => normalizeName(f.title) === normalizeName(t) && f.text)
   if (r?.tabs) {
-    const gone = r.tabs.filter((t) => !sections.some((s) => s.title !== null && sameTab(s.title, t, tabDefs)))
+    const gone = r.tabs.filter((t) => !filledTab(t) && !sections.some((s) => s.title !== null && sameTab(s.title, t, tabDefs)))
     if (gone.length) out.push(`missing tabs: ${gone.join(', ')}`)
   }
-  // Text the content tests look at: the chosen tabs only, or the whole body (and fields, for forbid).
+  // Text the content tests look at: the chosen tabs only (body sections and fields tabs), or the whole body (and
+  // fields, for forbid).
   const wanted = c.tab === undefined ? undefined : [c.tab].flat()
-  const scoped = wanted ? sections.filter((s) => s.title !== null && wanted.some((t) => sameTab(s.title!, t, tabDefs))) : undefined
+  const scoped = wanted
+    ? [
+        ...sections.filter((s) => s.title !== null && wanted.some((t) => sameTab(s.title!, t, tabDefs))),
+        ...fieldTabs.filter((f) => f.text && wanted.some((t) => normalizeName(t) === normalizeName(f.title))).map((f) => ({ title: f.title, lines: f.text.split('\n') })),
+      ]
+    : undefined
   if (scoped && !scoped.length) return out
   const text = scoped ? scoped.flatMap((s) => s.lines).join('\n') : n.body
   const where = scoped ? ` in ${scoped.map((s) => s.title).join(', ')}` : ''

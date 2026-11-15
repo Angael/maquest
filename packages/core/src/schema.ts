@@ -351,12 +351,16 @@ const HEX_COLOR = /^#[0-9a-f]{6}$/i
  * - `pairs` named values as chips `{ Stealth: 6 }` or "Stealth +6, History 4" · `tags` chips · `list` bullet list
  * - `refs` links to other nodes (ids) · `table` rows of `{ column: value }`
  */
-export const WIDGETS = ['text', 'subtitle', 'quote', 'stat', 'toggle', 'meter', 'scores', 'pairs', 'tags', 'list', 'refs', 'table'] as const
+export const WIDGETS = ['text', 'subtitle', 'quote', 'stat', 'toggle', 'meter', 'scores', 'pairs', 'tags', 'list', 'refs', 'table', 'records'] as const
 export const Widget = z.enum(WIDGETS)
 export type Widget = z.infer<typeof Widget>
 
 export const METER_STYLES = ['bar', 'ring', 'dots', 'boxes', 'clock'] as const
 export const SCORES_STYLES = ['grid', 'bars', 'radar', 'dots'] as const
+export const RECORDS_STYLES = ['list', 'cards'] as const
+
+/** A field in a type definition (or a record's item): a key (a plain text field) or a full FieldDef, checked when types resolve. */
+const FieldEntry = z.union([z.string().trim().min(1), z.record(z.string(), z.unknown())])
 
 /** One field of a type's data: where its value lives (`key`), how it shows, and what the checks enforce. */
 export const FieldDef = z
@@ -389,29 +393,66 @@ export const FieldDef = z
     signed: z.boolean().optional(),
     /** meter/scores: accent color (default: the type's color). */
     color: z.string().regex(HEX_COLOR, 'color must be #rrggbb').optional(),
+    /**
+     * records: the fields of each record (keys or FieldDefs, any widget but records), e.g. abilities, spells,
+     * inventory, moves. Each record is a flat map; checks report keys the item doesn't define.
+     */
+    item: z.array(FieldEntry).optional(),
+    /** records: the item key a record's name is under (default "name"). Every record needs one. */
+    titleKey: z.string().optional(),
+    /** records: the item key of a record's description, markdown (default "text"). */
+    textKey: z.string().optional(),
+    /** records: the item key the list is grouped by; groups follow that item field's options. */
+    groupBy: z.string().optional(),
   })
   .superRefine((f, ctx) => {
-    const styles: Partial<Record<Widget, readonly string[]>> = { meter: METER_STYLES, scores: SCORES_STYLES }
+    const styles: Partial<Record<Widget, readonly string[]>> = { meter: METER_STYLES, scores: SCORES_STYLES, records: RECORDS_STYLES }
     const allowed = styles[f.widget]
     if (f.style !== undefined && !allowed?.includes(f.style))
       ctx.addIssue({ code: 'custom', path: ['style'], message: allowed ? `style of ${f.widget} is one of ${allowed.join(', ')}` : `${f.widget} has no styles` })
     if (f.min !== undefined && f.max !== undefined && f.min > f.max) ctx.addIssue({ code: 'custom', path: ['min'], message: 'min is above max' })
+    for (const k of ['item', 'titleKey', 'textKey', 'groupBy'] as const)
+      if (f[k] !== undefined && f.widget !== 'records') ctx.addIssue({ code: 'custom', path: [k], message: `only records fields have ${k}` })
   })
 export type FieldDef = z.infer<typeof FieldDef>
 
-export const TAB_KINDS = ['prose', 'cards', 'fields'] as const
+const itemCache = new WeakMap<FieldDef, { fields: FieldDef[]; problems: string[] }>()
+/**
+ * The fields of a records field's items: its `item` entries, plus a text field for the name and the description when
+ * the item doesn't define them. Nested records are left out (and reported).
+ */
+export function itemFields(def: FieldDef): { fields: FieldDef[]; problems: string[] } {
+  const cached = itemCache.get(def)
+  if (cached) return cached
+  const parsed = parseFields(def.item ?? [])
+  const problems = [...parsed.problems]
+  const fields = parsed.fields.filter((f) => {
+    if (f.widget === 'records') problems.push(`field ${f.key}: records can't hold records`)
+    return f.widget !== 'records'
+  })
+  const title = def.titleKey ?? 'name'
+  const text = def.textKey ?? 'text'
+  if (!fields.some((f) => f.key === title)) fields.unshift({ key: title, widget: 'text', required: true })
+  if (!fields.some((f) => f.key === text)) fields.push({ key: text, widget: 'text' })
+  if (def.groupBy && !fields.some((f) => f.key === def.groupBy)) problems.push(`groupBy ${def.groupBy} is not an item field`)
+  const out = { fields, problems }
+  itemCache.set(def, out)
+  return out
+}
+
+export const TAB_KINDS = ['prose', 'fields'] as const
 /** A group of fields inside a fields tab, with an optional heading. */
 export const TabSection = z.object({ title: z.string().optional(), fields: z.array(z.string()).min(1) })
 export type TabSection = z.infer<typeof TabSection>
 /**
- * A tab of a type's sheet. `prose` and `cards` tabs are the body's H1 section `title` (or one of its aliases): prose
- * is edited as markdown, cards render each `###` entry as a card. `fields` tabs show fields with their widgets:
- * `fields` lists them in order, `sections` groups them under headings; with neither, the tab shows every field of
- * the type that no other fields tab lists.
+ * A tab of a type's sheet. `prose` tabs are the body's H1 section `title` (or one of its aliases), edited as markdown.
+ * `fields` tabs show fields with their widgets: `fields` lists them in order, `sections` groups them under headings;
+ * with neither, the tab shows every field of the type that no other fields tab lists.
  */
 export const TabDef = z.object({
   title: z.string().min(1),
-  kind: z.enum(TAB_KINDS).default('prose'),
+  /** "cards" is no longer a kind (cards are records fields now); it reads as prose and is reported. */
+  kind: z.enum([...TAB_KINDS, 'cards']).default('prose'),
   aliases: z.array(z.string()).optional(),
   fields: z.array(z.string()).optional(),
   sections: z.array(TabSection).optional(),
@@ -469,9 +510,6 @@ export const CustomCheck = z.object({
 })
 export type CustomCheck = z.infer<typeof CustomCheck>
 
-/** A field in a type definition: a key (a plain text field) or a full FieldDef, checked when types resolve. */
-const FieldEntry = z.union([z.string().trim().min(1), z.record(z.string(), z.unknown())])
-
 /** Look of a node type: built-in defaults; projects may override any of these and add their own types. */
 export const TypeDef = z.object({
   label: z.string().min(1).optional(),
@@ -494,7 +532,7 @@ export const TypeDef = z.object({
   body: z.string().optional(),
   /** The sheet's tabs in order: body sections (prose, cards) and field tabs. */
   tabs: z.array(TabDef).optional(),
-  /** Reusable reference text (spells, conditions, glossary entries): cards with the same name link to these nodes. */
+  /** Reusable reference text (spells, conditions, glossary entries): records with the same name link to these nodes. */
   library: z.boolean().optional(),
 })
 export type TypeDef = z.infer<typeof TypeDef>
@@ -530,7 +568,7 @@ export type TypeInfo = {
   fields: FieldDef[]
   body: string
   tabs: TabDef[]
-  /** Reusable reference text; cards link to these nodes by name. */
+  /** Reusable reference text; records link to these nodes by name. */
   library: boolean
 }
 
@@ -636,6 +674,8 @@ export function typeProblems(config: { types?: Record<string, TypeDef> }): { typ
   const types = new Map(projectTypes(config).map((t) => [t.id, t]))
   for (const [id, def] of Object.entries(defs)) {
     for (const message of parseFields(def.fields ?? []).problems) out.push({ type: id, message })
+    for (const f of parseFields(def.fields ?? []).fields)
+      if (f.widget === 'records') for (const message of itemFields(f).problems) out.push({ type: id, message: `${f.key} item: ${message}` })
     if (def.extends) {
       if (!known.has(def.extends)) out.push({ type: id, message: `extends unknown type "${def.extends}"` })
       const chain = [id]
@@ -651,6 +691,11 @@ export function typeProblems(config: { types?: Record<string, TypeDef> }): { typ
     if (!t) continue
     const keys = new Set(t.fields.map((f) => f.key))
     for (const tab of t.tabs) {
+      if (tab.kind === 'cards')
+        out.push({
+          type: id,
+          message: `tab ${tab.title}: cards tabs are gone; define a records field (widget "records" with an item schema) for the cards and show it in a fields tab`,
+        })
       if (tab.kind !== 'fields' && (tab.fields || tab.sections)) out.push({ type: id, message: `tab ${tab.title}: only fields tabs list fields` })
       const listed = [...(tab.fields ?? []), ...(tab.sections ?? []).flatMap((s) => s.fields)]
       const unknown = listed.filter((k) => !keys.has(k))
