@@ -1,7 +1,6 @@
 import { useEffect, useMemo } from 'react'
 import { QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ALL_BOARD, MAIN_BOARD, type Board, type Graph, type StoryNode } from '@maquest/core/schema'
-import { resolveSystems } from '@maquest/core/sheet'
 import { api } from './api'
 import { useUI } from './store'
 
@@ -30,12 +29,6 @@ export function useLiveProject() {
 
 /** Maquest checks for the open project, rerun (debounced) whenever files change. */
 export const useChecks = () => useQuery({ queryKey: ['checks'], queryFn: () => api.checks() })
-
-/** Statblock systems: presets plus the project's own. */
-export function useSystems() {
-  const { data: config } = useConfig()
-  return useMemo(() => resolveSystems(config?.systems).systems, [config])
-}
 
 export const useCurrent = () => useQuery({ queryKey: ['app', 'current'], queryFn: () => api.current() })
 export const useRecent = () => useQuery({ queryKey: ['app', 'recent'], queryFn: () => api.recent() })

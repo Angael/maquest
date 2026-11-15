@@ -2,8 +2,9 @@ import { memo, useMemo, type CSSProperties } from 'react'
 import { Handle, Position, useConnection, type Node, type NodeProps } from '@xyflow/react'
 import { Maximize2, Pin, Search } from 'lucide-react'
 import { openImage } from './Lightbox'
-import { useAction, useSystems } from '../lib/queries'
-import { isEmptyStat, statLabel, statSummary, statText, systemIdOf } from '@maquest/core/sheet'
+import { useAction } from '../lib/queries'
+import { fieldLabel, isEmptyValue } from '@maquest/core/sheet'
+import { badgeText } from './sheet/Widgets'
 import type { EdgeType, NodeType, StoryNode } from '@maquest/core/schema'
 import { useUI } from '../lib/store'
 import { ClockDial } from './ClockDial'
@@ -33,16 +34,14 @@ export const StoryCard = memo(function StoryCard({ data, selected }: NodeProps<N
   const select = useUI((s) => s.select)
   const clock = n.clock
   const status = n.status ? STATUS_STYLE[n.status] : null
-  const summary = n.summary || n.fields.role
-  const systems = useSystems()
-  const badges = useMemo(() => {
-    const id = systemIdOf(n, S)
-    const system = id ? systems.get(id) : undefined
-    if (!system || !n.stats) return []
-    return system.stats
-      .filter((d) => d.badge && !isEmptyStat(n.stats![d.key]))
-      .map((d) => ({ key: d.key, label: statLabel(d), value: statText(n.stats![d.key]).value || statSummary(d, n.stats![d.key]) }))
-  }, [n, S, systems])
+  const summary = n.summary || (typeof n.fields.role === 'string' ? n.fields.role : '')
+  const badges = useMemo(
+    () =>
+      S.fields
+        .filter((d) => d.badge && !isEmptyValue(n.fields[d.key]))
+        .map((d) => ({ key: d.key, label: fieldLabel(d), value: badgeText(d, n.fields[d.key]) })),
+    [n, S],
+  )
 
   const pin = (
     <button
@@ -125,7 +124,7 @@ export const StoryCard = memo(function StoryCard({ data, selected }: NodeProps<N
               </div>
             )}
             {badges.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-1 text-2xs" data-card-stats>
+              <div className="mt-2 flex flex-wrap gap-1 text-2xs" data-card-badges>
                 {badges.map((b) => (
                   <span key={b.key} className="tabular inline-flex h-5 max-w-full items-center gap-1 rounded bg-hover px-1.5 text-fg-muted">
                     <span className="text-fg-subtle">{b.label}</span>

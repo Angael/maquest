@@ -187,7 +187,7 @@ const FIX_LABEL: Record<QuickFix['kind'], string> = {
   'remove-card': 'Remove card',
   'delete-group': 'Delete group',
   unlink: 'Remove link',
-  'move-fields': 'Move to statblock',
+  'rename-fields': 'Move to field',
   arrange: 'Tidy board',
 }
 
@@ -202,7 +202,7 @@ function IssueRow({ issue, close }: { issue: Issue; close: () => void }) {
   const T = node && types.of(node.type)
   const fixes = (issue.fixes ?? []).map((f) => withCurrentBoard(f, graph))
   const open = () => {
-    if (node) openNode(node.id, issue.open === 'stats')
+    if (node) openNode(node.id, issue.open)
     else if (board) {
       useUI.getState().setView('canvas')
       useUI.getState().setBoard(board.id)
@@ -236,16 +236,16 @@ function IssueRow({ issue, close }: { issue: Issue; close: () => void }) {
         {issue.message}
       </div>
       {issue.hint && <p className="mt-0.5 text-xs leading-4 text-fg-subtle">{issue.hint}</p>}
-      {(fixes.length > 0 || (node && issue.open === 'stats')) && (
+      {(fixes.length > 0 || (node && issue.open)) && (
         <div className="mt-1 mb-0.5 flex flex-wrap items-center gap-1">
           {fixes.map((f) => (
             <Button key={f.kind} size="sm" variant="outline" disabled={fix.isPending} onClick={() => fix.mutate([f])}>
               {f.kind === 'place' ? `Add to ${graph?.boards.find((b) => b.id === f.board)?.title ?? 'board'}` : FIX_LABEL[f.kind]}
             </Button>
           ))}
-          {node && issue.open === 'stats' && (
+          {node && issue.open && (
             <Button size="sm" variant="outline" onClick={open}>
-              Edit statblock
+              Edit {issue.open}
             </Button>
           )}
         </div>
@@ -262,12 +262,12 @@ function withCurrentBoard(f: QuickFix, graph: Graph | undefined): QuickFix {
 }
 
 /** Shows a node: on the canvas when it is on a board (staying on the current board if it is there), else just in the inspector. */
-function openNode(id: string, stats: boolean) {
+function openNode(id: string, tab?: string) {
   const ui = useUI.getState()
   const boards = queryClient.getQueryData<Graph>(['graph'])?.boards.filter((b) => onBoard(b, id)) ?? []
   if (boards.length) ui.focusNode(id, boards.some((b) => b.id === currentBoardId()) ? undefined : boards[0].id)
   else ui.select({ kind: 'node', id })
-  if (stats) ui.requestSheet({ id, tab: 'stats', edit: true })
+  if (tab) ui.requestSheet({ id, tab, edit: true })
 }
 
 /** A rule setting with a new level, keeping its options. */

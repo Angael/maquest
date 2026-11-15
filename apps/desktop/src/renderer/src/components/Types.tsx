@@ -1,11 +1,11 @@
 import { useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { Check, Pipette, RotateCcw, Trash2 } from 'lucide-react'
 import { TYPE_ID, typeInfo, type TabDef, type TypeDef } from '@maquest/core/schema'
-import { ABILITY_TAB_NAMES, normalizeName } from '@maquest/core/sheet'
+import { fieldLabel, normalizeName } from '@maquest/core/sheet'
 import { api } from '../lib/api'
-import { useAction, useConfig, useNodes, useSystems } from '../lib/queries'
+import { useAction, useConfig, useNodes } from '../lib/queries'
 import { useTypes, type TypeStyle } from '../lib/styles'
-import { Button, Input, Label, Select, Textarea, Tooltip, cn } from './ui'
+import { Button, Input, Label, Textarea, Tooltip, cn } from './ui'
 import { IconPicker } from './views/IconPicker'
 import { CreateButton, ListGroup, PageHeader, TwoPane, listRow } from './views/ViewLayout'
 
@@ -24,7 +24,7 @@ const SWATCHES: [string, string][] = [
   ['#a8a29e', 'Stone'],
 ]
 
-type Change = Partial<Record<keyof TypeDef, string | string[] | boolean | TabDef[] | null>>
+type Change = Partial<Record<keyof TypeDef, string | boolean | TypeDef['fields'] | TabDef[] | null>>
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e)).replace(/^Error invoking remote method 'api': (Error: )?/, '')
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
@@ -142,7 +142,6 @@ function TypeEditor({
 }) {
   const [label, setLabel] = useState(t.label)
   const [pluralName, setPluralName] = useState(t.plural)
-  const [fields, setFields] = useState(t.fields.join(', '))
   const [body, setBody] = useState(t.body)
   // Adopt changes made elsewhere (agents, git, reset) to fields the user isn't editing.
   const [seen, setSeen] = useState(t)
@@ -150,7 +149,6 @@ function TypeEditor({
     setSeen(t)
     if (seen.label !== t.label) setLabel(t.label)
     if (seen.plural !== t.plural) setPluralName(t.plural)
-    if (seen.fields.join(',') !== t.fields.join(',')) setFields(t.fields.join(', '))
     if (seen.body !== t.body) setBody(t.body)
   }
   const commit = (key: keyof TypeDef, value: string, current: string) => {
@@ -240,24 +238,6 @@ function TypeEditor({
               <p className="mt-0.5 text-xs text-fg-subtle">Applied when you or an agent creates a {t.label.toLowerCase()}. Existing nodes are not changed.</p>
             </div>
             <div>
-              <Label>Fields</Label>
-              <Input
-                aria-label="Starter fields"
-                placeholder="threat, habitat, weakness"
-                value={fields}
-                onChange={(e) => setFields(e.target.value)}
-                onKeyDown={blurOnEnter}
-                onBlur={() => {
-                  const list = fields
-                    .split(',')
-                    .map((f) => f.trim())
-                    .filter(Boolean)
-                  if (list.join(',') !== t.fields.join(',')) save({ fields: list.length ? list : null })
-                }}
-              />
-              <p className="mt-1.5 text-xs text-fg-faint">Comma separated. Each becomes an empty property in the inspector.</p>
-            </div>
-            <div>
               <Label>Body template</Label>
               <Textarea
                 aria-label="Starter body"
@@ -316,28 +296,45 @@ const titles = (s: string) =>
     .map((x) => x.trim())
     .filter(Boolean)
 
-/** Statblock system, body tabs and library flag of a type. */
+const keyOf = (entry: NonNullable<TypeDef['fields']>[number]) => (typeof entry === 'string' ? entry : String(entry.key ?? ''))
+
+/** Fields, tabs and library flag of a type. Keys and tab titles edit here; widgets and rules come from agents. */
 function SheetSettings({ t, save }: { t: TypeStyle; save: (change: Change | null) => void }) {
-  const systems = useSystems()
+  const { data: config } = useConfig()
+  const own = config?.types?.[t.id]?.fields ?? []
+  const ownKeys = own.map(keyOf).join(', ')
   const current = t.tabs.map((x) => x.title).join(', ')
-  const abilities = t.tabs
-    .filter((x) => x.kind === 'abilities')
-    .map((x) => x.title)
-    .join(', ')
+  const ofKind = (kind: TabDef['kind']) =>
+    t.tabs
+      .filter((x) => x.kind === kind)
+      .map((x) => x.title)
+      .join(', ')
+  const [fields, setFields] = useState(ownKeys)
   const [tabs, setTabs] = useState(current)
-  const [abilityTabs, setAbilityTabs] = useState(abilities)
-  const [seen, setSeen] = useState({ current, abilities })
-  if (seen.current !== current || seen.abilities !== abilities) {
-    setSeen({ current, abilities })
+  const [cardTabs, setCardTabs] = useState(ofKind('cards'))
+  const [fieldTabs, setFieldTabs] = useState(ofKind('fields'))
+  const snapshot = `${ownKeys}|${current}|${ofKind('cards')}|${ofKind('fields')}`
+  const [seen, setSeen] = useState(snapshot)
+  if (seen !== snapshot) {
+    setSeen(snapshot)
+    setFields(ownKeys)
     setTabs(current)
-    setAbilityTabs(abilities)
+    setCardTabs(ofKind('cards'))
+    setFieldTabs(ofKind('fields'))
   }
-  const commitTabs = (list: string, abilityList: string) => {
-    const kinds = new Set(titles(abilityList).map(normalizeName))
-    const next: TabDef[] = titles(list).map((title) => {
+  const commitFields = () => {
+    // Keys stay in the typed order; a key that already has a definition keeps it.
+    const next = titles(fields).map((key) => own.find((e) => keyOf(e) === key) ?? key)
+    if (JSON.stringify(next) !== JSON.stringify(own)) save({ fields: next.length ? next : null })
+  }
+  const commitTabs = () => {
+    const cards = new Set(titles(cardTabs).map(normalizeName))
+    const asFields = new Set(titles(fieldTabs).map(normalizeName))
+    const next: TabDef[] = titles(tabs).map((title) => {
       const old = t.tabs.find((x) => x.title === title)
-      const kind = kinds.has(normalizeName(title)) || (!abilityList.trim() && ABILITY_TAB_NAMES.includes(normalizeName(title))) ? 'abilities' : 'prose'
-      return { ...old, title, kind }
+      const kind = asFields.has(normalizeName(title)) ? 'fields' : cards.has(normalizeName(title)) ? 'cards' : 'prose'
+      const { fields: listed, sections, ...rest } = old ?? { title }
+      return kind === 'fields' ? { ...rest, title, kind, ...(listed && { fields: listed }), ...(sections && { sections }) } : { ...rest, title, kind }
     })
     if (JSON.stringify(next) !== JSON.stringify(t.tabs)) save({ tabs: next.length ? next : null })
   }
@@ -345,56 +342,85 @@ function SheetSettings({ t, save }: { t: TypeStyle; save: (change: Change | null
     <section className="space-y-4">
       <div>
         <h3 className="text-sm font-medium text-fg">Sheet</h3>
-        <p className="mt-0.5 text-xs text-fg-subtle">How {t.plural.toLowerCase()} show in the inspector: a statblock tab and the body's # headings as tabs.</p>
+        <p className="mt-0.5 text-xs text-fg-subtle">
+          What {t.plural.toLowerCase()} hold and how the inspector shows it: fields with their widgets, and tabs for fields, cards and the body&apos;s #
+          headings.
+        </p>
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <Label>Statblock system</Label>
-          <Select aria-label="Statblock system" value={t.system ?? ''} onChange={(e) => save({ system: e.target.value || null })}>
-            <option value="">None</option>
-            {[...systems.values()].map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.label}
-              </option>
+      <div>
+        <Label>Fields</Label>
+        <Input
+          aria-label="Fields"
+          placeholder="role, goal, hp, traits"
+          value={fields}
+          onChange={(e) => setFields(e.target.value)}
+          onKeyDown={blurOnEnter}
+          onBlur={commitFields}
+        />
+        <p className="mt-1.5 text-xs text-fg-faint">
+          Comma separated keys; new ones are text. Ask your agent for widgets (meters, ratings, radar charts…), choices and required fields.
+        </p>
+        {t.fields.length > 0 && (
+          <ul className="mt-2 flex flex-wrap gap-1" aria-label="Defined fields">
+            {t.fields.map((f) => (
+              <li key={f.key} className="inline-flex h-6 items-center gap-1.5 rounded-md bg-surface px-2 text-xs shadow-[inset_0_0_0_1px_var(--color-line)]">
+                <span className="text-fg">{fieldLabel(f)}</span>
+                <span className="text-fg-faint">
+                  {f.widget}
+                  {f.style ? ` · ${f.style}` : ''}
+                </span>
+                {f.required && <span className="text-accent-text">*</span>}
+              </li>
             ))}
-            {t.system && !systems.has(t.system) && <option value={t.system}>{t.system} (unknown)</option>}
-          </Select>
-        </div>
-        {!t.builtin && (
-          <label className="flex items-end gap-2 pb-1.5 text-sm text-fg-muted">
-            <input type="checkbox" checked={t.library} className="size-4 accent-[var(--color-accent)]" onChange={(e) => save({ library: e.target.checked })} />
-            Rules library
-            <span className="text-xs text-fg-faint">(spells, conditions)</span>
-          </label>
+          </ul>
         )}
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         <div>
           <Label>Tabs</Label>
           <Input
             aria-label="Tabs"
-            placeholder="Abilities, Backstory, Notes"
+            placeholder="Stats, Abilities, Story"
             value={tabs}
             onChange={(e) => setTabs(e.target.value)}
             onKeyDown={blurOnEnter}
-            onBlur={() => commitTabs(tabs, abilityTabs)}
+            onBlur={commitTabs}
           />
         </div>
         <div>
-          <Label>Shown as ability cards</Label>
+          <Label>Fields tabs</Label>
           <Input
-            aria-label="Ability tabs"
-            placeholder="Abilities"
-            value={abilityTabs}
-            onChange={(e) => setAbilityTabs(e.target.value)}
+            aria-label="Fields tabs"
+            placeholder="Stats"
+            value={fieldTabs}
+            onChange={(e) => setFieldTabs(e.target.value)}
             onKeyDown={blurOnEnter}
-            onBlur={() => commitTabs(tabs, abilityTabs)}
+            onBlur={commitTabs}
+          />
+        </div>
+        <div>
+          <Label>Cards tabs</Label>
+          <Input
+            aria-label="Cards tabs"
+            placeholder="Abilities"
+            value={cardTabs}
+            onChange={(e) => setCardTabs(e.target.value)}
+            onKeyDown={blurOnEnter}
+            onBlur={commitTabs}
           />
         </div>
       </div>
       <p className="-mt-2 text-xs text-fg-faint">
-        Comma separated, in order. New {t.plural.toLowerCase()} start with these headings; other # headings in a body still become tabs.
+        Comma separated, in order. Fields tabs show fields; the others are # headings of the body, and new {t.plural.toLowerCase()} start with them. Other
+        headings still become tabs.
       </p>
+      {!t.builtin && (
+        <label className="flex items-center gap-2 text-sm text-fg-muted">
+          <input type="checkbox" checked={t.library} className="size-4 accent-[var(--color-accent)]" onChange={(e) => save({ library: e.target.checked })} />
+          Library
+          <span className="text-xs text-fg-faint">(reference text: cards with the same name link here)</span>
+        </label>
+      )}
     </section>
   )
 }

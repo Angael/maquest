@@ -2,77 +2,74 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Tabs } from '@base-ui/react/tabs'
 import { Check, FileText, Pencil, Plus } from 'lucide-react'
 import type { StoryNode } from '@maquest/core/schema'
-import { isEmptyStat, replaceSection, sheetTabs, systemIdOf, type SheetTab } from '@maquest/core/sheet'
+import { isEmptyValue, replaceSection, sheetTabs, type SheetTab } from '@maquest/core/sheet'
 import { api } from '../../lib/api'
-import { useAction, useSystems } from '../../lib/queries'
+import { useAction } from '../../lib/queries'
 import { useUI } from '../../lib/store'
 import { useTypes } from '../../lib/styles'
 import { MarkdownEditor } from '../MarkdownEditor'
 import { Button, IconButton, cn } from '../ui'
-import { GhostSelect, ghost } from '../inspector/fields'
-import { StatBlock, StatForm } from './StatBlock'
-import { AbilityCards } from './Abilities'
+import { ghost } from '../inspector/fields'
+import { FieldSheet } from './Widgets'
+import { FieldForm, fieldPatch } from './FieldForm'
+import { CardList } from './Cards'
 
-/** Last tab viewed per node (by title), so reopening a node returns to it. */
+/** Last tab viewed per node (by key), so reopening a node returns to it. */
 const lastTab = new Map<string, string>()
 
-/** The sheet layout of a node: its tabs (empty for plain documents) and statblock system. */
+/** The sheet layout of a node: its tabs (empty for plain documents) and type. */
 export function useSheet(node: StoryNode, body: string) {
   const types = useTypes()
-  const systems = useSystems()
   const type = types.of(node.type)
-  const systemId = systemIdOf(node, type)
-  const system = systemId ? systems.get(systemId) : undefined
-  const hasStats = !!system || !isEmptyStat(node.stats)
-  const tabs = useMemo(
-    () => sheetTabs(body, { statsTitle: hasStats ? (system?.tab ?? 'Stats') : undefined, tabs: type.tabs }),
-    [body, hasStats, system, type.tabs],
-  )
-  return { tabs, system, systemId, type, systems }
+  const tabs = useMemo(() => sheetTabs(body, type), [body, type])
+  return { tabs, type }
 }
 
 /**
- * Entity sheet: the statblock and the body's H1 sections as tabs. Reading is the default; the statblock and ability
- * cards switch to editing with the pencil, prose tabs are edited in place, and the document icon edits the whole
- * body as one document.
+ * Entity sheet: the type's tabs, fields tabs with their widgets and the body's H1 sections. Reading is the default;
+ * fields and cards switch to editing with the pencil (meters, ratings and toggles also set with a click), prose tabs
+ * are edited in place, and the document icon edits the whole body as one document.
  */
 export function Sheet({ node, body, onBody }: { node: StoryNode; body: string; onBody: (body: string) => void }) {
-  const { tabs, system, systemId, type, systems } = useSheet(node, body)
+  const { tabs, type } = useSheet(node, body)
   const update = useAction(api.updateNode)
   const request = useUI((s) => (s.sheetRequest?.id === node.id ? s.sheetRequest : null))
-  const [active, setActive] = useState(() => lastTab.get(node.id) ?? tabs[0]?.title)
+  const [active, setActive] = useState(() => lastTab.get(node.id) ?? tabs[0]?.key)
   const [editing, setEditing] = useState(false)
   const [source, setSource] = useState(false)
-  const current = tabs.find((t) => t.title === active) ?? tabs[0]
+  const current = tabs.find((t) => t.key === active) ?? tabs[0]
+  const saveFields = (patch: Record<string, unknown>) => update.mutate([node.id, { fields: patch }])
 
-  // A request from elsewhere (the Problems menu) opens the statblock once; then it is cleared from the store.
+  // A request from elsewhere (the Problems menu) opens a tab once; then it is cleared from the store.
   const [handled, setHandled] = useState<typeof request>(null)
   if (request && request !== handled) {
     setHandled(request)
-    const stats = tabs.find((t) => t.kind === 'stats')
-    if (stats) {
-      setActive(stats.title)
+    const tab = tabs.find((t) => t.title === request.tab) ?? tabs.find((t) => t.kind === 'fields')
+    if (tab) {
+      setActive(tab.key)
       setSource(false)
-      setEditing(request.edit)
+      setEditing(request.edit && (tab.kind === 'fields' || tab.kind === 'cards'))
     }
   }
   useEffect(() => {
     if (request) useUI.getState().requestSheet(null)
   }, [request])
 
-  const choose = (title: string) => {
-    setActive(title)
-    lastTab.set(node.id, title)
+  const choose = (key: string) => {
+    setActive(key)
+    lastTab.set(node.id, key)
     setEditing(false)
   }
   const addTab = (title: string) => {
-    onBody(`${body.trimEnd()}${body.trim() ? '\n\n' : ''}# ${title}\n`)
-    choose(title)
+    const next = `${body.trimEnd()}${body.trim() ? '\n\n' : ''}# ${title}\n`
+    onBody(next)
+    const added = sheetTabs(next, type).find((t) => t.kind !== 'fields' && t.title === title)
+    if (added) choose(added.key)
   }
-  const editable = !source && (current?.kind === 'stats' || current?.kind === 'abilities')
+  const editable = !source && (current?.kind === 'fields' || current?.kind === 'cards')
 
   return (
-    <Tabs.Root value={current?.key ?? null} onValueChange={(key) => choose(tabs.find((t) => t.key === key)?.title ?? '')} className="mt-1">
+    <Tabs.Root value={current?.key ?? null} onValueChange={(key) => choose(String(key))} className="mt-1">
       <div className="sticky top-0 z-10 flex items-center gap-1 border-b border-line bg-panel px-4">
         {source ? (
           <span className="flex h-9 flex-1 items-center text-xs font-medium text-fg-subtle">Whole document</span>
@@ -93,7 +90,7 @@ export function Sheet({ node, body, onBody }: { node: StoryNode; body: string; o
         {editable && (
           <IconButton
             icon={editing ? Check : Pencil}
-            label={editing ? 'Done editing' : current?.kind === 'stats' ? 'Edit statblock' : 'Edit abilities'}
+            label={editing ? 'Done editing' : current?.kind === 'fields' ? `Edit ${current.title}` : 'Edit cards'}
             size="sm"
             aria-pressed={editing}
             className={cn(editing && 'text-accent-text')}
@@ -117,27 +114,24 @@ export function Sheet({ node, body, onBody }: { node: StoryNode; body: string; o
       ) : (
         tabs.map((t) => (
           <Tabs.Panel key={t.key} value={t.key} className="outline-none">
-            {t.kind === 'stats' ? (
+            {t.kind === 'fields' ? (
               <div className="px-4 pt-4">
                 {editing ? (
-                  <>
-                    <SystemPicker
-                      value={node.system ?? ''}
-                      typeDefault={type.system ? (systems.get(type.system)?.label ?? type.system) : undefined}
-                      options={[...systems.values()].map((s) => ({ value: s.id, label: s.label }))}
-                      onChange={(id) => update.mutate([node.id, { system: id || null }])}
-                    />
-                    <StatForm key={systemId ?? ''} system={system} stats={node.stats ?? {}} onSave={(patch) => update.mutate([node.id, { stats: patch }])} />
-                  </>
-                ) : isEmptyStat(node.stats) ? (
-                  <EmptyStats label={system?.label} onFill={() => setEditing(true)} />
+                  <FieldForm sections={t.sections} values={node.fields} onSave={saveFields} />
+                ) : t.sections.every((s) => s.fields.every((f) => isEmptyValue(node.fields[f.key]))) ? (
+                  <EmptyFields title={t.title} none={!t.sections.some((s) => s.fields.length)} onFill={() => setEditing(true)} />
                 ) : (
-                  <StatBlock system={system} stats={node.stats ?? {}} color={type.color} />
+                  <FieldSheet
+                    sections={t.sections}
+                    values={node.fields}
+                    color={type.color}
+                    onSet={(key, value) => saveFields({ [key]: fieldPatch(node.fields[key], value) })}
+                  />
                 )}
               </div>
-            ) : t.kind === 'abilities' && !editing ? (
+            ) : t.kind === 'cards' && !editing ? (
               <div className="px-4 pt-4">
-                <AbilityCards text={t.text} />
+                <CardList text={t.text} />
               </div>
             ) : (
               <TabEditor key={t.key} tab={t} onChange={(text) => onBody(replaceSection(body, t.section, text))} />
@@ -179,37 +173,19 @@ function TabEditor({ tab, onChange }: { tab: Extract<SheetTab, { section: number
   )
 }
 
-function SystemPicker({
-  value,
-  typeDefault,
-  options,
-  onChange,
-}: {
-  value: string
-  typeDefault?: string
-  options: { value: string; label: string }[]
-  onChange: (id: string) => void
-}) {
-  return (
-    <div className="mb-2 flex h-7 items-center gap-2">
-      <span className="w-[88px] shrink-0 text-xs text-fg-subtle">System</span>
-      <GhostSelect
-        aria-label="Statblock system"
-        value={value}
-        muted={!value}
-        options={[{ value: '', label: typeDefault ? `${typeDefault} (type default)` : 'None' }, ...options]}
-        onValueChange={onChange}
-      />
-    </div>
-  )
-}
-
-function EmptyStats({ label, onFill }: { label?: string; onFill: () => void }) {
+function EmptyFields({ title, none, onFill }: { title: string; none: boolean; onFill: () => void }) {
+  if (none)
+    return (
+      <p className="py-2 text-sm leading-6 text-fg-subtle">
+        This tab has no fields yet. Ask your agent to define them on the type (<span className="font-mono text-xs text-fg-muted">types.&lt;id&gt;.fields</span>
+        ).
+      </p>
+    )
   return (
     <div className="flex flex-col items-start gap-2 py-2">
-      <p className="text-sm text-fg-subtle">No {label ?? ''} statblock yet.</p>
+      <p className="text-sm text-fg-subtle">Nothing in {title} yet.</p>
       <Button variant="outline" size="sm" onClick={onFill}>
-        <Pencil size={13} aria-hidden /> Fill statblock
+        <Pencil size={13} aria-hidden /> Fill in
       </Button>
     </div>
   )

@@ -1,7 +1,7 @@
 import { memo, useMemo } from 'react'
 import { BookOpen } from 'lucide-react'
 import type { StoryNode } from '@maquest/core/schema'
-import { abilityLibrary, abilityNode, parseAbilities, type Ability } from '@maquest/core/sheet'
+import { cardLibrary, cardNode, parseCards, type Card } from '@maquest/core/sheet'
 import { useNodes } from '../../lib/queries'
 import { useUI } from '../../lib/store'
 import { useTypes } from '../../lib/styles'
@@ -11,31 +11,31 @@ import { Popover, cn } from '../ui'
 const NO_NODES: StoryNode[] = []
 
 /**
- * An abilities tab as cards: ## headings group them, each card shows the name and short facts; hovering opens the
- * full text (click keeps it open). Abilities named like a library node (or linked with [[id]]) show its text.
+ * A cards tab: ## headings group the cards, each shows its name and short facts; hovering opens the full text (click
+ * keeps it open). Cards named like a library node (or linked with [[id]]) show its text.
  */
-export const AbilityCards = memo(function AbilityCards({ text }: { text: string }) {
+export const CardList = memo(function CardList({ text }: { text: string }) {
   const { data: nodes = NO_NODES } = useNodes()
   const types = useTypes()
-  const parsed = useMemo(() => parseAbilities(text), [text])
-  const library = useMemo(() => abilityLibrary(nodes, types.list), [nodes, types])
+  const parsed = useMemo(() => parseCards(text), [text])
+  const library = useMemo(() => cardLibrary(nodes, types.list), [nodes, types])
   const byId = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes])
-  const empty = !parsed.groups.some((g) => g.abilities.length || g.intro)
+  const empty = !parsed.groups.some((g) => g.cards.length || g.intro)
   if (empty)
     return (
       <p className="text-sm leading-6 text-fg-subtle">
-        No abilities yet. Use <span className="font-mono text-xs text-fg-muted">## Group</span> headings and{' '}
-        <span className="font-mono text-xs text-fg-muted">### Name {'{meta}'}</span> per ability, or bullets starting with a bold name.
+        No cards yet. Use <span className="font-mono text-xs text-fg-muted">## Group</span> headings and{' '}
+        <span className="font-mono text-xs text-fg-muted">### Name {'{meta}'}</span> per card, or bullets starting with a bold name.
       </p>
     )
   return (
-    <div className="space-y-5" data-abilities>
+    <div className="space-y-5" data-cards>
       {parsed.groups.map((g, i) => (
-        <section key={`${i}:${g.title ?? ''}`} aria-label={g.title ?? 'Abilities'}>
+        <section key={`${i}:${g.title ?? ''}`} aria-label={g.title ?? 'Cards'}>
           {g.title && (
             <h3 className="mb-1.5 flex items-baseline gap-1.5 text-xs font-medium text-fg-subtle">
               {g.title}
-              {g.abilities.length > 0 && <span className="tabular text-fg-faint">{g.abilities.length}</span>}
+              {g.cards.length > 0 && <span className="tabular text-fg-faint">{g.cards.length}</span>}
             </h3>
           )}
           {g.intro && (
@@ -43,10 +43,10 @@ export const AbilityCards = memo(function AbilityCards({ text }: { text: string 
               <MarkdownPreview source={g.intro} />
             </div>
           )}
-          {g.abilities.length > 0 && (
+          {g.cards.length > 0 && (
             <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-1.5">
-              {g.abilities.map((a, k) => (
-                <AbilityCard key={`${k}:${a.name}`} ability={a} linked={abilityNode(a, library, byId)} />
+              {g.cards.map((a, k) => (
+                <CardTile key={`${k}:${a.name}`} card={a} linked={cardNode(a, library, byId)} />
               ))}
             </div>
           )}
@@ -56,14 +56,14 @@ export const AbilityCards = memo(function AbilityCards({ text }: { text: string 
   )
 })
 
-function AbilityCard({ ability: a, linked }: { ability: Ability; linked?: StoryNode }) {
+function CardTile({ card: a, linked }: { card: Card; linked?: StoryNode }) {
   const types = useTypes()
   const select = useUI((s) => s.select)
   const T = linked && types.of(linked.type)
   const card = (
     <button
       type="button"
-      data-ability={a.name}
+      data-card={a.name}
       className="group/card flex min-h-12 w-full min-w-0 flex-col justify-center gap-0.5 rounded-md bg-surface px-2.5 py-1.5 text-left shadow-[inset_0_0_0_1px_var(--color-line)] outline-none transition-[box-shadow,background-color] duration-100 hover:bg-hover hover:shadow-[inset_0_0_0_1px_var(--color-line-strong)] focus-visible:ring-2 focus-visible:ring-accent/70 data-[popup-open]:bg-hover data-[popup-open]:shadow-[inset_0_0_0_1px_var(--color-line-strong)]"
     >
       <span className="flex min-w-0 items-center gap-1.5">
@@ -98,7 +98,7 @@ function AbilityCard({ ability: a, linked }: { ability: Ability; linked?: StoryN
           </div>
         )}
         {linked?.summary && <p className="mt-2 text-sm leading-5 text-fg-muted">{linked.summary}</p>}
-        <div className={cn('ability-text mt-2', !shared && !own && 'text-sm text-fg-faint')}>
+        <div className={cn('card-text mt-2', !shared && !own && 'text-sm text-fg-faint')}>
           {shared && <MarkdownPreview source={shared} />}
           {own && shared && <div className="mt-3 mb-1 text-2xs font-medium text-fg-subtle">On this sheet</div>}
           {own && <MarkdownPreview source={own} />}
