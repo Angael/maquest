@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import transliterate from '@sindresorhus/transliterate'
+import { distance } from 'fastest-levenshtein'
 import { parseFrontmatter, stringifyFrontmatter } from './frontmatter'
 import { DEFAULT_GUIDELINES } from './guidelines/defaults'
 import { TEMPLATES } from './templates'
@@ -103,19 +104,109 @@ export function textMatches(n: StoryNode, terms: string[], max = 5): TextMatch[]
   return out
 }
 
-function applyEdits(body: string, edits: BodyEdit[], id: string) {
-  for (const e of edits) {
+/** 1-based line number of a character offset. */
+const lineAt = (body: string, offset: number) => body.slice(0, offset).split('\n').length
+
+/** A few numbered lines of `body` around `line`, to show what the text there currently says. */
+function excerpt(body: string, line: number, around = 2) {
+  const lines = body.split('\n')
+  const from = Math.max(1, line - around)
+  const to = Math.min(lines.length, line + around)
+  return lines
+    .slice(from - 1, to)
+    .map((l, i) => `  ${from + i}| ${l.length > 160 ? `${l.slice(0, 160)}…` : l}`)
+    .join('\n')
+}
+
+/**
+ * Why an exact edit did not match, with where the closest part of `find` occurs now. Matching stays exact:
+ * this only helps the caller resend correct text, it never picks a replacement target itself.
+ */
+function editMismatch(body: string, find: string, id: string, n: number) {
+  const head = `${id}: edit ${n}: text to replace not found: ${JSON.stringify(find.slice(0, 80))}`
+  const probes = find
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length >= 8)
+  for (let len = Math.min(find.length, 60); len >= 12; len = Math.floor(len / 2)) probes.push(find.trim().slice(0, len))
+  for (const probe of probes) {
+    const at = body.indexOf(probe)
+    if (at < 0) continue
+    const line = lineAt(body, at)
+    return `${head}. Part of it (${JSON.stringify(probe.slice(0, 40))}) is at body line ${line}; the body there now reads:\n${excerpt(body, line)}\nResend the edit with the exact current text.`
+  }
+  return `${head}. No part of it occurs in the body (${body.length} chars); re-read the node before editing.`
+}
+
+/** Applies exact find-and-replace edits; fails without guessing when a `find` is missing or ambiguous. */
+export function applyEdits(body: string, edits: BodyEdit[], id: string) {
+  edits.forEach((e, i) => {
     const count = e.find ? body.split(e.find).length - 1 : 0
-    if (!count) throw new MaquestError(`${id}: text to replace not found: ${JSON.stringify(e.find.slice(0, 80))}`)
+    if (!count) throw new MaquestError(editMismatch(body, e.find, id, i + 1))
     if (count > 1 && !e.all) {
-      throw new MaquestError(`${id}: text to replace occurs ${count} times; add more context or set all: true: ${JSON.stringify(e.find.slice(0, 80))}`)
+      const lines: number[] = []
+      for (let at = body.indexOf(e.find); at >= 0 && lines.length < 10; at = body.indexOf(e.find, at + 1)) lines.push(lineAt(body, at))
+      throw new MaquestError(
+        `${id}: edit ${i + 1}: text to replace occurs ${count} times (body lines ${lines.join(', ')}); add more context or set all: true: ${JSON.stringify(e.find.slice(0, 80))}`,
+      )
     }
     body = body.replaceAll(e.find, () => e.replace)
-  }
+  })
   return body
 }
 
+/** Up to `max` existing ids that look like `id`: containing it, sharing a word with it, or a few typos away. */
+export function suggestIds(id: string, candidates: readonly { id: string; title?: string }[], max = 3): string[] {
+  const want = id.toLowerCase()
+  const words = new Set(want.split(/[^a-z0-9]+/).filter((w) => w.length >= 3))
+  const scored = candidates.flatMap((c) => {
+    const slug = c.title ? slugify(c.title) : c.id
+    const d = Math.min(distance(want, c.id), distance(want, slug))
+    const contains = c.id.includes(want) || want.includes(c.id) || slug.includes(want)
+    const shared = c.id.split('-').filter((w) => words.has(w)).length
+    const close = d <= Math.max(2, Math.floor(want.length * 0.34))
+    return contains || shared || close ? [{ id: c.id, rank: (contains ? 0 : close ? 1 : 2) * 1000 - shared * 10 + d }] : []
+  })
+  return scored
+    .toSorted((a, b) => a.rank - b.rank)
+    .slice(0, max)
+    .map((x) => x.id)
+}
+
+/** "Node not found" with likely ids, and a pointer to the guidelines when the id names one. */
+export function nodeNotFoundMessage(id: string, candidates: readonly { id: string; title?: string }[], guidelineIds: readonly string[] = []) {
+  const similar = suggestIds(id, candidates)
+  return [
+    `Node not found: ${id}.`,
+    similar.length ? `Did you mean: ${similar.join(', ')}?` : '',
+    guidelineIds.includes(id) ? `"${id}" is a writing guideline, not a node: use the guidelines tool (action read or write, id "${id}").` : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+}
+
+/** Why a node may not sit under a parent, naming both. */
+export function hierarchyMessage(id: string, type: NodeType, parent: string, parentType: NodeType) {
+  const allowed = ALLOWED_PARENTS[type]
+  return `${id}: a ${type} cannot be placed under ${parent} (a ${parentType}). Allowed parents for a ${type}: ${allowed?.join(', ') || 'none (top level only)'}`
+}
+
+/** Ids are lowercase slugs (letters, digits and dashes). */
+export function checkNewId(id: string) {
+  if (slugify(id) !== id) throw new MaquestError(`Invalid id "${id}": ids are lowercase slugs; use "${slugify(id)}"`)
+  return id
+}
+
+/** Thrown when live notes changed since the caller last saw them; carries the current notes. */
+export class LiveNotesChangedError extends MaquestError {
+  constructor(readonly current: string) {
+    super('The live notes changed since you last saw them; nothing was cleared.')
+  }
+}
+
 export type CreateNodeInput = {
+  /** Explicit id for the new node (a slug that must not exist yet); by default it is derived from the title. */
+  id?: string
   type: NodeType
   title: string
   body?: string
@@ -288,7 +379,9 @@ export class Project {
   }
 
   updateConfig(patch: Partial<ProjectConfig>): ProjectConfig {
-    const next = ProjectConfig.parse({ ...this.config(), ...patch })
+    const cur = this.config()
+    // An undefined name or kind keeps the current one; a bare spread would erase the name and reset the kind.
+    const next = ProjectConfig.parse({ ...cur, ...patch, name: patch.name ?? cur.name, kind: patch.kind ?? cur.kind })
     writeAtomic(path.join(this.root, CONFIG_FILE), JSON.stringify(next, null, 2) + '\n')
     return next
   }
@@ -413,8 +506,14 @@ export class Project {
 
   requireNode(id: string): StoryNode {
     const n = this.getNode(id)
-    if (!n) throw new MaquestError(`Node not found: ${id}`)
+    if (!n) throw this.nodeNotFound(id)
     return n
+  }
+
+  /** A "node not found" error that suggests similar ids and points guideline ids to the guidelines. */
+  nodeNotFound(id: string): MaquestError {
+    const guidelines = this.guidelines({ includeDisabled: true }).map((g) => g.id)
+    return new MaquestError(nodeNotFoundMessage(id, this.listNodes(), guidelines))
   }
 
   private uniqueId(title: string) {
@@ -424,13 +523,10 @@ export class Project {
     return id
   }
 
-  private checkParent(type: NodeType, parent?: string) {
+  private checkParent(id: string, type: NodeType, parent?: string) {
     if (!parent) return
     const p = this.requireNode(parent)
-    const allowed = ALLOWED_PARENTS[type]
-    if (!allowed?.includes(p.type)) {
-      throw new MaquestError(`A ${type} cannot be placed under a ${p.type}. Allowed parents: ${allowed?.join(', ') || 'none (top level only)'}`)
-    }
+    if (!ALLOWED_PARENTS[type]?.includes(p.type)) throw new MaquestError(hierarchyMessage(id, type, parent, p.type))
   }
 
   private writeNode(n: Omit<StoryNode, 'path'>) {
@@ -439,7 +535,12 @@ export class Project {
   }
 
   createNode(input: CreateNodeInput): StoryNode {
-    this.checkParent(input.type, input.parent)
+    const id = input.id === undefined ? this.uniqueId(input.title) : checkNewId(input.id)
+    if (input.id !== undefined) {
+      const taken = this.getNode(id)
+      if (taken) throw new MaquestError(`Node already exists: ${id} (${taken.type} "${taken.title}"). Update it instead, or choose another id.`)
+    }
+    this.checkParent(id, input.type, input.parent)
     const info = this.type(input.type)
     const tpl =
       input.template === false
@@ -447,7 +548,6 @@ export class Project {
         : info.builtin
           ? TEMPLATES[input.type]
           : { fields: Object.fromEntries(info.fields.map((f) => [f, ''])), body: info.body }
-    const id = this.uniqueId(input.title)
     const now = new Date().toISOString()
     const order =
       input.order ??
@@ -483,8 +583,8 @@ export class Project {
     const type = patch.type ?? cur.type
     if (patch.type) this.type(type)
     const parent = patch.parent === null ? undefined : (patch.parent ?? cur.parent)
-    this.checkParent(type, parent)
     if (parent === id) throw new MaquestError('A node cannot be its own parent')
+    this.checkParent(id, type, parent)
     const fields = { ...cur.fields }
     for (const [k, v] of Object.entries(patch.fields ?? {})) {
       if (v === null) delete fields[k]
@@ -1083,6 +1183,17 @@ export class Project {
     } catch {
       return ''
     }
+  }
+
+  /**
+   * Clears the live notes only if they still read `seen` (what the caller last saw, compared trimmed), so notes
+   * the author added since are never dropped unseen. Throws LiveNotesChangedError with the current notes otherwise.
+   */
+  clearLiveNotes(seen: string) {
+    const current = this.liveNotes().trim()
+    if (!current) return
+    if (current !== seen.trim()) throw new LiveNotesChangedError(current)
+    this.setLiveNotes('')
   }
 
   setLiveNotes(text: string) {
