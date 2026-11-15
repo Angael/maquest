@@ -7,20 +7,23 @@ A desktop app for writing stories, novels, screenplays and tabletop RPG campaign
 - Backlog for raw ideas, which you can promote to anything later
 - Images and videos on the canvas, embedded in markdown, and attached to nodes
 - Built-in writing guidelines (general, RPG, screenplay) that each project can override; also editable by the agent. An "Author's style" guideline captures the author's voice: the agent fills it in from their pages and corrections and sees it whenever it reads or writes scenes
-- Entity sheets: statblocks for any game system, body sections as tabs, and abilities as hoverable cards
-- Maquest checks: project-wide health checks (broken links, nodes on no board, missing statblocks…) for you and the agent
+- Entity sheets that each project defines: fields with widgets (meters, rings, clocks, ratings, radar charts, tables…), tabs, and hoverable cards. Nothing about any game or genre is built in
+- Maquest checks: project-wide health checks (broken links, nodes on no board, missing required fields…) for you and the agent
 - Everything is plain markdown and JSON in a folder, so it works with git
 
-## Sheets and statblocks
+## Sheets
 
-- A type can use a **statblock system** (Types view → Sheet, or `types.<id>.system` in `maquest.json`). Presets: `dnd-2024`, `pf2e`, `osr`, `blades`, `coc7`, `generic`. A project can define its own or extend a preset under `systems` (e.g. relabel stats in another language). Values live in the node's frontmatter as `stats:`, so numbers stay out of free-form fields and the body.
-- Each `# Heading` of a body is a tab next to the statblock. Types can list their tabs in order (`tabs`); tabs named like Abilities, Actions, Spells (or configured with `kind: abilities`) render as **ability cards**: `## Group` headings group them, `### Name {meta, …}` or a bullet starting with a bold name is one ability. Hover a card for the full text; click to keep it open.
-- Mark a type as a **rules library** (e.g. Spells) and same-named ability cards show that node's text, so rules text lives once and sheets keep only campaign changes.
-- Reading is the default. The pencil edits the statblock or the ability text, prose tabs edit in place, and the document icon edits the whole body at once.
+Every project decides what its entities hold. A D&D campaign can give monsters AC, HP and ability scores, a Persona-style game can give characters Knowledge, Guts and Charm on a radar chart, and a novel can skip all of it. Maquest itself knows no game system: sheets are data in `maquest.json`, usually written by your agent (`project` tool).
+
+- **Fields.** A type lists its fields (`types.<id>.fields`): a key for plain text, or `{ key, label, widget, required, badge, options, min, max, … }`. Values live in the node's frontmatter under `fields:` as plain YAML (text, numbers, lists, maps), so they stay readable in git and other editors.
+- **Widgets.** `text` (`options` make it a choice), `subtitle`, `quote`, `stat` (big number tile with a note), `toggle`, `meter` (bar, ring, dots, boxes or a progress clock), `scores` (grid, bars, radar or dots, with an optional `modifier` such as `{ base: 10, step: 2 }`), `pairs` (named values as chips), `tags`, `list`, `refs` (links to other nodes) and `table`. Meters, ratings and toggles can be set with a click; everything else edits with the pencil.
+- **Tabs.** `types.<id>.tabs` orders the sheet. `fields` tabs show fields with their widgets (listed, grouped in `sections`, or all the rest); `prose` tabs are the body's `# Heading` sections; `cards` tabs render `## Group` / `### Name {meta, …}` entries as hoverable cards. Fields that no tab shows sit as properties under the title. Body headings the type doesn't name still become tabs.
+- **Reuse.** A type can `extend` another (e.g. monsters start from characters' fields) and `omit` fields. Mark a type as a **library** and cards with the same name show that node's text, so shared reference text lives once.
+- **Rules.** `required` fields, `options`, `min`/`max` and widget shapes are checked by Maquest checks, the same way a linter checks code; `badge` fields show as chips on canvas cards.
 
 ## Maquest checks
 
-The warning/error button in the title bar lists what Maquest detected: broken links and connections, nodes on no board, empty groups, missing or malformed statblocks, stats still kept in fields, rules text copied between sheets, overlong documents, too few clues and more. Issues name the node, say why and what to do, and offer quick fixes or "ignore for this node". Rules are set per project (severity, options, scope by type or tag, and declarative custom checks: required fields, stats, tags, tabs or text, forbidden text, allowed `##` headings and word limits, optionally inside one tab) in `maquest.json` under `checks` and `customChecks`, or in the menu's Rules tab. Checks rerun shortly after any change. Agents see the same report through `overview({ checks: true })` and after each write.
+The warning/error button in the title bar lists what Maquest detected: broken links and connections, nodes on no board, empty groups, missing or malformed fields, values kept under another name of a field, card text copied between sheets, overlong documents, too few clues and more. Issues name the node, say why and what to do, and offer quick fixes or "ignore for this node". Rules are set per project (severity, options, scope by type or tag, and declarative custom checks: required fields, tags, tabs or text, forbidden text, allowed `##` headings and word limits, optionally inside one tab) in `maquest.json` under `checks` and `customChecks`, or in the menu's Rules tab. Checks rerun shortly after any change. Agents see the same report through `overview({ checks: true })` and after each write.
 
 ## Canvas and editing
 
