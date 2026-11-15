@@ -136,3 +136,29 @@ test('project update without a name keeps the name', async (t) => {
   assert.equal(p.config().kind, 'rpg')
   assert.equal(p.config().description, 'A campaign')
 })
+
+test('checks: overview summarizes, checks: true lists issues, writes report the touched nodes', async (t) => {
+  const { p, call } = await connect(t)
+  p.setTypes({ monster: { label: 'Monster', system: 'dnd-2024' } })
+  const created = await call('write', { nodes: [{ type: 'monster', title: 'Wight', body: 'Serves [[theron]].' }] })
+  assert.equal(created.isError, false, created.text)
+  assert.match(created.text, /Maquest detected for these nodes[\s\S]*wight \[broken-link\]: links to \[\[theron\]\][\s\S]*wight \[statblock-missing\]/)
+
+  const overview = await call('overview', {})
+  assert.match(overview.text, /## Maquest checks\nMaquest detected 1 error, 1 warning\./)
+  assert.match(overview.text, /## Statblocks[\s\S]*dnd-2024 \(D&D 5e \(2024\)\) for monster: size \[subtitle/)
+
+  const report = await call('overview', { checks: true })
+  assert.match(report.text, /^Maquest detected 1 error, 1 warning\.\n\n## broken-link \(error, 1\) — Broken links\nFix: /)
+
+  const stats = await call('write', {
+    nodes: [{ id: 'wight', stats: { ac: 14, hp: { value: 82, note: '11d8+33' }, scores: { str: 15 } }, edits: [{ find: '[[theron]]', replace: 'Theron' }] }],
+  })
+  assert.doesNotMatch(stats.text, /Maquest detected/)
+  const read = await call('read', { ids: ['wight'] })
+  assert.match(read.text, /stats \(dnd-2024\): ac=14 · hp=82 \(11d8\+33\) · scores=STR 15 \(\+2\)/)
+
+  const configured = await call('project', { action: 'update', checks: { 'statblock-missing': 'off' } })
+  assert.equal(configured.isError, false, configured.text)
+  assert.equal(p.config().checks?.['statblock-missing'], 'off')
+})

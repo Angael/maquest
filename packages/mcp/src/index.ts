@@ -7,7 +7,6 @@ import {
   EDGE_DESCRIPTIONS,
   EDGE_LABEL_MAX,
   SUMMARY_MAX,
-  textWarnings,
   REFERENCE_EDGE_TYPES,
   clueCounts,
   onBoard,
@@ -45,6 +44,15 @@ import {
   writeNodes,
   type BatchResult,
   type Outcome,
+  type CheckReport,
+  type Issue,
+  RULES,
+  SYSTEM_PRESETS,
+  detectedLine,
+  statRows,
+  statSummary,
+  isEmptyStat,
+  systemIdOf,
 } from '@maquest/core'
 
 function arg(name: string) {
@@ -194,6 +202,8 @@ function nodeText(p: Project, n: StoryNode, body?: { heading: string; text: stri
       `clock: ${n.clock.filled}/${n.clock.size}${n.clock.steps.some(Boolean) ? ` — ${n.clock.steps.map((s, i) => `${i + 1}${i < n.clock!.filled ? '✓' : ''}: ${s || '?'}`).join('; ')}` : ''}`,
     boardsText(p, n.id) && `boards: ${boardsText(p, n.id)}`,
     ...Object.entries(n.fields).map(([k, v]) => `${k}: ${v || '(empty)'}`),
+    statsText(p, n),
+    n.checks?.off.length && `checks off: ${n.checks.off.join(', ')}`,
   ].filter(Boolean)
   return [
     `# ${n.title}`,
@@ -204,6 +214,20 @@ function nodeText(p: Project, n: StoryNode, body?: { heading: string; text: stri
   ]
     .filter(Boolean)
     .join('\n\n')
+}
+
+/** The statblock in one compact line per stat, e.g. "stats (D&D 5e (2024)): AC 12 (15 z Mage Armor) · HP 40 · …". */
+function statsText(p: Project, n: StoryNode) {
+  const id = systemIdOf(
+    n,
+    p.types().find((t) => t.id === n.type),
+  )
+  const system = id ? p.systems().get(id) : undefined
+  if (!system && isEmptyStat(n.stats)) return ''
+  const rows = statRows(system, n.stats).filter((r) => !isEmptyStat(r.value))
+  const head = `stats (${system ? `${system.id}` : 'no system'}${n.system ? ', set on node' : ''})`
+  if (!rows.length) return `${head}: (empty; keys: ${system!.stats.map((s) => s.key).join(', ')})`
+  return `${head}: ${rows.map((r) => `${r.def.key}=${statSummary(r.def, r.value)}`).join(' · ')}`
 }
 
 function boardsText(p: Project, id: string) {
@@ -274,6 +298,69 @@ function boardText(p: Project, b: Board) {
     .join('\n\n')
 }
 
+/** Types with a statblock system and the stat keys agents should use. */
+function systemsText(p: Project) {
+  const systems = p.systems()
+  const used = new Map<string, string[]>()
+  for (const t of p.types()) if (t.system) used.set(t.system, [...(used.get(t.system) ?? []), t.id])
+  for (const n of p.listNodes()) if (n.system && !used.has(n.system)) used.set(n.system, [])
+  if (!used.size) return ''
+  const tabs = p
+    .types()
+    .filter((t) => t.tabs.length)
+    .map((t) => `- ${t.id} tabs: ${t.tabs.map((x) => `${x.title}${x.kind === 'abilities' ? ' (abilities)' : ''}`).join(', ')}`)
+  return [
+    '## Statblocks (write stats: { key: value }; values merge, null removes)',
+    ...[...used].map(([id, typeIds]) => {
+      const s = systems.get(id)
+      if (!s) return `- ${id}: unknown system`
+      return `- ${id} (${s.label})${typeIds.length ? ` for ${typeIds.join(', ')}` : ''}: ${s.stats.map((x) => `${x.key}${x.required ? '*' : ''} [${x.kind}${x.label ? ` "${x.label}"` : ''}${x.hint ? `, e.g. ${x.hint}` : ''}]`).join('; ')}`
+    }),
+    ...tabs,
+  ].join('\n')
+}
+
+/** A checks report for agents: counts first, then issues grouped by rule with the rule's fix once. */
+function checksText(report: CheckReport, opts: { ids?: string[]; rules?: string[]; notes?: boolean }) {
+  const ids = opts.ids && new Set(opts.ids)
+  const rules = opts.rules && new Set(opts.rules)
+  const issues = report.issues.filter((i) => (!ids || (i.node && ids.has(i.node))) && (!rules || rules.has(i.rule)))
+  const counts = { error: 0, warn: 0, info: 0 }
+  for (const i of issues) counts[i.severity]++
+  const head = detectedLine(counts) || 'Maquest detected no problems.'
+  const listed = issues.filter((i) => opts.notes || rules || i.severity !== 'info')
+  const byRule = new Map<string, Issue[]>()
+  for (const i of listed) byRule.set(i.rule, [...(byRule.get(i.rule) ?? []), i])
+  const cap = rules ? 200 : 25
+  const sections = [...byRule].map(([rule, list]) => {
+    const meta = report.rules.find((r) => r.id === rule)
+    const lines = list.slice(0, cap).map((i) => `- ${i.node ?? i.board ?? i.edge ?? 'project'}: ${i.message}${i.hint ? ` → ${i.hint}` : ''}`)
+    const more = list.length > cap ? `\n- +${list.length - cap} more (overview({ checks: { rules: ["${rule}"] } }))` : ''
+    return `## ${rule} (${list[0].severity}, ${list.length})${meta ? ` — ${meta.title}\nFix: ${meta.fix}` : ''}\n${lines.join('\n')}${more}`
+  })
+  const hiddenNotes = !opts.notes && !rules ? counts.info : 0
+  return [
+    head,
+    ...sections,
+    hiddenNotes ? `(${hiddenNotes} info-level note${hiddenNotes === 1 ? '' : 's'} not listed; pass checks: { notes: true }.)` : '',
+    'Tell the author what Maquest detected and what you fixed. Rules and severities are configured with project({ checks }); a node opts out with write checks: { off: [rule] }.',
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+/** Errors and warnings about the given nodes, appended to write results. */
+function touchedIssues(p: Project, ids: string[]) {
+  if (!ids.length) return ''
+  const set = new Set(ids)
+  const issues = p.check().issues.filter((i) => i.node && set.has(i.node) && i.severity !== 'info')
+  if (!issues.length) return ''
+  return `\nMaquest detected for these nodes (fix now or tell the author):\n${issues
+    .slice(0, 30)
+    .map((i) => `- ${i.node} [${i.rule}]: ${i.message}${i.hint ? ` → ${i.hint}` : ''}`)
+    .join('\n')}${issues.length > 30 ? `\n- +${issues.length - 30} more (overview({ checks: { ids: [...] } }))` : ''}`
+}
+
 const server = new McpServer(
   { name: 'maquest', version: '0.1.0' },
   {
@@ -283,6 +370,7 @@ Capture structure eagerly: turn what the author says into project changes right 
 Connection labels are short names for the relationship (max ${EDGE_LABEL_MAX} chars). Never put status or TODOs in labels; use the node's status, tags or body.
 Boards are separate canvases (e.g. one per arc or investigation); each shows only the nodes placed on it.
 Edits apply immediately to markdown files on disk, and the Maquest app updates live.
+Maquest checks the project for problems (broken links, nodes on no board, empty groups, missing or malformed statblocks, copied rules text, overlong documents…), configured per project. Write results list problems with the nodes you touched; after a round of changes run overview({ checks: true }) and fix what you caused. When telling the author, say "Maquest detected …" (never "the linter").
 The author keeps quick live notes in the app during sessions. When they change, tool results start with an IMPORTANT live-notes notice: treat it as top priority. Notes in the overview are still pending: check whether the project already reflects them, clear them with delete({ liveNotes: true }) if so, otherwise act on them or bring them up with the author.`,
   },
 )
@@ -293,11 +381,26 @@ server.registerTool(
     title: 'Project overview',
     description:
       'Compact map of the whole project: config, story outline (stories > chapters > scenes), entities, notes, backlog, connection stats, guideline index. Start here.',
-    inputSchema: {},
+    inputSchema: {
+      checks: z
+        .union([
+          z.boolean(),
+          z.object({
+            ids: z.array(z.string()).optional().describe('Only issues about these nodes'),
+            rules: z.array(z.string()).optional().describe('Only these rules'),
+            notes: z.boolean().optional().describe('Also list info-level notes (counted but not listed by default)'),
+          }),
+        ])
+        .optional()
+        .describe(
+          'Return the Maquest checks report instead of the overview: errors and warnings (broken links, nodes on no board, missing statblocks, copied rules text…) with what to do. Run it after a round of changes.',
+        ),
+    },
     annotations: { readOnlyHint: true },
   },
-  safe(() => {
+  safe(({ checks }) => {
     const p = project()
+    if (checks) return checksText(p.check(), checks === true ? {} : checks)
     const c = p.config()
     const all = p.listNodes()
     const edges = p.graph().edges
@@ -317,9 +420,10 @@ server.registerTool(
       (() => {
         const custom = p.types().filter((t) => !t.builtin)
         return custom.length
-          ? `## Custom types\n${custom.map((t) => `- ${t.id}: ${t.label}${t.fields.length ? ` (fields: ${t.fields.join(', ')})` : ''}`).join('\n')}`
+          ? `## Custom types\n${custom.map((t) => `- ${t.id}: ${t.label}${t.library ? ' [library: ability cards with the same name link here]' : ''}${t.fields.length ? ` (fields: ${t.fields.join(', ')})` : ''}`).join('\n')}`
           : ''
       })(),
+      systemsText(p),
       ...p
         .types()
         .filter((t) => t.entity)
@@ -341,6 +445,10 @@ server.registerTool(
         return weak.length
           ? `## Three-clue check\n${weak.map(([id, n]) => `- ${id} (${titles.get(id) ?? '?'}): ${n} clue${n === 1 ? '' : 's'}`).join('\n')}`
           : ''
+      })(),
+      (() => {
+        const line = detectedLine(p.check().counts)
+        return `## Maquest checks\n${line ? `${line} List them with overview({ checks: true }).` : 'No problems detected.'}`
       })(),
       `## Guidelines (read with "guidelines")\n${p
         .guidelines({ applicableOnly: true })
@@ -457,11 +565,6 @@ server.registerTool(
   }),
 )
 
-const warn = (n: StoryNode) =>
-  textWarnings(n)
-    .map((w) => `\n  warning: ${w}`)
-    .join('')
-
 const WriteItem = z.object({
   id: z
     .string()
@@ -513,13 +616,27 @@ const WriteItem = z.object({
   clock: Clock.nullable()
     .optional()
     .describe('Progress clock for fronts/threats/countdowns: {size, filled, steps[] (what happens at each segment)}. null removes it.'),
+  system: z.string().nullable().optional().describe("Statblock system for this node only (default: its type's, see overview). null resets."),
+  stats: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe(
+      'Statblock values by the system\'s keys (overview lists them), e.g. { ac: { value: 12, note: "15 with mage armor" }, hp: 40, speed: "30 ft", scores: { str: 9, dex: 14 }, saves: { int: 6 } }. Merged into existing stats, maps one level deep; null removes. Keep numbers and rules here, not in fields or the body.',
+    ),
+  checks: z
+    .object({ off: z.array(z.string()) })
+    .nullable()
+    .optional()
+    .describe('Maquest checks to skip for this node, e.g. { off: ["statblock-missing"] } for a cat that needs no statblock. null clears.'),
 })
 
 server.registerTool(
   'write',
   {
     title: 'Create or update nodes',
-    description: `Batch create/update nodes. Types: story, chapter, scene, note, character, location, faction, item, idea (backlog), media. New nodes get starter templates (fields like want/need/flaw for characters, goal/conflict/outcome for scenes). Markdown bodies may embed media: ![alt](media/file.png). Links to other nodes: [[node-id]]. The whole batch is checked first, in order, so items may use ids created or renamed earlier in it; if any item fails the check, nothing is written. Results are per item (#n): when a batch stops part-way, it says which items were saved, which failed and which did not run.`,
+    description: `Batch create/update nodes. Types: story, chapter, scene, note, character, location, faction, item, idea (backlog), media. New nodes get starter templates (fields like want/need/flaw for characters, goal/conflict/outcome for scenes). Markdown bodies may embed media: ![alt](media/file.png). Links to other nodes: [[node-id]].
+Entity sheets: each H1 heading (# Title) of a body is a tab in the app; keep one topic per tab (e.g. # Abilities, # Backstory, # Notes) and put numbers in stats, not in the body. In abilities tabs (# Abilities, # Actions, # Spells…, or tabs configured as abilities) each ability is a card: ## headings group them ("Actions", "Reactions", "2/day", "Level 3 spells"), ### Name {meta, …} starts one ability with its description below (bullets like "- **Name** (meta) — text" work too). Rules text shared by several sheets (spells, conditions) belongs in one node of a library type (overview marks them); a card named like a library node, or ### [[id]], shows that node's text, so sheets only add campaign-specific changes.
+Results list what Maquest detected about the written nodes (broken links, missing statblocks…): fix those or tell the author. The whole batch is checked first, in order, so items may use ids created or renamed earlier in it; if any item fails the check, nothing is written. Results are per item (#n): when a batch stops part-way, it says which items were saved, which failed and which did not run.`,
     inputSchema: { nodes: z.array(WriteItem).min(1) },
   },
   safe(({ nodes }) => {
@@ -527,11 +644,12 @@ server.registerTool(
     const r = writeNodes(p, nodes)
     const out = batchText(r, (w) =>
       w.action === 'created'
-        ? `created ${w.node.id} (${w.node.type}) ${w.node.title} on ${w.boards.join(', ')}${warn(w.node)}`
-        : `updated ${w.node.id}${w.renamedFrom ? ` (renamed from ${w.renamedFrom})` : ''} (${w.node.type}) ${w.node.title}${w.boards.length ? ` on ${w.boards.join(', ')}` : ''}${warn(w.node)}`,
+        ? `created ${w.node.id} (${w.node.type}) ${w.node.title} on ${w.boards.join(', ')}`
+        : `updated ${w.node.id}${w.renamedFrom ? ` (renamed from ${w.renamedFrom})` : ''} (${w.node.type}) ${w.node.title}${w.boards.length ? ` on ${w.boards.join(', ')}` : ''}`,
     )
     const prose = r.outcomes.some((o) => o.status === 'applied' && o.result.wroteBody && o.result.node.type === 'scene')
-    return out + (prose ? styleReminder(p) : '')
+    const touched = r.outcomes.flatMap((o) => (o.status === 'applied' ? [o.result.node.id] : []))
+    return out + touchedIssues(p, touched) + (prose ? styleReminder(p) : '')
   }),
 )
 
@@ -811,7 +929,7 @@ server.registerTool(
   {
     title: 'Project settings',
     description:
-      'Update project settings (name, kind: novel|screenplay|rpg|mixed, description; kind selects which guidelines apply), add/edit node types, or init a new project in the current directory.',
+      'Update project settings (name, kind: novel|screenplay|rpg|mixed, description; kind selects which guidelines apply), add/edit node types (with statblock systems, tabs, libraries), statblock systems and Maquest check rules, or init a new project in the current directory.',
     inputSchema: {
       action: z.enum(['update', 'init']),
       name: z.string().optional(),
@@ -821,11 +939,29 @@ server.registerTool(
         .record(z.string(), TypeDef.partial().nullable())
         .optional()
         .describe(
-          'Add or change node types by id, e.g. {"monster": {"label": "Monster", "icon": "skull", "color": "#dc2626", "fields": ["threat", "habitat"]}}. Custom types are entities stored in their own folder. Built-ins accept label/plural/color/icon only. null resets a built-in or removes an empty custom type.',
+          'Add or change node types by id, e.g. {"monster": {"label": "Monster", "icon": "skull", "color": "#dc2626", "fields": ["threat", "habitat"], "system": "dnd-2024", "tabs": [{"title": "Actions", "kind": "abilities"}, {"title": "Lore"}]}, "spell": {"label": "Spell", "library": true}}. Custom types are entities stored in their own folder. Built-ins accept label/plural/color/icon/system/tabs/library. system = statblock system id; tabs = body H1 sections shown as tabs in this order (kind abilities renders ability cards; aliases match other headings); library = reusable rules text that same-named ability cards link to. null resets a built-in or removes an empty custom type.',
+        ),
+      systems: z
+        .record(z.string(), z.unknown())
+        .optional()
+        .describe(
+          `Define or change statblock systems by id (null removes). Presets: ${Object.keys(SYSTEM_PRESETS).join(', ')}. A system: { label, extends?: "dnd-2024", tab?: "Stats", stats: [{ key, label?, kind: subtitle|stat|line|scores|bonuses|tags|track, keys?, labels?, modifier?: d20|none, required?, badge?, aliases?, hint? }], omit?: [keys] }. With extends, a stat with an existing key changes it (e.g. relabel speed to "Szybkość").`,
+        ),
+      checks: z
+        .record(z.string(), z.unknown())
+        .optional()
+        .describe(
+          `Configure Maquest check rules: { "<rule>": "error"|"warn"|"info"|"off" | [level, { options }] } (null resets). Rules: ${RULES.map((r) => `${r.id}${r.options?.length ? ` (${r.options.map((o) => o.key).join(', ')})` : ''}`).join(', ')}. Scope options: types, excludeTypes, excludeTags.`,
+        ),
+      customChecks: z
+        .array(z.unknown())
+        .optional()
+        .describe(
+          'Replace the project\'s own checks: [{ id, message, hint?, severity?: error|warn|info, types?, tags?, excludeTags?, require?: { fields?, stats?, tags?, summary?, body?, media?, parent?, edges?: [edge types], tabs? }, forbid?: "regex", maxWords? }].',
         ),
     },
   },
-  safe(({ action, name, kind, description, types }) => {
+  safe(({ action, name, kind, description, types, systems, checks, customChecks }) => {
     if (action === 'init') {
       const root = path.resolve(startDir)
       const p = Project.init(root, {
@@ -841,9 +977,18 @@ server.registerTool(
       return `initialized ${p.config().name} at ${p.root}`
     }
     const p = project()
+    if (systems) p.setSystems(systems)
     const all = types ? p.setTypes(types) : undefined
+    if (checks || customChecks) p.setChecks(checks ?? {}, customChecks)
     const c = name || kind || description !== undefined ? p.updateConfig({ name, kind, ...(description !== undefined && { description }) }) : p.config()
-    return `project: ${c.name} (${c.kind})${all ? `\ntypes: ${all.map((t) => t.id).join(', ')}` : ''}`
+    return [
+      `project: ${c.name} (${c.kind})`,
+      all && `types: ${all.map((t) => `${t.id}${t.system ? ` (${t.system})` : ''}`).join(', ')}`,
+      systems && `systems: ${Object.keys(c.systems ?? {}).join(', ') || '(presets only)'}`,
+      (checks || customChecks) && detectedLine(p.check().counts),
+    ]
+      .filter(Boolean)
+      .join('\n')
   }),
 )
 
