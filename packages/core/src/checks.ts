@@ -1,5 +1,5 @@
 /**
- * Maquest checks: project-wide health rules (broken links, off-canvas nodes, missing statblocks, …) configured per
+ * Maquest checks: project-wide health rules (broken links, off-canvas nodes, missing required fields, …) configured per
  * project in maquest.json `checks` and `customChecks`. Pure: works on a snapshot of the project, so the app, the MCP
  * server and tests run exactly the same rules.
  */
@@ -18,20 +18,21 @@ import {
   type StoryNode,
   type TabDef,
   type TypeInfo,
+  typeProblems,
 } from './schema'
 import {
-  ABILITY_TAB_NAMES,
-  abilityLibrary,
-  bodyAbilities,
-  isEmptyStat,
+  bodyCards,
+  cardLibrary,
+  fieldForKey,
+  fieldLabel,
+  fieldProblem,
+  isEmptyValue,
   normalizeName,
-  resolveSystems,
-  statForField,
-  statLabel,
-  statProblem,
+  plainText,
+  refIds,
   splitSections,
-  systemIdOf,
-  type ResolvedSystem,
+  tabMatches,
+  tabOfField,
 } from './sheet'
 import { suggestIds } from './project'
 
@@ -42,7 +43,8 @@ export type QuickFix =
   | { kind: 'remove-card'; board: string; card: string }
   | { kind: 'delete-group'; board: string; group: string }
   | { kind: 'unlink'; node: string; target: string }
-  | { kind: 'move-fields'; node: string; fields: Record<string, string> }
+  /** Moves values from stray keys (old or translated names) to the fields they stand for: { from: to }. */
+  | { kind: 'rename-fields'; node: string; fields: Record<string, string> }
   | { kind: 'arrange'; board: string }
 
 export type Issue = {
@@ -58,8 +60,8 @@ export type Issue = {
   /** What to do about it, when more specific than the rule's own fix text. */
   hint?: string
   fixes?: QuickFix[]
-  /** Where the app should open the node: the statblock tab, in edit mode. */
-  open?: 'stats'
+  /** The sheet tab the app should open (in edit mode) to fix it. */
+  open?: string
 }
 
 export type RuleOption = { key: string; label: string; type: 'number' | 'types' | 'tags'; default?: number | string[] }
@@ -115,8 +117,8 @@ export const RULES: RuleMeta[] = [
     title: 'Invalid project settings',
     category: 'integrity',
     level: 'error',
-    description: 'Part of maquest.json (a statblock system, a check setting or a custom check) is invalid and is ignored.',
-    fix: 'Correct the entry in maquest.json (project tool: systems, checks, customChecks).',
+    description: 'Part of maquest.json (a type, its fields or tabs, a check setting or a custom check) is invalid and is ignored.',
+    fix: 'Correct the entry in maquest.json (project tool: types, checks, customChecks).',
   },
   {
     id: 'broken-link',
@@ -159,12 +161,12 @@ export const RULES: RuleMeta[] = [
     fix: 'Import the file (media import) or fix the path.',
   },
   {
-    id: 'unknown-system',
-    title: 'Unknown statblock systems',
-    category: 'sheets',
+    id: 'broken-ref',
+    title: 'References to missing nodes',
+    category: 'integrity',
     level: 'error',
-    description: 'A type or node uses a statblock system that is neither a preset nor defined in the project.',
-    fix: 'Use a preset (dnd-2024, pf2e, osr, blades, coc7, generic) or define the system in maquest.json systems.',
+    description: 'A refs field lists a node id that does not exist.',
+    fix: 'Point it at an existing node id, create the node, or remove the id from the field.',
   },
   {
     id: 'not-on-canvas',
@@ -243,53 +245,37 @@ export const RULES: RuleMeta[] = [
     fix: 'Merge them (delete with replaceWith) or rename one.',
   },
   {
-    id: 'statblock-missing',
-    title: 'Missing statblocks',
+    id: 'field-missing',
+    title: 'Missing required fields',
     category: 'sheets',
     level: 'warn',
-    description: 'A node of a type with a statblock system has no stats yet.',
-    fix: 'Fill its stats (write stats) or opt the node out (checks: { off: [statblock-missing] }).',
+    description: "A node lacks values its type's fields mark as required.",
+    fix: 'Fill the fields (write fields: { key: value }), or opt the node out (checks: { off: ["field-missing"] }).',
     options: [...scope, { key: 'tags', label: 'Only tags', type: 'tags' }],
   },
   {
-    id: 'stat-missing',
-    title: 'Missing required stats',
+    id: 'field-invalid',
+    title: 'Malformed fields',
     category: 'sheets',
     level: 'warn',
-    description: 'A statblock lacks values its system marks as required (e.g. AC and HP).',
-    fix: 'Fill the missing stats.',
+    description: "A field's value doesn't fit its widget, choices or range (e.g. scores that aren't numbers).",
+    fix: "Rewrite the value in the field's format (overview lists each type's fields).",
   },
   {
-    id: 'stat-invalid',
-    title: 'Malformed stats',
+    id: 'field-alias',
+    title: 'Fields under another name',
     category: 'sheets',
     level: 'warn',
-    description: "A stat value doesn't fit its kind (e.g. scores that aren't numbers).",
-    fix: "Rewrite the value in the stat's format (see the system's keys in overview).",
+    description: "A node keeps a value under another name of one of its type's fields (an alias or the label), so the sheet doesn't show it there.",
+    fix: "Move the value to the field's key (write fields: { key: value, oldKey: null }).",
   },
   {
-    id: 'stat-unknown',
-    title: 'Stats outside the system',
-    category: 'sheets',
-    level: 'info',
-    description: "A node has stats under keys its system doesn't define (often a typo or a translated key).",
-    fix: "Rename the key to the system's key, or add the stat to the project's system.",
-  },
-  {
-    id: 'legacy-fields',
-    title: 'Stats kept in fields',
+    id: 'shared-card',
+    title: 'Copied card text',
     category: 'sheets',
     level: 'warn',
-    description: 'A node with a statblock still keeps stats (AC, HP, CR…) as free-form fields.',
-    fix: 'Move them into stats (write stats, then remove the fields with null).',
-  },
-  {
-    id: 'shared-ability',
-    title: 'Copied rules text',
-    category: 'sheets',
-    level: 'warn',
-    description: 'The same ability or spell is written out in several nodes, or copies a library node, instead of being shared.',
-    fix: 'Create one library node (e.g. type "spell") with the full text and keep only the name (plus campaign-specific changes) on each sheet; same-named abilities link to it automatically.',
+    description: 'The same card is written out in several nodes, or copies a library node, instead of being shared.',
+    fix: 'Create one node of a library type with the full text and keep only the name (plus local changes) on each sheet; cards with the same name link to it automatically.',
     options: [{ key: 'minChars', label: 'Min copied chars', type: 'number', default: 120 }],
   },
   {
@@ -357,10 +343,16 @@ export function runChecks(input: CheckInput): CheckReport {
   const { nodes, graph, types } = input
   const byId = new Map(nodes.map((n) => [n.id, n]))
   const typeOf = new Map(types.map((t) => [t.id, t]))
-  const { systems, problems: systemProblems } = resolveSystems(input.config.systems)
   const firstBoard = graph.boards[0]?.id ?? 'main'
 
-  for (const p of systemProblems) issues.push({ rule: 'config-invalid', severity: 'error', message: `systems.${p.system}: ${p.message}` })
+  for (const p of typeProblems(input.config)) issues.push({ rule: 'config-invalid', severity: 'error', message: `types.${p.type}: ${p.message}` })
+  if (input.config.systems !== undefined)
+    issues.push({
+      rule: 'config-invalid',
+      severity: 'error',
+      message: 'systems is no longer used: fields and their widgets are defined on types',
+      hint: 'Move each system\'s stats into types.<id>.fields (kind → widget) and add a { "title": "…", "kind": "fields" } tab, then remove systems (project tool: types).',
+    })
 
   const custom: CustomCheck[] = []
   ;(input.config.customChecks ?? []).forEach((raw, i) => {
@@ -398,7 +390,7 @@ export function runChecks(input: CheckInput): CheckReport {
 
   const linked = new Set<string>()
   for (const n of subjects('broken-link')) {
-    const text = [n.body, ...Object.values(n.fields), n.summary ?? ''].join('\n')
+    const text = [n.body, ...Object.values(n.fields).map(plainText), n.summary ?? ''].join('\n')
     const missing = new Set<string>()
     for (const m of text.matchAll(LINKS)) {
       const target = m[1].trim()
@@ -417,7 +409,7 @@ export function runChecks(input: CheckInput): CheckReport {
     }
   }
   for (const n of nodes)
-    for (const m of [n.body, ...Object.values(n.fields)].join('\n').matchAll(LINKS)) {
+    for (const m of [n.body, ...Object.values(n.fields).map(plainText)].join('\n').matchAll(LINKS)) {
       linked.add(m[1].trim())
       linked.add(n.id)
     }
@@ -460,79 +452,67 @@ export function runChecks(input: CheckInput): CheckReport {
   }
 
   // ---- sheets ----
-  const systemOf = (n: StoryNode): ResolvedSystem | undefined => {
-    const id = systemIdOf(n, typeOf.get(n.type))
-    return id ? systems.get(id) : undefined
-  }
-  for (const t of types) {
-    if (t.system && !systems.has(t.system) && level('unknown-system') !== 'off')
-      issues.push({ rule: 'unknown-system', severity: level('unknown-system') as Severity, message: `type ${t.id} uses unknown system "${t.system}"` })
-  }
-  for (const n of subjects('unknown-system', (x) => !!x.system && !systems.has(x.system)))
-    emit({ rule: 'unknown-system', node: n.id, message: `uses unknown system "${n.system}"` })
-
-  for (const n of subjects('statblock-missing', (x) => !!systemOf(x) && isEmptyStat(x.stats)))
-    emit({ rule: 'statblock-missing', node: n.id, message: `has no ${systemOf(n)!.label} statblock`, open: 'stats' })
-
   for (const n of nodes) {
-    const system = systemOf(n)
-    if (!system) continue
-    const stats = n.stats ?? {}
-    if (!isEmptyStat(stats)) {
-      const missing = system.stats.filter((s) => s.required && isEmptyStat(stats[s.key]))
-      if (missing.length) emit({ rule: 'stat-missing', node: n.id, message: `statblock lacks ${missing.map(statLabel).join(', ')}`, open: 'stats' })
+    const type = typeOf.get(n.type)
+    if (!type) continue
+    for (const def of type.fields) {
+      const value = n.fields[def.key]
+      if (def.widget === 'refs' && !isEmptyValue(value)) {
+        const missing = refIds(value).filter((id) => !byId.has(id))
+        if (missing.length)
+          emit({
+            rule: 'broken-ref',
+            node: n.id,
+            message: `${def.key} refers to ${missing.join(', ')}, which ${missing.length === 1 ? 'does' : 'do'} not exist`,
+          })
+        for (const id of refIds(value)) {
+          linked.add(id)
+          linked.add(n.id)
+        }
+      }
+      const problem = fieldProblem(def, value)
+      if (problem) emit({ rule: 'field-invalid', node: n.id, message: `${def.key}: ${problem}`, open: tabOfField(type, def.key) })
     }
-    for (const def of system.stats) {
-      const problem = statProblem(def, stats[def.key])
-      if (problem) emit({ rule: 'stat-invalid', node: n.id, message: `stats.${def.key}: ${problem}`, open: 'stats' })
-    }
-    const unknown = Object.keys(stats).filter((k) => !system.stats.some((s) => s.key === k))
-    if (unknown.length) {
-      const near = unknown.map((k) => {
-        const s = statForField(system, k)
-        return s ? `${k} → ${s.key}` : k
-      })
-      emit({
-        rule: 'stat-unknown',
-        node: n.id,
-        message: `stats not in ${system.label}: ${near.join(', ')}`,
-        hint: `Keys: ${system.stats.map((s) => s.key).join(', ')}`,
-      })
-    }
-    const legacy = Object.fromEntries(
-      Object.entries(n.fields)
-        .filter(([, v]) => v.trim())
-        .flatMap(([k]) => {
-          const s = statForField(system, k)
-          return s && isEmptyStat(stats[s.key]) ? [[k, s.key]] : []
-        }),
+    const strays = Object.fromEntries(
+      Object.keys(n.fields).flatMap((k) => {
+        const f = fieldForKey(type.fields, k)
+        return f && !isEmptyValue(n.fields[k]) ? [[k, f.key]] : []
+      }),
     )
-    if (Object.keys(legacy).length)
+    if (Object.keys(strays).length)
       emit({
-        rule: 'legacy-fields',
+        rule: 'field-alias',
         node: n.id,
-        message: `fields ${Object.keys(legacy).join(', ')} belong in the statblock`,
-        hint: `Move to stats: ${Object.entries(legacy)
-          .map(([f, k]) => `${f} → ${k}`)
+        message: `keeps ${Object.entries(strays)
+          .map(([from, to]) => `${from} under another name of ${to}`)
           .join(', ')}`,
-        fixes: [{ kind: 'move-fields', node: n.id, fields: legacy }],
+        hint: `Move: ${Object.entries(strays)
+          .map(([from, to]) => `${from} → ${to}`)
+          .join(', ')}`,
+        fixes: [{ kind: 'rename-fields', node: n.id, fields: strays }],
       })
   }
+  for (const n of subjects('field-missing')) {
+    const type = typeOf.get(n.type)
+    const missing = type?.fields.filter((f) => f.required && isEmptyValue(n.fields[f.key])) ?? []
+    if (missing.length)
+      emit({ rule: 'field-missing', node: n.id, message: `lacks ${missing.map(fieldLabel).join(', ')}`, open: tabOfField(type!, missing[0].key) })
+  }
 
-  if (level('shared-ability') !== 'off') {
-    const minChars = Number(opts('shared-ability').minChars ?? 120)
-    const library = abilityLibrary(nodes, types)
+  if (level('shared-card') !== 'off') {
+    const minChars = Number(opts('shared-card').minChars ?? 120)
+    const library = cardLibrary(nodes, types)
     const libraryTypes = types.filter((t) => t.library)
     const seen = new Map<string, { node: string; name: string; text: string }[]>()
     for (const n of nodes) {
-      if (typeOf.get(n.type)?.library || muted(n, 'shared-ability')) continue
-      for (const a of bodyAbilities(n.body, typeOf.get(n.type)?.tabs)) {
+      if (typeOf.get(n.type)?.library || muted(n, 'shared-card')) continue
+      for (const a of bodyCards(n.body, typeOf.get(n.type)?.tabs)) {
         if (a.text.length < minChars) continue
         const key = normalizeName(a.name)
         const lib = a.ref ? byId.get(a.ref) : library.get(key)
         if (lib && libraryTypes.some((t) => t.id === lib.type)) {
           emit({
-            rule: 'shared-ability',
+            rule: 'shared-card',
             node: n.id,
             message: `"${a.name}" repeats rules text that the library node ${lib.id} holds`,
             hint: `Keep only the name (and campaign-specific changes) on ${n.id}; the card shows ${lib.id}'s text.`,
@@ -550,12 +530,12 @@ export function runChecks(input: CheckInput): CheckReport {
       const lib = libraryTypes[0]
       for (const id of where)
         emit({
-          rule: 'shared-ability',
+          rule: 'shared-card',
           node: id,
           message: `"${copies[0].name}" is written out in ${where.length} nodes (${where.join(', ')})`,
           hint: lib
             ? `Create a ${lib.id} node "${copies[0].name}" with the full text and keep only the name on each sheet.`
-            : `Add a library type (project types: { "spell": { "label": "Spell", "library": true } }), create a "${copies[0].name}" node with the full text, and keep only the name on each sheet.`,
+            : `Add a library type (project types: { "<id>": { "label": "…", "library": true } }), create a "${copies[0].name}" node with the full text, and keep only the name on each sheet.`,
         })
     }
   }
@@ -601,9 +581,9 @@ export function runChecks(input: CheckInput): CheckReport {
   // ---- content ----
   const maxWords = Number(opts('long-body').maxWords ?? 1200)
   for (const n of subjects('long-body')) {
-    // Abilities tabs are reference material; only narrative text counts.
+    // Cards tabs are reference material; only narrative text counts.
     const sections = splitSections(n.body)
-    const narrative = sections.filter((s) => !s.title || !isAbilityTab(s.title, typeOf.get(n.type)?.tabs ?? []))
+    const narrative = sections.filter((s) => !s.title || !isCardsTab(s.title, typeOf.get(n.type)?.tabs ?? []))
     const count = words(narrative.flatMap((s) => s.lines).join('\n'))
     if (count > maxWords) emit({ rule: 'long-body', node: n.id, message: `body is ${count} words (limit ${maxWords})` })
   }
@@ -703,22 +683,15 @@ function similar(a: string, b: string) {
   return shared / (x.size + y.size - shared) >= 0.3
 }
 
-/** Whether an H1 section renders as ability cards (configured, or a default ability heading). */
-function isAbilityTab(title: string, tabs: readonly TabDef[]) {
-  const t = tabs.find((d) => [d.title, ...(d.aliases ?? [])].some((x) => normalizeName(x) === normalizeName(title)))
-  return t ? t.kind === 'abilities' : ABILITY_TAB_NAMES.includes(normalizeName(title))
-}
+/** Whether an H1 section renders as cards. */
+const isCardsTab = (title: string, tabs: readonly TabDef[]) => tabs.some((d) => d.kind === 'cards' && tabMatches(d, title))
 
 function customMissing(c: CustomCheck, n: StoryNode, graph: Graph, tabDefs: readonly TabDef[]): string[] {
   const out: string[] = []
   const r = c.require
   if (r?.fields) {
-    const gone = r.fields.filter((f) => !n.fields[f]?.trim())
+    const gone = r.fields.filter((f) => isEmptyValue(n.fields[f]))
     if (gone.length) out.push(`missing fields: ${gone.join(', ')}`)
-  }
-  if (r?.stats) {
-    const gone = r.stats.filter((s) => isEmptyStat(n.stats?.[s]))
-    if (gone.length) out.push(`missing stats: ${gone.join(', ')}`)
   }
   if (r?.tags && !r.tags.some((t) => n.tags.includes(t))) out.push(`needs a tag: ${r.tags.join(' or ')}`)
   if (r?.summary && !n.summary?.trim()) out.push('no summary')
@@ -755,7 +728,7 @@ function customMissing(c: CustomCheck, n: StoryNode, graph: Graph, tabDefs: read
   }
   if (c.forbid) {
     const re = pattern(c.forbid)
-    const haystack = scoped ? text : [n.body, ...Object.values(n.fields)].join('\n')
+    const haystack = scoped ? text : [n.body, ...Object.values(n.fields).map(plainText)].join('\n')
     if (re) {
       const hits = [...new Set(haystack.split('\n').flatMap((l) => (re.test(l) ? [l.match(re)![0].trim().slice(0, 40)] : [])))]
       if (hits.length)

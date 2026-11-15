@@ -47,12 +47,13 @@ import {
   type CheckReport,
   type Issue,
   RULES,
-  SYSTEM_PRESETS,
+  WIDGETS,
   detectedLine,
-  statRows,
-  statSummary,
-  isEmptyStat,
-  systemIdOf,
+  fieldSummary,
+  extraRows,
+  isEmptyValue,
+  type FieldDef,
+  type TypeInfo,
 } from '@maquest/core'
 
 function arg(name: string) {
@@ -201,8 +202,10 @@ function nodeText(p: Project, n: StoryNode, body?: { heading: string; text: stri
     n.clock &&
       `clock: ${n.clock.filled}/${n.clock.size}${n.clock.steps.some(Boolean) ? ` — ${n.clock.steps.map((s, i) => `${i + 1}${i < n.clock!.filled ? '✓' : ''}: ${s || '?'}`).join('; ')}` : ''}`,
     boardsText(p, n.id) && `boards: ${boardsText(p, n.id)}`,
-    ...Object.entries(n.fields).map(([k, v]) => `${k}: ${v || '(empty)'}`),
-    statsText(p, n),
+    ...fieldsText(
+      p.types().find((t) => t.id === n.type),
+      n,
+    ),
     n.checks?.off.length && `checks off: ${n.checks.off.join(', ')}`,
   ].filter(Boolean)
   return [
@@ -216,18 +219,17 @@ function nodeText(p: Project, n: StoryNode, body?: { heading: string; text: stri
     .join('\n\n')
 }
 
-/** The statblock in one compact line per stat, e.g. "stats (D&D 5e (2024)): AC 12 (15 z Mage Armor) · HP 40 · …". */
-function statsText(p: Project, n: StoryNode) {
-  const id = systemIdOf(
-    n,
-    p.types().find((t) => t.id === n.type),
+/** A node's fields, one line each: the type's fields in order (required empty ones flagged), then free-form keys. */
+function fieldsText(type: TypeInfo | undefined, n: StoryNode): string[] {
+  const defined = (type?.fields ?? []).flatMap((def) => {
+    const v = n.fields[def.key]
+    if (isEmptyValue(v)) return def.required ? [`${def.key}: (missing, required)`] : []
+    return [`${def.key}: ${fieldSummary(def, v)}`]
+  })
+  const free = extraRows(type ?? { fields: [] }, n.fields).map(
+    (r) => `${r.def.key}: ${typeof r.value === 'string' ? r.value || '(empty)' : JSON.stringify(r.value)}`,
   )
-  const system = id ? p.systems().get(id) : undefined
-  if (!system && isEmptyStat(n.stats)) return ''
-  const rows = statRows(system, n.stats).filter((r) => !isEmptyStat(r.value))
-  const head = `stats (${system ? `${system.id}` : 'no system'}${n.system ? ', set on node' : ''})`
-  if (!rows.length) return `${head}: (empty; keys: ${system!.stats.map((s) => s.key).join(', ')})`
-  return `${head}: ${rows.map((r) => `${r.def.key}=${statSummary(r.def, r.value)}`).join(' · ')}`
+  return [...defined, ...free]
 }
 
 function boardsText(p: Project, id: string) {
@@ -298,26 +300,37 @@ function boardText(p: Project, b: Board) {
     .join('\n\n')
 }
 
-/** Types with a statblock system and the stat keys agents should use. */
-function systemsText(p: Project) {
-  const systems = p.systems()
-  const used = new Map<string, string[]>()
-  for (const t of p.types()) if (t.system) used.set(t.system, [...(used.get(t.system) ?? []), t.id])
-  for (const n of p.listNodes()) if (n.system && !used.has(n.system)) used.set(n.system, [])
-  if (!used.size) return ''
-  const tabs = p
+/** A field as agents need it: key, widget and its settings, e.g. `hp* [meter, max 40] "HP"`. */
+function fieldText(f: FieldDef) {
+  const settings = [
+    f.widget,
+    f.style,
+    f.options && `one of ${f.options.join('|')}`,
+    f.keys && `keys ${f.keys.join(',')}`,
+    f.min !== undefined && `min ${f.min}`,
+    f.max !== undefined && `max ${f.max}`,
+    f.modifier && `modifier (v-${f.modifier.base})/${f.modifier.step}`,
+    f.hint && `e.g. ${f.hint}`,
+  ].filter(Boolean)
+  return `${f.key}${f.required ? '*' : ''} [${settings.join(', ')}]${f.label ? ` "${f.label}"` : ''}`
+}
+
+/** Each type's sheet: its fields (what agents write under fields) and tabs. */
+function sheetsText(p: Project) {
+  const lines = p
     .types()
-    .filter((t) => t.tabs.length)
-    .map((t) => `- ${t.id} tabs: ${t.tabs.map((x) => `${x.title}${x.kind === 'abilities' ? ' (abilities)' : ''}`).join(', ')}`)
-  return [
-    '## Statblocks (write stats: { key: value }; values merge, null removes)',
-    ...[...used].map(([id, typeIds]) => {
-      const s = systems.get(id)
-      if (!s) return `- ${id}: unknown system`
-      return `- ${id} (${s.label})${typeIds.length ? ` for ${typeIds.join(', ')}` : ''}: ${s.stats.map((x) => `${x.key}${x.required ? '*' : ''} [${x.kind}${x.label ? ` "${x.label}"` : ''}${x.hint ? `, e.g. ${x.hint}` : ''}]`).join('; ')}`
-    }),
-    ...tabs,
-  ].join('\n')
+    .filter((t) => t.fields.length || t.tabs.length)
+    .map((t) => {
+      const tabs = t.tabs.map((x) =>
+        x.kind === 'fields'
+          ? `${x.title} (fields${x.fields || x.sections ? `: ${[...(x.fields ?? []), ...(x.sections ?? []).flatMap((s) => s.fields)].join(', ')}` : ''})`
+          : `${x.title}${x.kind === 'cards' ? ' (cards)' : ''}`,
+      )
+      return [`- ${t.id}${t.fields.length ? `: ${t.fields.map(fieldText).join('; ')}` : ''}`, tabs.length ? `  tabs: ${tabs.join(', ')}` : '']
+        .filter(Boolean)
+        .join('\n')
+    })
+  return lines.length ? ['## Sheets (write fields: { key: value }; maps merge one level, null removes; * = required)', ...lines].join('\n') : ''
 }
 
 /** A checks report for agents: counts first, then issues grouped by rule with the rule's fix once. */
@@ -370,7 +383,7 @@ Capture structure eagerly: turn what the author says into project changes right 
 Connection labels are short names for the relationship (max ${EDGE_LABEL_MAX} chars). Never put status or TODOs in labels; use the node's status, tags or body.
 Boards are separate canvases (e.g. one per arc or investigation); each shows only the nodes placed on it.
 Edits apply immediately to markdown files on disk, and the Maquest app updates live.
-Maquest checks the project for problems (broken links, nodes on no board, empty groups, missing or malformed statblocks, copied rules text, overlong documents…), configured per project. The checks are yours to tune with the project tool: set levels and scope of built-in rules (checks) and add project rules (customChecks: required fields, stats, tags, tabs or text, forbidden text, allowed headings, word limits, optionally inside one tab). When the author settles a format rule, add a check for it instead of only writing it into a guideline. Write results list problems with the nodes you touched; after a round of changes run overview({ checks: true }) and fix what you caused. When telling the author, say "Maquest detected …" (never "the linter").
+Maquest checks the project for problems (broken links, nodes on no board, empty groups, missing or malformed fields, copied card text, overlong documents…), configured per project. The checks are yours to tune with the project tool: set levels and scope of built-in rules (checks) and add project rules (customChecks: required fields, tags, tabs or text, forbidden text, allowed headings, word limits, optionally inside one tab). When the author settles a format rule, add a check for it instead of only writing it into a guideline. Write results list problems with the nodes you touched; after a round of changes run overview({ checks: true }) and fix what you caused. When telling the author, say "Maquest detected …" (never "the linter").
 The author keeps quick live notes in the app during sessions. When they change, tool results start with an IMPORTANT live-notes notice: treat it as top priority. Notes in the overview are still pending: check whether the project already reflects them, clear them with delete({ liveNotes: true }) if so, otherwise act on them or bring them up with the author.`,
   },
 )
@@ -393,7 +406,7 @@ server.registerTool(
         ])
         .optional()
         .describe(
-          'Return the Maquest checks report instead of the overview: errors and warnings (broken links, nodes on no board, missing statblocks, copied rules text…) with what to do. Run it after a round of changes.',
+          'Return the Maquest checks report instead of the overview: errors and warnings (broken links, nodes on no board, missing required fields, copied card text…) with what to do. Run it after a round of changes.',
         ),
     },
     annotations: { readOnlyHint: true },
@@ -420,10 +433,10 @@ server.registerTool(
       (() => {
         const custom = p.types().filter((t) => !t.builtin)
         return custom.length
-          ? `## Custom types\n${custom.map((t) => `- ${t.id}: ${t.label}${t.library ? ' [library: ability cards with the same name link here]' : ''}${t.fields.length ? ` (fields: ${t.fields.join(', ')})` : ''}`).join('\n')}`
+          ? `## Custom types\n${custom.map((t) => `- ${t.id}: ${t.label}${t.library ? ' [library: cards with the same name link here]' : ''}`).join('\n')}`
           : ''
       })(),
-      systemsText(p),
+      sheetsText(p),
       ...p
         .types()
         .filter((t) => t.entity)
@@ -590,7 +603,12 @@ const WriteItem = z.object({
     ),
   tags: z.array(z.string()).optional(),
   pinned: z.boolean().optional().describe('Keep this node fixed during automatic canvas layout'),
-  fields: z.record(z.string(), z.string().nullable()).optional().describe('Merged into the existing fields; null removes a field'),
+  fields: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe(
+      'The node\'s data by key: text, numbers, lists or maps, in the format of the type\'s field widgets (overview lists them), e.g. { role: "smuggler", hp: { value: 12, max: 20 }, scores: { str: 9, dex: 14 }, allies: ["mira"] }. Merged into the existing fields, maps one level deep; null removes. Keep numbers and structured data here, not in the body.',
+    ),
   body: z.string().optional().describe('Markdown body (replaces the existing body)'),
   bodyFile: z
     .string()
@@ -616,18 +634,11 @@ const WriteItem = z.object({
   clock: Clock.nullable()
     .optional()
     .describe('Progress clock for fronts/threats/countdowns: {size, filled, steps[] (what happens at each segment)}. null removes it.'),
-  system: z.string().nullable().optional().describe("Statblock system for this node only (default: its type's, see overview). null resets."),
-  stats: z
-    .record(z.string(), z.unknown())
-    .optional()
-    .describe(
-      'Statblock values by the system\'s keys (overview lists them), e.g. { ac: { value: 12, note: "15 with mage armor" }, hp: 40, speed: "30 ft", scores: { str: 9, dex: 14 }, saves: { int: 6 } }. Merged into existing stats, maps one level deep; null removes. Keep numbers and rules here, not in fields or the body.',
-    ),
   checks: z
     .object({ off: z.array(z.string()) })
     .nullable()
     .optional()
-    .describe('Maquest checks to skip for this node, e.g. { off: ["statblock-missing"] } for a cat that needs no statblock. null clears.'),
+    .describe('Maquest checks to skip for this node, e.g. { off: ["field-missing"] } for a bystander that needs no stats. null clears.'),
 })
 
 server.registerTool(
@@ -635,8 +646,8 @@ server.registerTool(
   {
     title: 'Create or update nodes',
     description: `Batch create/update nodes. Types: story, chapter, scene, note, character, location, faction, item, idea (backlog), media. New nodes get starter templates (fields like want/need/flaw for characters, goal/conflict/outcome for scenes). Markdown bodies may embed media: ![alt](media/file.png). Links to other nodes: [[node-id]].
-Entity sheets: each H1 heading (# Title) of a body is a tab in the app; keep one topic per tab (e.g. # Abilities, # Backstory, # Notes) and put numbers in stats, not in the body. In abilities tabs (# Abilities, # Actions, # Spells…, or tabs configured as abilities) each ability is a card: ## headings group them ("Actions", "Reactions", "2/day", "Level 3 spells"), ### Name {meta, …} starts one ability with its description below (bullets like "- **Name** (meta) — text" work too). Rules text shared by several sheets (spells, conditions) belongs in one node of a library type (overview marks them); a card named like a library node, or ### [[id]], shows that node's text, so sheets only add campaign-specific changes.
-Results list what Maquest detected about the written nodes (broken links, missing statblocks…): fix those or tell the author. The whole batch is checked first, in order, so items may use ids created or renamed earlier in it; if any item fails the check, nothing is written. Results are per item (#n): when a batch stops part-way, it says which items were saved, which failed and which did not run.`,
+Entity sheets: each H1 heading (# Title) of a body is a tab in the app; keep one topic per tab (e.g. # Backstory, # Notes) and put numbers and structured data in fields, not in the body. In tabs a type configures as cards, each entry is a card: ## headings group them ("Actions", "Allies", "2/day"), ### Name {meta, …} starts one with its description below (bullets like "- **Name** (meta) — text" work too). Reference text shared by several sheets belongs in one node of a library type (overview marks them); a card named like a library node, or ### [[id]], shows that node's text, so sheets only add local changes.
+Results list what Maquest detected about the written nodes (broken links, missing required fields…): fix those or tell the author. The whole batch is checked first, in order, so items may use ids created or renamed earlier in it; if any item fails the check, nothing is written. Results are per item (#n): when a batch stops part-way, it says which items were saved, which failed and which did not run.`,
     inputSchema: { nodes: z.array(WriteItem).min(1) },
   },
   safe(({ nodes }) => {
@@ -929,7 +940,7 @@ server.registerTool(
   {
     title: 'Project settings',
     description:
-      'Update project settings (name, kind: novel|screenplay|rpg|mixed, description; kind selects which guidelines apply), add/edit node types (with statblock systems, tabs, libraries), statblock systems and Maquest check rules, or init a new project in the current directory.',
+      'Update project settings (name, kind: novel|screenplay|rpg|mixed, description; kind selects which guidelines apply), add/edit node types (their fields, sheet tabs and libraries) and Maquest check rules, or init a new project in the current directory.',
     inputSchema: {
       action: z.enum(['update', 'init']),
       name: z.string().optional(),
@@ -939,13 +950,11 @@ server.registerTool(
         .record(z.string(), TypeDef.partial().nullable())
         .optional()
         .describe(
-          'Add or change node types by id, e.g. {"monster": {"label": "Monster", "icon": "skull", "color": "#dc2626", "fields": ["threat", "habitat"], "system": "dnd-2024", "tabs": [{"title": "Actions", "kind": "abilities"}, {"title": "Lore"}]}, "spell": {"label": "Spell", "library": true}}. Custom types are entities stored in their own folder. Built-ins accept label/plural/color/icon/system/tabs/library. system = statblock system id; tabs = body H1 sections shown as tabs in this order (kind abilities renders ability cards; aliases match other headings); library = reusable rules text that same-named ability cards link to. null resets a built-in or removes an empty custom type.',
-        ),
-      systems: z
-        .record(z.string(), z.unknown())
-        .optional()
-        .describe(
-          `Define or change statblock systems by id (null removes). Presets: ${Object.keys(SYSTEM_PRESETS).join(', ')}. A system: { label, extends?: "dnd-2024", tab?: "Stats", stats: [{ key, label?, kind: subtitle|stat|line|scores|bonuses|tags|track, keys?, labels?, modifier?: d20|none, required?, badge?, aliases?, hint? }], omit?: [keys] }. With extends, a stat with an existing key changes it (e.g. relabel speed to "Szybkość").`,
+          `Add or change node types by id; each setting given replaces the current one, null resets it. Settings: label, plural, color (#rrggbb), icon (lucide name), dir and body (custom types only), library (reference text that same-named cards link to), extends (another type id to inherit fields, and tabs unless set), omit (inherited field keys to drop), fields, tabs.
+fields: what the type's sheet holds, in order: a key (plain text) or { key, label?, widget, hint?, required?, badge? (chip on the canvas card), aliases? (other names checks map to the key), options? (allowed values), keys?/labels? (sub-keys or table columns and their labels), min?/max?, style?, modifier? ({ base, step }: scores show floor((v-base)/step)), signed?, color? }. With extends, an entry with an inherited key changes just the settings it gives.
+Widgets (${WIDGETS.join(', ')}): text "label: value" (options make a choice); subtitle (italic line under the title); quote; stat (big tile: 40 or { value, note }); toggle (true/false); meter (5, "5/9" or { value, max }; style bar|ring|dots|boxes|clock); scores ({ key: number }; style grid|bars|radar|dots); pairs (named values as chips, { Stealth: 6 }); tags; list; refs (node ids); table ([{ column: value }]).
+tabs: the sheet in order. { title, kind: "fields", fields?: [keys] | sections?: [{ title?, fields: [keys] }] } shows fields with their widgets (with no list: every field no other fields tab lists); { title, kind: "prose" | "cards", aliases? } is the body's # Title section, as markdown or as cards. Fields in no tab show as properties under the title.
+Example: {"character": {"fields": [{"key": "hp", "label": "HP", "widget": "meter", "required": true, "badge": true}, {"key": "social", "widget": "scores", "style": "radar", "keys": ["knowledge", "guts", "charm"], "max": 5}], "tabs": [{"title": "Stats", "kind": "fields"}, {"title": "Moves", "kind": "cards"}, {"title": "Story"}]}, "spell": {"label": "Spell", "library": true}}. null as a type resets a built-in or removes an empty custom type.`,
         ),
       checks: z
         .record(z.string(), z.unknown())
@@ -957,11 +966,11 @@ server.registerTool(
         .array(z.unknown())
         .optional()
         .describe(
-          'Replace the project\'s own checks (the whole list): [{ id, message, hint?, severity?: error|warn|info, types?, tags?, excludeTags?, require?: { fields?, stats?, tags?, summary?, body?, media?, parent?, edges?: [edge types], tabs?, match?: "regex" }, tab?: "Tab" | ["Tab"], forbid?: "regex", headings?: ["regex"], maxWords? }]. tab limits match/forbid/headings/maxWords to those body tabs; headings lists the allowed ## headings there. Use them to turn the author\'s format rules into checks, e.g. { id: "abilities-only-rules", types: ["monster"], tab: "Abilities", headings: ["Traits", "Actions", "Reactions"], forbid: "\\\\*\\\\*(tactics|morale)" }.',
+          'Replace the project\'s own checks (the whole list): [{ id, message, hint?, severity?: error|warn|info, types?, tags?, excludeTags?, require?: { fields?, tags?, summary?, body?, media?, parent?, edges?: [edge types], tabs?, match?: "regex" }, tab?: "Tab" | ["Tab"], forbid?: "regex", headings?: ["regex"], maxWords? }]. tab limits match/forbid/headings/maxWords to those body tabs; headings lists the allowed ## headings there. Use them to turn the author\'s format rules into checks, e.g. { id: "abilities-only-rules", types: ["monster"], tab: "Abilities", headings: ["Traits", "Actions", "Reactions"], forbid: "\\\\*\\\\*(tactics|morale)" }.',
         ),
     },
   },
-  safe(({ action, name, kind, description, types, systems, checks, customChecks }) => {
+  safe(({ action, name, kind, description, types, checks, customChecks }) => {
     if (action === 'init') {
       const root = path.resolve(startDir)
       const p = Project.init(root, {
@@ -977,14 +986,12 @@ server.registerTool(
       return `initialized ${p.config().name} at ${p.root}`
     }
     const p = project()
-    if (systems) p.setSystems(systems)
     const all = types ? p.setTypes(types) : undefined
     if (checks || customChecks) p.setChecks(checks ?? {}, customChecks)
     const c = name || kind || description !== undefined ? p.updateConfig({ name, kind, ...(description !== undefined && { description }) }) : p.config()
     return [
       `project: ${c.name} (${c.kind})`,
-      all && `types: ${all.map((t) => `${t.id}${t.system ? ` (${t.system})` : ''}`).join(', ')}`,
-      systems && `systems: ${Object.keys(c.systems ?? {}).join(', ') || '(presets only)'}`,
+      all && `types: ${all.map((t) => `${t.id}${t.fields.length ? ` (${t.fields.length} fields)` : ''}`).join(', ')}`,
       (checks || customChecks) && detectedLine(p.check().counts),
     ]
       .filter(Boolean)

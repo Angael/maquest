@@ -139,26 +139,50 @@ test('project update without a name keeps the name', async (t) => {
 
 test('checks: overview summarizes, checks: true lists issues, writes report the touched nodes', async (t) => {
   const { p, call } = await connect(t)
-  p.setTypes({ monster: { label: 'Monster', system: 'dnd-2024' } })
+  const typed = await call('project', {
+    action: 'update',
+    types: {
+      monster: {
+        label: 'Monster',
+        fields: [
+          { key: 'ac', label: 'AC', widget: 'stat', required: true },
+          { key: 'hp', widget: 'meter', style: 'ring' },
+          { key: 'scores', widget: 'scores', keys: ['str'], labels: { str: 'STR' }, modifier: { base: 10, step: 2 } },
+        ],
+        tabs: [{ title: 'Stats', kind: 'fields' }],
+      },
+    },
+  })
+  assert.equal(typed.isError, false, typed.text)
+  assert.match(typed.text, /monster \(3 fields\)/)
   const created = await call('write', { nodes: [{ type: 'monster', title: 'Wight', body: 'Serves [[theron]].' }] })
   assert.equal(created.isError, false, created.text)
-  assert.match(created.text, /Maquest detected for these nodes[\s\S]*wight \[broken-link\]: links to \[\[theron\]\][\s\S]*wight \[statblock-missing\]/)
+  assert.match(created.text, /Maquest detected for these nodes[\s\S]*wight \[broken-link\]: links to \[\[theron\]\][\s\S]*wight \[field-missing\]: lacks AC/)
 
   const overview = await call('overview', {})
   assert.match(overview.text, /## Maquest checks\nMaquest detected 1 error, 1 warning\./)
-  assert.match(overview.text, /## Statblocks[\s\S]*dnd-2024 \(D&D 5e \(2024\)\) for monster: size \[subtitle/)
+  assert.match(
+    overview.text,
+    /## Sheets[\s\S]*- monster: ac\* \[stat\] "AC"; hp \[meter, ring\]; scores \[scores, keys str, modifier \(v-10\)\/2\]\n  tabs: Stats \(fields\)/,
+  )
 
   const report = await call('overview', { checks: true })
   assert.match(report.text, /^Maquest detected 1 error, 1 warning\.\n\n## broken-link \(error, 1\) — Broken links\nFix: /)
 
-  const stats = await call('write', {
-    nodes: [{ id: 'wight', stats: { ac: 14, hp: { value: 82, note: '11d8+33' }, scores: { str: 15 } }, edits: [{ find: '[[theron]]', replace: 'Theron' }] }],
+  const fields = await call('write', {
+    nodes: [
+      {
+        id: 'wight',
+        fields: { ac: { value: 14, note: 'natural' }, hp: { value: 30, max: 82 }, scores: { str: 15 } },
+        edits: [{ find: '[[theron]]', replace: 'Theron' }],
+      },
+    ],
   })
-  assert.doesNotMatch(stats.text, /Maquest detected/)
+  assert.doesNotMatch(fields.text, /Maquest detected/)
   const read = await call('read', { ids: ['wight'] })
-  assert.match(read.text, /stats \(dnd-2024\): ac=14 · hp=82 \(11d8\+33\) · scores=STR 15 \(\+2\)/)
+  assert.match(read.text, /ac: 14 \(natural\)\nhp: 30\/82\nscores: STR 15 \(\+2\)/)
 
-  const configured = await call('project', { action: 'update', checks: { 'statblock-missing': 'off' } })
+  const configured = await call('project', { action: 'update', checks: { 'field-missing': 'off' } })
   assert.equal(configured.isError, false, configured.text)
-  assert.equal(p.config().checks?.['statblock-missing'], 'off')
+  assert.equal(p.config().checks?.['field-missing'], 'off')
 })

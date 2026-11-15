@@ -58,13 +58,12 @@ export const NodeMeta = z.object({
   media: z.array(z.string()).default([]),
   /** For `media` nodes: the file shown on the canvas. */
   src: z.string().optional(),
-  /** Free-form typed fields, e.g. role/goal for characters. */
-  fields: z.record(z.string(), z.string()).default({}),
+  /**
+   * The node's data: text, numbers, lists or maps by key, e.g. role, hp, scores. Its type's fields say how each one
+   * shows and what the checks enforce; keys outside them are free-form fields.
+   */
+  fields: z.record(z.string(), z.unknown()).default({}),
   clock: Clock.optional(),
-  /** Statblock system for this node, overriding its type's (see ProjectConfig.systems). */
-  system: z.string().optional(),
-  /** Structured statblock values keyed by the system's stat keys (numbers, text, maps, lists). */
-  stats: z.record(z.string(), z.unknown()).optional(),
   /** Per-node check settings: rule ids (or "*") Maquest should not report for this node. */
   checks: z.object({ off: z.array(z.string()).default([]) }).optional(),
   created: z.string().optional(),
@@ -340,63 +339,84 @@ export type ProjectKind = z.infer<typeof ProjectKind>
 
 const HEX_COLOR = /^#[0-9a-f]{6}$/i
 
-export const TAB_KINDS = ['prose', 'abilities'] as const
-/** A body tab: the H1 heading `title` (or one of its aliases) and how its content renders. */
+// ---------- fields and tabs ----------
+
+/**
+ * How a field shows on a sheet. Values stay plain YAML (text, numbers, lists, maps); the widget only decides how they
+ * render and what a valid value looks like:
+ * - `text` label: value line (`options` makes it a choice) · `subtitle` italic line under the title · `quote` pull quote
+ * - `stat` big number tile, `40` or `{ value: 40, note: "9d6+9" }` · `toggle` yes/no
+ * - `meter` current/max, `5`, `"5/9"` or `{ value: 5, max: 9 }`; style bar | ring | dots | boxes | clock
+ * - `scores` named numbers `{ str: 10, dex: 14 }`; style grid | bars | radar | dots
+ * - `pairs` named values as chips `{ Stealth: 6 }` or "Stealth +6, History 4" · `tags` chips · `list` bullet list
+ * - `refs` links to other nodes (ids) · `table` rows of `{ column: value }`
+ */
+export const WIDGETS = ['text', 'subtitle', 'quote', 'stat', 'toggle', 'meter', 'scores', 'pairs', 'tags', 'list', 'refs', 'table'] as const
+export const Widget = z.enum(WIDGETS)
+export type Widget = z.infer<typeof Widget>
+
+export const METER_STYLES = ['bar', 'ring', 'dots', 'boxes', 'clock'] as const
+export const SCORES_STYLES = ['grid', 'bars', 'radar', 'dots'] as const
+
+/** One field of a type's data: where its value lives (`key`), how it shows, and what the checks enforce. */
+export const FieldDef = z
+  .object({
+    key: z.string().trim().min(1),
+    label: z.string().optional(),
+    widget: Widget.default('text'),
+    /** What goes here, for agents and placeholders. */
+    hint: z.string().optional(),
+    /** Checks report nodes of the type without a value. */
+    required: z.boolean().optional(),
+    /** Shown as a chip on the node's canvas card. */
+    badge: z.boolean().optional(),
+    /** Other names of this field (e.g. older or translated keys), so checks can offer to rename them. */
+    aliases: z.array(z.string()).optional(),
+    /** text/subtitle/tags: the only allowed values. */
+    options: z.array(z.string()).min(1).optional(),
+    /** scores/pairs: sub-keys in order; table: columns in order. */
+    keys: z.array(z.string()).optional(),
+    /** Display labels of sub-keys or columns, e.g. { str: "STR" }. */
+    labels: z.record(z.string(), z.string()).optional(),
+    /** stat/meter/scores: allowed range; meter and scores bars/dots/radar also use max as the full scale. */
+    min: z.number().optional(),
+    max: z.number().optional(),
+    /** meter: bar | ring | dots | boxes | clock; scores: grid | bars | radar | dots. */
+    style: z.string().optional(),
+    /** scores: a derived number shown next to each score, floor((score - base) / step), e.g. { base: 10, step: 2 }. */
+    modifier: z.object({ base: z.number(), step: z.number().positive() }).optional(),
+    /** pairs: show numbers with a sign (+2). Default true. */
+    signed: z.boolean().optional(),
+    /** meter/scores: accent color (default: the type's color). */
+    color: z.string().regex(HEX_COLOR, 'color must be #rrggbb').optional(),
+  })
+  .superRefine((f, ctx) => {
+    const styles: Partial<Record<Widget, readonly string[]>> = { meter: METER_STYLES, scores: SCORES_STYLES }
+    const allowed = styles[f.widget]
+    if (f.style !== undefined && !allowed?.includes(f.style))
+      ctx.addIssue({ code: 'custom', path: ['style'], message: allowed ? `style of ${f.widget} is one of ${allowed.join(', ')}` : `${f.widget} has no styles` })
+    if (f.min !== undefined && f.max !== undefined && f.min > f.max) ctx.addIssue({ code: 'custom', path: ['min'], message: 'min is above max' })
+  })
+export type FieldDef = z.infer<typeof FieldDef>
+
+export const TAB_KINDS = ['prose', 'cards', 'fields'] as const
+/** A group of fields inside a fields tab, with an optional heading. */
+export const TabSection = z.object({ title: z.string().optional(), fields: z.array(z.string()).min(1) })
+export type TabSection = z.infer<typeof TabSection>
+/**
+ * A tab of a type's sheet. `prose` and `cards` tabs are the body's H1 section `title` (or one of its aliases): prose
+ * is edited as markdown, cards render each `###` entry as a card. `fields` tabs show fields with their widgets:
+ * `fields` lists them in order, `sections` groups them under headings; with neither, the tab shows every field of
+ * the type that no other fields tab lists.
+ */
 export const TabDef = z.object({
   title: z.string().min(1),
   kind: z.enum(TAB_KINDS).default('prose'),
   aliases: z.array(z.string()).optional(),
+  fields: z.array(z.string()).optional(),
+  sections: z.array(TabSection).optional(),
 })
 export type TabDef = z.infer<typeof TabDef>
-
-// ---------- statblocks ----------
-
-/**
- * How one stat renders: `subtitle` (italic line under the title, e.g. "Small humanoid"), `stat` (a key fact tile:
- * AC, HP, Speed), `line` (label: value, e.g. Senses), `scores` (a grid of numbers, optionally with modifiers),
- * `bonuses` (named numbers as chips: saves, skills), `tags` (chips: resistances, traits), `track` (current/max bar).
- */
-export const STAT_KINDS = ['subtitle', 'stat', 'line', 'scores', 'bonuses', 'tags', 'track'] as const
-export const StatKind = z.enum(STAT_KINDS)
-export type StatKind = z.infer<typeof StatKind>
-/** Stat keys: letters (any script), digits, dashes and underscores. */
-export const STAT_KEY = /^[\p{L}\p{N}_-]+$/u
-
-const StatFields = {
-  label: z.string().optional(),
-  kind: StatKind.optional(),
-  /** scores: the keys in order (e.g. str…cha); bonuses: suggested keys. */
-  keys: z.array(z.string()).optional(),
-  /** Display labels of sub-keys, e.g. { str: "STR" }. */
-  labels: z.record(z.string(), z.string()).optional(),
-  /** scores: derived modifier shown next to each score. */
-  modifier: z.enum(['d20', 'none']).optional(),
-  /** bonuses: show numbers with a sign (+2). Default true. */
-  signed: z.boolean().optional(),
-  /** track: default maximum when the value has none. */
-  max: z.number().optional(),
-  required: z.boolean().optional(),
-  /** Shown as a chip on the node's canvas card. */
-  badge: z.boolean().optional(),
-  /** Legacy field names that hold this stat (case-insensitive), so checks can offer to move them. */
-  aliases: z.array(z.string()).optional(),
-  /** What goes here, for agents and placeholders. */
-  hint: z.string().optional(),
-}
-export const StatDef = z.object({ key: z.string().regex(STAT_KEY), ...StatFields })
-export type StatDef = z.infer<typeof StatDef> & { kind: StatKind }
-
-/** A statblock system. `extends` starts from another system; `stats` with an existing key change that stat. */
-export const SystemDef = z.object({
-  label: z.string().optional(),
-  extends: z.string().optional(),
-  /** Label of the statblock tab (default "Stats"). */
-  tab: z.string().optional(),
-  stats: z.array(z.object({ key: z.string().regex(STAT_KEY), ...StatFields })).default([]),
-  /** Stat keys of the base system to drop. */
-  omit: z.array(z.string()).optional(),
-})
-export type SystemDef = z.infer<typeof SystemDef>
 
 // ---------- checks ----------
 
@@ -420,8 +440,8 @@ export const CustomCheck = z.object({
   excludeTags: z.array(z.string()).optional(),
   require: z
     .object({
+      /** Fields that must have a value. */
       fields: z.array(z.string()).optional(),
-      stats: z.array(z.string()).optional(),
       /** At least one of these tags. */
       tags: z.array(z.string()).optional(),
       summary: z.boolean().optional(),
@@ -449,8 +469,8 @@ export const CustomCheck = z.object({
 })
 export type CustomCheck = z.infer<typeof CustomCheck>
 
-/** Custom type ids that are rules libraries unless configured otherwise. */
-export const LIBRARY_TYPE_IDS = ['spell', 'ability', 'power', 'feat', 'condition', 'talent', 'move', 'technique']
+/** A field in a type definition: a key (a plain text field) or a full FieldDef, checked when types resolve. */
+const FieldEntry = z.union([z.string().trim().min(1), z.record(z.string(), z.unknown())])
 
 /** Look of a node type: built-in defaults; projects may override any of these and add their own types. */
 export const TypeDef = z.object({
@@ -464,21 +484,23 @@ export const TypeDef = z.object({
     .optional(),
   /** Custom types only: folder the nodes live in (default: the plural of the id). */
   dir: z.string().regex(TYPE_ID).optional(),
-  /** Custom types only: starter fields for new nodes. */
-  fields: z.array(z.string().min(1)).optional(),
+  /** Another type whose fields (and tabs, unless this type sets its own) this type starts from. */
+  extends: z.string().regex(TYPE_ID).optional(),
+  /** The type's fields: keys of plain text fields, or FieldDefs. Ones with an inherited key change that field. */
+  fields: z.array(FieldEntry).optional(),
+  /** Inherited field keys to drop. */
+  omit: z.array(z.string()).optional(),
   /** Custom types only: starter body for new nodes. */
   body: z.string().optional(),
-  /** Statblock system its nodes use (a preset like "dnd-2024" or one defined in ProjectConfig.systems). */
-  system: z.string().optional(),
-  /** Body tabs: H1 headings of the body shown as tabs, in this order; `abilities` tabs render as ability cards. */
+  /** The sheet's tabs in order: body sections (prose, cards) and field tabs. */
   tabs: z.array(TabDef).optional(),
-  /** Reusable rules text (spells, abilities, conditions): ability cards with the same name link to these nodes. */
+  /** Reusable reference text (spells, conditions, glossary entries): cards with the same name link to these nodes. */
   library: z.boolean().optional(),
 })
 export type TypeDef = z.infer<typeof TypeDef>
 
 /** Settings of built-in types that projects may change. */
-export const BUILTIN_TYPE_KEYS = ['label', 'plural', 'color', 'icon', 'system', 'tabs', 'library'] as const
+export const BUILTIN_TYPE_KEYS = ['label', 'plural', 'color', 'icon', 'extends', 'fields', 'omit', 'tabs', 'library'] as const
 
 export const BUILTIN_TYPE_DEFS: Record<BuiltinType, { label: string; plural: string; color: string; icon: string }> = {
   story: { label: 'Story', plural: 'Stories', icon: 'book-open', color: '#f59e0b' },
@@ -504,18 +526,20 @@ export type TypeInfo = {
   builtin: boolean
   /** Character-like things referenced from scenes (all custom types are entities). */
   entity: boolean
-  fields: string[]
+  /** The type's fields, inheritance applied; invalid entries are left out (see typeProblems). */
+  fields: FieldDef[]
   body: string
-  system?: string
   tabs: TabDef[]
-  /** Reusable rules text; ability cards link to these nodes by name. */
+  /** Reusable reference text; cards link to these nodes by name. */
   library: boolean
 }
 
 const titleCase = (s: string) => s.replaceAll('-', ' ').replace(/^./, (c) => c.toUpperCase())
 const pluralOf = (s: string) => (/(s|x|ch|sh)$/.test(s) ? `${s}es` : /[^aeiou]y$/.test(s) ? `${s.slice(0, -1)}ies` : `${s}s`)
 
+/** A type's own look and settings, without inheritance (`projectTypes` applies `extends`). */
 export function typeInfo(id: NodeType, def: TypeDef = {}): TypeInfo {
+  const own = parseFields(def.fields ?? []).fields
   if (isBuiltinType(id)) {
     const base = BUILTIN_TYPE_DEFS[id]
     return {
@@ -527,9 +551,8 @@ export function typeInfo(id: NodeType, def: TypeDef = {}): TypeInfo {
       dir: TYPE_DIRS[id],
       builtin: true,
       entity: (ENTITY_TYPES as readonly string[]).includes(id),
-      fields: [],
+      fields: own,
       body: '',
-      system: def.system,
       tabs: def.tabs ?? [],
       library: def.library ?? false,
     }
@@ -544,18 +567,100 @@ export function typeInfo(id: NodeType, def: TypeDef = {}): TypeInfo {
     dir: def.dir ?? pluralOf(id),
     builtin: false,
     entity: true,
-    fields: def.fields ?? [],
+    fields: own,
     body: def.body ?? '',
-    system: def.system,
     tabs: def.tabs ?? [],
-    library: def.library ?? LIBRARY_TYPE_IDS.includes(id),
+    library: def.library ?? false,
   }
+}
+
+/** Field entries parsed into FieldDefs; invalid ones are left out and described in `problems`. */
+export function parseFields(entries: readonly unknown[]): { fields: FieldDef[]; problems: string[] } {
+  const fields: FieldDef[] = []
+  const problems: string[] = []
+  entries.forEach((raw, i) => {
+    const parsed = FieldDef.safeParse(typeof raw === 'string' ? { key: raw } : raw)
+    if (!parsed.success) {
+      const name = raw && typeof raw === 'object' && 'key' in raw ? String((raw as { key: unknown }).key) : `#${i + 1}`
+      problems.push(`field ${name}: ${parsed.error.issues.map((x) => `${x.path.join('.') || 'field'}: ${x.message}`).join('; ')}`)
+    } else if (fields.some((f) => f.key === parsed.data.key)) problems.push(`field ${parsed.data.key} is listed twice`)
+    else fields.push(parsed.data)
+  })
+  return { fields, problems }
+}
+
+/** Fields with a patch applied: entries with an existing key change that field (only the given settings). */
+function mergeFields(base: readonly FieldDef[], entries: readonly unknown[], omit: readonly string[] = []): FieldDef[] {
+  const out = base.filter((f) => !omit.includes(f.key)).map((f) => ({ ...f }))
+  for (const raw of entries) {
+    const patch = typeof raw === 'string' ? { key: raw } : (raw as Record<string, unknown>)
+    const i = out.findIndex((f) => f.key === patch.key)
+    if (i < 0) {
+      const parsed = FieldDef.safeParse(patch)
+      if (parsed.success) out.push(parsed.data)
+      continue
+    }
+    const parsed = FieldDef.safeParse({ ...out[i], ...patch })
+    if (parsed.success) out[i] = parsed.data
+  }
+  return out
 }
 
 /** Every type of a project: built-ins first (in their usual order), then custom types in config order. */
 export function projectTypes(config: { types?: Record<string, TypeDef> }): TypeInfo[] {
   const defs = config.types ?? {}
-  return [...NODE_TYPES, ...Object.keys(defs).filter((id) => !isBuiltinType(id))].map((id) => typeInfo(id, defs[id]))
+  const ids = [...NODE_TYPES, ...Object.keys(defs).filter((id) => !isBuiltinType(id))]
+  const done = new Map<string, TypeInfo>()
+  const resolve = (id: string, seen: string[]): TypeInfo => {
+    const cached = done.get(id)
+    if (cached) return cached
+    const def = defs[id] ?? {}
+    const info = typeInfo(id, def)
+    const parent = def.extends
+    if (parent && ids.includes(parent) && !seen.includes(parent)) {
+      const base = resolve(parent, [...seen, id])
+      info.fields = mergeFields(base.fields, def.fields ?? [], def.omit)
+      if (!def.tabs) info.tabs = base.tabs
+    } else if (def.omit) info.fields = info.fields.filter((f) => !def.omit!.includes(f.key))
+    done.set(id, info)
+    return info
+  }
+  return ids.map((id) => resolve(id, [id]))
+}
+
+/** What is wrong with the project's type definitions (bad fields or tabs, unknown or circular extends). */
+export function typeProblems(config: { types?: Record<string, TypeDef> }): { type: string; message: string }[] {
+  const defs = config.types ?? {}
+  const out: { type: string; message: string }[] = []
+  const known = new Set([...NODE_TYPES, ...Object.keys(defs)])
+  const types = new Map(projectTypes(config).map((t) => [t.id, t]))
+  for (const [id, def] of Object.entries(defs)) {
+    for (const message of parseFields(def.fields ?? []).problems) out.push({ type: id, message })
+    if (def.extends) {
+      if (!known.has(def.extends)) out.push({ type: id, message: `extends unknown type "${def.extends}"` })
+      const chain = [id]
+      for (let at = def.extends; at && known.has(at); at = defs[at]?.extends ?? '') {
+        if (chain.includes(at)) {
+          out.push({ type: id, message: `extends itself (${[...chain, at].join(' → ')})` })
+          break
+        }
+        chain.push(at)
+      }
+    }
+    const t = types.get(id)
+    if (!t) continue
+    const keys = new Set(t.fields.map((f) => f.key))
+    for (const tab of t.tabs) {
+      if (tab.kind !== 'fields' && (tab.fields || tab.sections)) out.push({ type: id, message: `tab ${tab.title}: only fields tabs list fields` })
+      const listed = [...(tab.fields ?? []), ...(tab.sections ?? []).flatMap((s) => s.fields)]
+      const unknown = listed.filter((k) => !keys.has(k))
+      if (unknown.length) out.push({ type: id, message: `tab ${tab.title} lists fields the type does not define: ${unknown.join(', ')}` })
+    }
+    const titles = t.tabs.map((x) => x.title.toLowerCase())
+    const twice = titles.filter((x, i) => titles.indexOf(x) !== i)
+    if (twice.length) out.push({ type: id, message: `tab ${twice[0]} is listed twice` })
+  }
+  return out
 }
 
 export const ProjectConfig = z.object({
@@ -564,11 +669,8 @@ export const ProjectConfig = z.object({
   description: z.string().optional(),
   /** Overrides for built-in types and definitions of custom ones, keyed by type id. */
   types: z.record(NodeType, TypeDef).optional(),
-  /**
-   * Statblock systems by id, adding to or overriding the presets (see sheet.ts). Kept raw here so one bad entry
-   * never makes the whole config unreadable; checks report invalid entries.
-   */
-  systems: z.record(z.string(), z.unknown()).optional(),
+  /** No longer used (fields now live on types); kept so checks can point at it. */
+  systems: z.unknown().optional(),
   /** Check rules: rule id → "error" | "warn" | "info" | "off", or [severity, options]. Validated by the checks. */
   checks: z.record(z.string(), z.unknown()).optional(),
   /** Project-defined declarative checks (see CustomCheck). */

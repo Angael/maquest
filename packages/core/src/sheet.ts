@@ -1,246 +1,24 @@
 /**
- * Entity sheets: statblock systems, stat values, body tabs and ability cards. Browser-safe (no Node imports), so the
- * app renders exactly what the MCP server and the checks see.
+ * Entity sheets: field values and their widgets, the tabs of a node, and cards. Browser-safe (no Node imports), so
+ * the app renders exactly what the MCP server and the checks see. Nothing here knows any game or genre: types define
+ * their fields and tabs in maquest.json.
  */
-import { STAT_KEY, SystemDef, type StatDef, type StatKind, type StoryNode, type TabDef, type TypeInfo } from './schema'
+import type { FieldDef, StoryNode, TabDef, TypeInfo, Widget } from './schema'
 
-// ---------- systems ----------
+// ---------- values ----------
 
-export type ResolvedSystem = { id: string; label: string; tab: string; stats: StatDef[]; preset: boolean }
+const isMap = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
 
-const d20 = ['str', 'dex', 'con', 'int', 'wis', 'cha']
-const d20Labels = { str: 'STR', dex: 'DEX', con: 'CON', int: 'INT', wis: 'WIS', cha: 'CHA' }
-
-/** Built-in systems. Projects can extend them (`extends`) or define their own in maquest.json `systems`. */
-export const SYSTEM_PRESETS: Record<string, SystemDef> = {
-  'dnd-2024': {
-    label: 'D&D 5e (2024)',
-    stats: [
-      { key: 'size', kind: 'subtitle', hint: 'Medium', aliases: ['rozmiar'] },
-      { key: 'creature', kind: 'subtitle', label: 'Type', hint: 'humanoid (elf)', aliases: ['typ', 'rasa', 'race', 'species'] },
-      { key: 'class', kind: 'subtitle', label: 'Class', hint: 'Wizard 5', aliases: ['klasa'] },
-      { key: 'alignment', kind: 'subtitle', hint: 'neutral' },
-      { key: 'ac', kind: 'stat', label: 'AC', required: true, badge: true, hint: '15 or { value: 15, note: "natural armor" }', aliases: ['armor class', 'kp'] },
-      { key: 'hp', kind: 'stat', label: 'HP', required: true, badge: true, hint: '40 or { value: 40, note: "9d6+9" }', aliases: ['hit points', 'pw'] },
-      { key: 'speed', kind: 'stat', label: 'Speed', hint: '30 ft', aliases: ['szybkość', 'movement'] },
-      { key: 'initiative', kind: 'stat', label: 'Initiative', hint: '+2', aliases: ['inicjatywa'] },
-      { key: 'cr', kind: 'stat', label: 'CR', badge: true, hint: '6 (or "PC (Druid 11)")', aliases: ['challenge'] },
-      { key: 'pb', kind: 'stat', label: 'PB', hint: '+3', aliases: ['proficiency bonus'] },
-      {
-        key: 'scores',
-        kind: 'scores',
-        label: 'Ability scores',
-        keys: d20,
-        labels: d20Labels,
-        modifier: 'd20',
-        required: true,
-        hint: '{ str: 10, dex: 14, … }',
-      },
-      { key: 'saves', kind: 'bonuses', label: 'Saving throws', labels: d20Labels, hint: '{ int: 6, wis: 4 }' },
-      { key: 'skills', kind: 'bonuses', label: 'Skills', hint: '{ Arcana: 6, History: 6 }', aliases: ['umiejętności'] },
-      { key: 'resistances', kind: 'tags', label: 'Resistances' },
-      { key: 'immunities', kind: 'tags', label: 'Immunities' },
-      { key: 'vulnerabilities', kind: 'tags', label: 'Vulnerabilities' },
-      { key: 'senses', kind: 'line', label: 'Senses', hint: 'darkvision 60 ft, passive Perception 12' },
-      { key: 'languages', kind: 'line', label: 'Languages', aliases: ['języki'] },
-      { key: 'spellcasting', kind: 'line', label: 'Spellcasting', hint: 'INT, save DC 14, attack +6' },
-      { key: 'slots', kind: 'bonuses', label: 'Spell slots', signed: false, hint: '{ 1: 4, 2: 3, 3: 3 }', aliases: ['sloty'] },
-      { key: 'gear', kind: 'line', label: 'Gear', aliases: ['ekwipunek', 'equipment'] },
-    ],
-  },
-  pf2e: {
-    label: 'Pathfinder 2e',
-    stats: [
-      { key: 'traits', kind: 'tags', label: 'Traits' },
-      { key: 'level', kind: 'stat', label: 'Level', required: true, badge: true },
-      { key: 'perception', kind: 'stat', label: 'Perception', hint: '+12; darkvision' },
-      { key: 'ac', kind: 'stat', label: 'AC', required: true, badge: true },
-      { key: 'hp', kind: 'stat', label: 'HP', required: true, badge: true },
-      { key: 'speed', kind: 'stat', label: 'Speed' },
-      { key: 'saves', kind: 'bonuses', label: 'Saves', keys: ['fort', 'ref', 'will'], labels: { fort: 'Fort', ref: 'Ref', will: 'Will' } },
-      {
-        key: 'attributes',
-        kind: 'scores',
-        label: 'Attribute modifiers',
-        keys: ['str', 'dex', 'con', 'int', 'wis', 'cha'],
-        labels: { str: 'Str', dex: 'Dex', con: 'Con', int: 'Int', wis: 'Wis', cha: 'Cha' },
-        modifier: 'none',
-        required: true,
-      },
-      { key: 'skills', kind: 'bonuses', label: 'Skills' },
-      { key: 'immunities', kind: 'tags', label: 'Immunities' },
-      { key: 'resistances', kind: 'tags', label: 'Resistances' },
-      { key: 'weaknesses', kind: 'tags', label: 'Weaknesses' },
-      { key: 'languages', kind: 'line', label: 'Languages' },
-      { key: 'items', kind: 'line', label: 'Items' },
-    ],
-  },
-  osr: {
-    label: 'OSR (B/X style)',
-    stats: [
-      { key: 'alignment', kind: 'subtitle' },
-      { key: 'hd', kind: 'stat', label: 'HD', required: true, badge: true },
-      { key: 'ac', kind: 'stat', label: 'AC', required: true, badge: true },
-      { key: 'hp', kind: 'stat', label: 'HP' },
-      { key: 'attack', kind: 'stat', label: 'Attack', hint: '+3 or THAC0 17' },
-      { key: 'move', kind: 'stat', label: 'Move', hint: "120' (40')" },
-      { key: 'morale', kind: 'stat', label: 'Morale' },
-      { key: 'saves', kind: 'bonuses', label: 'Saves', signed: false, keys: ['d', 'w', 'p', 'b', 's'], labels: { d: 'D', w: 'W', p: 'P', b: 'B', s: 'S' } },
-      { key: 'attributes', kind: 'scores', label: 'Attributes', keys: d20, labels: d20Labels, modifier: 'none' },
-      { key: 'treasure', kind: 'line', label: 'Treasure' },
-    ],
-  },
-  blades: {
-    label: 'Blades in the Dark',
-    tab: 'Sheet',
-    stats: [
-      { key: 'playbook', kind: 'subtitle', required: true },
-      { key: 'heritage', kind: 'subtitle' },
-      { key: 'stress', kind: 'track', label: 'Stress', max: 9, badge: true },
-      { key: 'trauma', kind: 'tags', label: 'Trauma' },
-      { key: 'harm', kind: 'line', label: 'Harm' },
-      {
-        key: 'actions',
-        kind: 'scores',
-        label: 'Action ratings',
-        keys: ['hunt', 'study', 'survey', 'tinker', 'finesse', 'prowl', 'skirmish', 'wreck', 'attune', 'command', 'consort', 'sway'],
-        modifier: 'none',
-      },
-      { key: 'vice', kind: 'line', label: 'Vice' },
-      { key: 'load', kind: 'stat', label: 'Load' },
-    ],
-  },
-  coc7: {
-    label: 'Call of Cthulhu 7e',
-    stats: [
-      { key: 'occupation', kind: 'subtitle' },
-      { key: 'age', kind: 'subtitle' },
-      {
-        key: 'characteristics',
-        kind: 'scores',
-        label: 'Characteristics',
-        keys: ['str', 'con', 'siz', 'dex', 'app', 'int', 'pow', 'edu'],
-        labels: { str: 'STR', con: 'CON', siz: 'SIZ', dex: 'DEX', app: 'APP', int: 'INT', pow: 'POW', edu: 'EDU' },
-        modifier: 'none',
-        required: true,
-      },
-      { key: 'hp', kind: 'track', label: 'HP', badge: true },
-      { key: 'mp', kind: 'track', label: 'MP' },
-      { key: 'san', kind: 'track', label: 'Sanity', max: 99, badge: true },
-      { key: 'luck', kind: 'stat', label: 'Luck' },
-      { key: 'move', kind: 'stat', label: 'Move' },
-      { key: 'build', kind: 'stat', label: 'Build' },
-      { key: 'db', kind: 'stat', label: 'Damage bonus' },
-      { key: 'skills', kind: 'bonuses', label: 'Skills', signed: false, hint: '{ Spot Hidden: 60, Library Use: 70 }' },
-    ],
-  },
-  generic: {
-    label: 'Generic',
-    stats: [
-      { key: 'role', kind: 'subtitle' },
-      { key: 'level', kind: 'stat', label: 'Level', badge: true },
-      { key: 'hp', kind: 'track', label: 'HP', badge: true },
-      { key: 'defense', kind: 'stat', label: 'Defense' },
-      { key: 'attributes', kind: 'scores', label: 'Attributes', modifier: 'none' },
-      { key: 'skills', kind: 'bonuses', label: 'Skills' },
-      { key: 'traits', kind: 'tags', label: 'Traits' },
-    ],
-  },
-}
-
-export type SystemProblem = { system: string; message: string }
-
-/**
- * Every system a project can use: presets plus the project's own (which override presets with the same id), with
- * `extends` applied. Invalid or circular definitions are left out and reported in `problems`.
- */
-export function resolveSystems(projectSystems: Record<string, unknown> = {}): { systems: Map<string, ResolvedSystem>; problems: SystemProblem[] } {
-  const defs = new Map<string, { def: SystemDef; preset: boolean }>()
-  const problems: SystemProblem[] = []
-  for (const [id, def] of Object.entries(SYSTEM_PRESETS)) defs.set(id, { def, preset: true })
-  for (const [id, raw] of Object.entries(projectSystems)) {
-    const parsed = SystemDef.safeParse(raw)
-    if (parsed.success) defs.set(id, { def: parsed.data, preset: false })
-    else problems.push({ system: id, message: parsed.error.issues.map((i) => `${i.path.join('.') || 'system'}: ${i.message}`).join('; ') })
-  }
-  const out = new Map<string, ResolvedSystem>()
-  const resolve = (id: string, seen: string[]): ResolvedSystem | null => {
-    const done = out.get(id)
-    if (done) return done
-    const entry = defs.get(id)
-    if (!entry) return null
-    if (seen.includes(id)) {
-      problems.push({ system: id, message: `extends itself (${[...seen, id].join(' → ')})` })
-      return null
-    }
-    const { def, preset } = entry
-    let stats: StatDef[] = []
-    if (def.extends) {
-      const base = resolve(def.extends, [...seen, id])
-      if (!base) {
-        if (!defs.has(def.extends)) problems.push({ system: id, message: `extends unknown system "${def.extends}"` })
-        return null
-      }
-      stats = base.stats.map((s) => ({ ...s }))
-    }
-    if (def.omit) stats = stats.filter((s) => !def.omit!.includes(s.key))
-    for (const s of def.stats) {
-      const i = stats.findIndex((x) => x.key === s.key)
-      if (i >= 0) stats[i] = { ...stats[i], ...strip(s), kind: s.kind ?? stats[i].kind }
-      else stats.push({ ...s, kind: s.kind ?? 'stat' })
-    }
-    const base = def.extends ? out.get(def.extends) : undefined
-    const system: ResolvedSystem = { id, label: def.label ?? base?.label ?? id, tab: def.tab ?? base?.tab ?? 'Stats', stats, preset }
-    out.set(id, system)
-    return system
-  }
-  for (const id of defs.keys()) resolve(id, [])
-  return { systems: out, problems }
-}
-
-function strip<T extends object>(o: T): Partial<T> {
-  return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as Partial<T>
-}
-
-/** The system id a node uses: its own `system`, else its type's. */
-export const systemIdOf = (node: Pick<StoryNode, 'system'>, type?: Pick<TypeInfo, 'system'>) => node.system ?? type?.system
-
-/** A stat's display label. */
-export const statLabel = (def: Pick<StatDef, 'key' | 'label'>) => def.label ?? def.key.charAt(0).toUpperCase() + def.key.slice(1).replaceAll(/[-_]/g, ' ')
-
-/** Stat definitions for a node's values: the system's stats in order, then any extra keys the node has. */
-export function statRows(system: ResolvedSystem | undefined, stats: Record<string, unknown> = {}): { def: StatDef; value: unknown; known: boolean }[] {
-  const rows = (system?.stats ?? []).map((def) => ({ def, value: stats[def.key], known: true }))
-  for (const [key, value] of Object.entries(stats)) {
-    if (rows.some((r) => r.def.key === key)) continue
-    rows.push({ def: { key, kind: inferKind(value) }, value, known: !system })
-  }
-  return rows
-}
-
-/** A sensible renderer for a value without a definition. */
-export function inferKind(value: unknown): StatKind {
-  if (Array.isArray(value)) return 'tags'
-  if (value && typeof value === 'object') {
-    const o = value as Record<string, unknown>
-    if ('value' in o || 'note' in o) return 'stat'
-    if ('max' in o) return 'track'
-    const nums = Object.values(o).filter((v) => typeof v === 'number').length
-    return nums && nums === Object.keys(o).length && nums >= 3 ? 'scores' : 'bonuses'
-  }
-  return typeof value === 'string' && value.length > 24 ? 'line' : 'stat'
-}
-
-// ---------- stat values ----------
-
-export const isEmptyStat = (v: unknown): boolean =>
+/** Whether a value counts as missing: nothing, blank text, an empty list, or a map of missing values. */
+export const isEmptyValue = (v: unknown): boolean =>
   v === undefined ||
   v === null ||
   (typeof v === 'string' && !v.trim()) ||
-  (Array.isArray(v) && !v.length) ||
-  (typeof v === 'object' && !Array.isArray(v) && !Object.values(v as object).some((x) => !isEmptyStat(x)))
+  (Array.isArray(v) && !v.some((x) => !isEmptyValue(x))) ||
+  (isMap(v) && !Object.values(v).some((x) => !isEmptyValue(x)))
 
-const scalar = (v: unknown): string =>
+/** Any value as plain text: lists joined with commas, maps as "key value" pairs. */
+export const plainText = (v: unknown): string =>
   v === undefined || v === null
     ? ''
     : typeof v === 'string'
@@ -248,65 +26,85 @@ const scalar = (v: unknown): string =>
       : typeof v === 'number' || typeof v === 'boolean'
         ? String(v)
         : Array.isArray(v)
-          ? v.map(scalar).join(', ')
+          ? v.map(plainText).join(', ')
           : Object.entries(v as object)
-              .map(([k, x]) => `${k} ${scalar(x)}`)
+              .map(([k, x]) => `${k} ${plainText(x)}`)
               .join(', ')
 
-/** A text-like stat as value plus optional note: `40`, `"30 ft"`, or `{ value: 40, note: "9d6+9" }`. */
-export function statText(v: unknown): { value: string; note?: string } {
-  if (v && typeof v === 'object' && !Array.isArray(v) && ('value' in v || 'note' in v)) {
-    const o = v as { value?: unknown; note?: unknown }
-    const note = scalar(o.note).trim()
-    return { value: scalar(o.value), ...(note && { note }) }
+/** A field's display label: its label, else its key in sentence case. */
+export const fieldLabel = (def: Pick<FieldDef, 'key' | 'label'>) => def.label ?? def.key.charAt(0).toUpperCase() + def.key.slice(1).replaceAll(/[-_]/g, ' ')
+
+/** A text-like value as value plus optional note: `40`, `"30 ft"`, or `{ value: 40, note: "9d6+9" }`. */
+export function noted(v: unknown): { value: string; note?: string } {
+  if (isMap(v) && ('value' in v || 'note' in v)) {
+    const note = plainText(v.note).trim()
+    return { value: plainText(v.value), ...(note && { note }) }
   }
-  return { value: scalar(v) }
+  return { value: plainText(v) }
 }
 
 /** Number in a value like 14, "14", "+2" or "−1"; null when there is none. */
 export function toNumber(v: unknown): number | null {
   if (typeof v === 'number' && Number.isFinite(v)) return v
   if (typeof v === 'string') {
-    const m = /^\s*([+\-−]?\d+(?:\.\d+)?)/.exec(v)
-    if (m) return Number(m[1].replace('−', '-'))
+    const m = /^\s*([+\-−]?\d+(?:[.,]\d+)?)/.exec(v)
+    if (m) return Number(m[1].replace('−', '-').replace(',', '.'))
+  }
+  if (isMap(v) && 'value' in v) return toNumber(v.value)
+  return null
+}
+
+/** Signed number with a real minus sign: +2, −1, +0. */
+export const signed = (n: number) => (n > 0 ? `+${n}` : n < 0 ? `−${-n}` : '+0')
+
+/** Yes/no of a toggle value; null when it isn't one. */
+export function toBool(v: unknown): boolean | null {
+  if (typeof v === 'boolean') return v
+  if (typeof v === 'number') return v !== 0
+  if (typeof v === 'string') {
+    const s = v.trim().toLowerCase()
+    if (['yes', 'true', 'y', '1', 'on', 'tak', 'ja', 'oui', 'sí', 'si', 'da'].includes(s)) return true
+    if (['no', 'false', 'n', '0', 'off', 'nie', 'nein', 'non', 'ne'].includes(s)) return false
   }
   return null
 }
 
-/** Signed number with a real minus sign: +2, −1, 0. */
-export const signed = (n: number) => (n > 0 ? `+${n}` : n < 0 ? `−${-n}` : '+0')
-
-/** The d20 ability modifier of a score. */
-export const d20Modifier = (score: number) => Math.floor((score - 10) / 2)
+/** A meter as current/max: `5`, `"5/9"`, or `{ value: 5, max: 9 }`; max falls back to the field's. */
+export function meterValue(def: Pick<FieldDef, 'max'>, v: unknown): { value: number | null; max: number | null } {
+  if (isMap(v)) return { value: toNumber(v.value), max: toNumber(v.max) ?? def.max ?? null }
+  if (typeof v === 'string' && v.includes('/')) {
+    const [a, b] = v.split('/')
+    return { value: toNumber(a), max: toNumber(b) ?? def.max ?? null }
+  }
+  return { value: toNumber(v), max: def.max ?? null }
+}
 
 export type ScoreCell = { key: string; label: string; value: string; number: number | null; modifier?: string }
 
-/** Score grid cells in the system's order, then any extra keys. */
-export function scoreCells(def: Pick<StatDef, 'keys' | 'labels' | 'modifier'>, v: unknown): ScoreCell[] {
-  const o = v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {}
+/** Score cells in the field's key order, then any extra keys; with the field's modifier when it has one. */
+export function scoreCells(def: Pick<FieldDef, 'keys' | 'labels' | 'modifier'>, v: unknown): ScoreCell[] {
+  const o = isMap(v) ? v : {}
   const keys = [...(def.keys ?? []), ...Object.keys(o).filter((k) => !def.keys?.includes(k))]
   return keys.map((key) => {
     const raw = o[key]
     const number = toNumber(raw)
+    const m = def.modifier
     return {
       key,
-      label: def.labels?.[key] ?? key.toUpperCase(),
-      value: scalar(raw),
+      label: def.labels?.[key] ?? key,
+      value: plainText(raw),
       number,
-      ...(def.modifier === 'd20' && number !== null && { modifier: signed(d20Modifier(number)) }),
+      ...(m && number !== null && { modifier: signed(Math.floor((number - m.base) / m.step)) }),
     }
   })
 }
 
-/** Named numbers ("Arcana +6"): from a map, a list, or text like "Arcana +6, History +6". */
-export function bonusEntries(def: Pick<StatDef, 'labels' | 'signed'>, v: unknown): { key: string; label: string; value: string }[] {
-  const show = (x: unknown) => {
-    const n = typeof x === 'number' ? x : null
-    return n !== null && def.signed !== false ? signed(n) : scalar(x)
-  }
+/** Named values ("Stealth +6"): from a map, a list, or text like "Stealth +6, History 4". */
+export function pairEntries(def: Pick<FieldDef, 'labels' | 'signed'>, v: unknown): { key: string; label: string; value: string }[] {
+  const show = (x: unknown) => (typeof x === 'number' && def.signed !== false ? signed(x) : plainText(x))
   const label = (k: string) => def.labels?.[k] ?? k
-  if (v && typeof v === 'object' && !Array.isArray(v)) return Object.entries(v).map(([key, x]) => ({ key, label: label(key), value: show(x) }))
-  const items = Array.isArray(v) ? v.map(scalar) : typeof v === 'string' ? v.split(/[,;·]/) : []
+  if (isMap(v)) return Object.entries(v).map(([key, x]) => ({ key, label: label(key), value: show(x) }))
+  const items = Array.isArray(v) ? v.map(plainText) : typeof v === 'string' ? v.split(/[,;·]/) : []
   return items
     .map((s) => s.trim())
     .filter(Boolean)
@@ -316,8 +114,8 @@ export function bonusEntries(def: Pick<StatDef, 'labels' | 'signed'>, v: unknown
     })
 }
 
-/** Parses "Arcana +6, History 4" into { Arcana: 6, History: 4 } (text parts stay text). */
-export function parseBonuses(text: string): Record<string, number | string> {
+/** Parses "Stealth +6, History 4" into { Stealth: 6, History: 4 } (parts without a number stay text). */
+export function parsePairs(text: string): Record<string, number | string> {
   const out: Record<string, number | string> = {}
   for (const part of text.split(/[,;·]/)) {
     const s = part.trim()
@@ -329,105 +127,189 @@ export function parseBonuses(text: string): Record<string, number | string> {
   return out
 }
 
-/** Formats a bonus map back into editable text. */
-export const formatBonuses = (def: Pick<StatDef, 'labels' | 'signed'>, v: unknown) =>
-  bonusEntries({ ...def, labels: undefined }, v)
+/** Pairs back as editable text. */
+export const formatPairs = (def: Pick<FieldDef, 'signed'>, v: unknown) =>
+  pairEntries({ signed: def.signed }, v)
     .map((e) => (e.value ? `${e.label} ${e.value.replace('−', '-')}` : e.label))
     .join(', ')
 
-/** Chips from a list or comma-separated text. */
-export function tagList(v: unknown): string[] {
-  if (Array.isArray(v)) return v.map(scalar).filter(Boolean)
+/** Items of a list-like value: a list, or text split at commas (tags) or lines (lists). */
+export function listItems(v: unknown, split: RegExp = /[,;]/): string[] {
+  if (Array.isArray(v)) return v.map(plainText).filter(Boolean)
   if (typeof v === 'string')
     return v
-      .split(/[,;]/)
+      .split(split)
       .map((s) => s.trim())
       .filter(Boolean)
-  if (v && typeof v === 'object') return Object.entries(v).map(([k, x]) => `${k} ${scalar(x)}`.trim())
-  return v === undefined || v === null ? [] : [scalar(v)]
+  if (isMap(v)) return Object.entries(v).map(([k, x]) => `${k} ${plainText(x)}`.trim())
+  return v === undefined || v === null ? [] : [plainText(v)]
 }
 
-/** A track as current/max: `5`, `"5/9"`, or `{ value: 5, max: 9 }`. */
-export function trackValue(def: Pick<StatDef, 'max'>, v: unknown): { value: number | null; max: number | null } {
-  if (v && typeof v === 'object' && !Array.isArray(v)) {
-    const o = v as { value?: unknown; max?: unknown }
-    return { value: toNumber(o.value), max: toNumber(o.max) ?? def.max ?? null }
-  }
-  if (typeof v === 'string' && v.includes('/')) {
-    const [a, b] = v.split('/')
-    return { value: toNumber(a), max: toNumber(b) ?? def.max ?? null }
-  }
-  return { value: toNumber(v), max: def.max ?? null }
+/** Node ids of a refs value: a list or comma-separated text, with or without [[brackets]]. */
+export const refIds = (v: unknown) => listItems(v).map((s) => s.replace(/^\[\[([^\]|]+)(?:\|[^\]]*)?\]\]$/, '$1').trim())
+
+/** Table rows and columns: the field's columns first, then other keys the rows use. */
+export function tableRows(def: Pick<FieldDef, 'keys' | 'labels'>, v: unknown): { columns: { key: string; label: string }[]; rows: Record<string, string>[] } {
+  const raw = Array.isArray(v) ? v : isMap(v) ? [v] : []
+  const rows = raw.map((r) => (isMap(r) ? Object.fromEntries(Object.entries(r).map(([k, x]) => [k, plainText(x)])) : { value: plainText(r) }))
+  const keys = [...(def.keys ?? [])]
+  for (const r of rows) for (const k of Object.keys(r)) if (!keys.includes(k)) keys.push(k)
+  return { columns: keys.map((key) => ({ key, label: def.labels?.[key] ?? key })), rows }
 }
 
-/** One-line text of any stat value, for agents and compact UI. */
-export function statSummary(def: StatDef, v: unknown): string {
-  switch (def.kind) {
+/** A widget that fits a value without a definition. */
+export function inferWidget(value: unknown): Widget {
+  if (typeof value === 'boolean') return 'toggle'
+  if (Array.isArray(value)) return value.some(isMap) ? 'table' : 'tags'
+  if (isMap(value)) {
+    if ('value' in value || 'note' in value) return 'max' in value ? 'meter' : 'stat'
+    const nums = Object.values(value).filter((v) => typeof v === 'number').length
+    return nums && nums === Object.keys(value).length && nums >= 3 ? 'scores' : 'pairs'
+  }
+  return 'text'
+}
+
+/** One line of text for any field value, for agents and compact UI. */
+export function fieldSummary(def: FieldDef, v: unknown): string {
+  switch (def.widget) {
     case 'scores':
       return scoreCells(def, v)
         .filter((c) => c.value)
         .map((c) => `${c.label} ${c.value}${c.modifier ? ` (${c.modifier})` : ''}`)
         .join(', ')
-    case 'bonuses':
-      return bonusEntries(def, v)
+    case 'pairs':
+      return pairEntries(def, v)
         .map((e) => `${e.label} ${e.value}`.trim())
         .join(', ')
     case 'tags':
-      return tagList(v).join(', ')
-    case 'track': {
-      const t = trackValue(def, v)
-      return t.value === null ? scalar(v) : `${t.value}${t.max !== null ? `/${t.max}` : ''}`
+    case 'refs':
+      return listItems(v).join(', ')
+    case 'list':
+      return listItems(v, /\n/).join('; ')
+    case 'toggle': {
+      const b = toBool(v)
+      return b === null ? plainText(v) : b ? 'yes' : 'no'
+    }
+    case 'meter': {
+      const m = meterValue(def, v)
+      return m.value === null ? plainText(v) : `${m.value}${m.max !== null ? `/${m.max}` : ''}`
+    }
+    case 'table': {
+      const { columns, rows } = tableRows(def, v)
+      return rows.map((r) => columns.map((c) => r[c.key] ?? '').join(' | ')).join('; ')
     }
     default: {
-      const t = statText(v)
+      const t = noted(v)
       return t.note ? `${t.value} (${t.note})` : t.value
     }
   }
 }
 
-/** Why a value doesn't fit its stat's kind, or null when it does. */
-export function statProblem(def: StatDef, v: unknown): string | null {
-  if (isEmptyStat(v)) return null
-  switch (def.kind) {
+const outOfRange = (def: Pick<FieldDef, 'min' | 'max'>, n: number, what = 'value') =>
+  def.min !== undefined && n < def.min
+    ? `${what} ${n} is below the minimum ${def.min}`
+    : def.max !== undefined && n > def.max
+      ? `${what} ${n} is over the maximum ${def.max}`
+      : null
+
+/** Why a value doesn't fit its field (shape, options, range), or null when it does. */
+export function fieldProblem(def: FieldDef, v: unknown): string | null {
+  if (isEmptyValue(v)) return null
+  const allowed = (s: string) => !def.options || def.options.some((o) => normalizeName(o) === normalizeName(s))
+  const choices = () => `one of ${def.options!.join(', ')}`
+  switch (def.widget) {
     case 'scores': {
-      if (!v || typeof v !== 'object' || Array.isArray(v)) return `expected a map like { ${(def.keys ?? ['a', 'b']).slice(0, 2).join(': 10, ')}: 10 }`
-      const bad = Object.entries(v as object).filter(([, x]) => toNumber(x) === null && !isEmptyStat(x))
-      return bad.length ? `not numbers: ${bad.map(([k]) => k).join(', ')}` : null
+      if (!isMap(v)) return `expected a map like { ${(def.keys ?? ['a', 'b']).slice(0, 2).join(': 1, ')}: 1 }`
+      const bad = Object.entries(v).filter(([, x]) => toNumber(x) === null && !isEmptyValue(x))
+      if (bad.length) return `not numbers: ${bad.map(([k]) => k).join(', ')}`
+      for (const [k, x] of Object.entries(v)) {
+        const n = toNumber(x)
+        const problem = n === null ? null : outOfRange(def, n, k)
+        if (problem) return problem
+      }
+      return null
     }
-    case 'track': {
-      const t = trackValue(def, v)
-      if (t.value === null) return 'expected a number, "current/max", or { value, max }'
-      return t.max !== null && t.value > t.max ? `value ${t.value} is over the maximum ${t.max}` : null
+    case 'meter': {
+      const m = meterValue(def, v)
+      if (m.value === null) return 'expected a number, "current/max", or { value, max }'
+      if (m.max !== null && m.value > m.max) return `value ${m.value} is over the maximum ${m.max}`
+      return def.min !== undefined && m.value < def.min ? `value ${m.value} is below the minimum ${def.min}` : null
     }
-    case 'bonuses':
-    case 'tags':
+    case 'stat': {
+      if (isMap(v) && !('value' in v || 'note' in v)) return 'expected text, a number, or { value, note }'
+      const n = toNumber(v)
+      return n === null || (typeof v === 'string' && !/^\s*[+\-−]?\d+(?:[.,]\d+)?\s*$/.test(v)) ? null : outOfRange(def, n)
+    }
+    case 'toggle':
+      return toBool(v) === null ? 'expected yes or no (true/false)' : null
+    case 'table':
+      return Array.isArray(v) && v.every((r) => isMap(r) || isEmptyValue(r)) ? null : 'expected a list of rows like [{ name: …, … }]'
+    case 'tags': {
+      const bad = listItems(v).filter((t) => !allowed(t))
+      return bad.length ? `${bad.join(', ')} not ${choices()}` : null
+    }
+    case 'pairs':
+    case 'list':
+    case 'refs':
       return null
     default:
-      return v && typeof v === 'object' && !Array.isArray(v) && !('value' in v || 'note' in v) ? 'expected text, a number, or { value, note }' : null
+      if (isMap(v) || Array.isArray(v)) return 'expected text'
+      return allowed(plainText(v)) ? null : `expected ${choices()}`
   }
 }
 
-export const isStatKey = (key: string) => STAT_KEY.test(key)
-
-/** Lowercase, accent-free form of a name, for matching labels, aliases and titles. */
+/** Lowercase, accent-free form of a name, for matching labels, aliases and titles across scripts. */
 export function normalizeName(s: string) {
   return s
     .normalize('NFKD')
     .replaceAll(/\p{M}/gu, '')
-    .replaceAll('ł', 'l')
-    .replaceAll('Ł', 'l')
+    .replaceAll(/[łŁ]/g, 'l')
+    .replaceAll(/[øØ]/g, 'o')
+    .replaceAll(/[đĐ]/g, 'd')
+    .replaceAll('ß', 'ss')
     .toLowerCase()
     .replaceAll(/[^\p{L}\p{N}]+/gu, ' ')
     .trim()
 }
 
-/** The stat a legacy field name stands for (by key, label or alias), if any. */
-export function statForField(system: ResolvedSystem, field: string): StatDef | undefined {
-  const want = normalizeName(field)
-  return system.stats.find((s) => [s.key, s.label ?? '', ...(s.aliases ?? [])].some((n) => n && normalizeName(n) === want))
+/** The field a stray key stands for (by its label or an alias), when the key isn't the field's own. */
+export function fieldForKey(fields: readonly FieldDef[], key: string): FieldDef | undefined {
+  if (fields.some((f) => f.key === key)) return undefined
+  const want = normalizeName(key)
+  return fields.find((f) => [f.key, f.label ?? '', ...(f.aliases ?? [])].some((n) => n && normalizeName(n) === want))
 }
 
-// ---------- body tabs ----------
+export type FieldRow = { def: FieldDef; value: unknown; /** Defined by the type (not a free-form key). */ known: boolean }
+
+/** Rows for the given fields, in order, with the node's values. */
+export const fieldRows = (defs: readonly FieldDef[], values: Record<string, unknown> = {}): FieldRow[] =>
+  defs.map((def) => ({ def, value: values[def.key], known: true }))
+
+/** Free-form keys of a node (ones its type doesn't define), with widgets that fit their values. */
+export function extraRows(type: Pick<SheetType, 'fields'>, values: Record<string, unknown> = {}): FieldRow[] {
+  return Object.entries(values)
+    .filter(([key]) => !type.fields.some((f) => f.key === key))
+    .map(([key, value]) => ({ def: { key, widget: inferWidget(value) }, value, known: false }))
+}
+
+/** Merges a fields patch: null removes a key; maps merge one level deep (null removes a sub-key). */
+export function mergeValues(cur: Record<string, unknown>, patch: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...cur }
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === null || v === undefined) delete out[k]
+    else if (isMap(v) && isMap(out[k])) {
+      const merged: Record<string, unknown> = { ...(out[k] as Record<string, unknown>) }
+      for (const [sk, sv] of Object.entries(v)) {
+        if (sv === null) delete merged[sk]
+        else merged[sk] = sv
+      }
+      out[k] = merged
+    } else out[k] = v
+  }
+  return out
+}
+
+// ---------- body sections ----------
 
 export type BodySection = {
   /** Heading text; null for content before the first H1. */
@@ -474,65 +356,102 @@ export function replaceSection(body: string, index: number, text: string): strin
   return joinSections(sections)
 }
 
-/** Default ability-like tab headings, matched case- and accent-insensitively. */
-export const ABILITY_TAB_NAMES = [
-  'abilities',
-  'actions',
-  'bonus actions',
-  'reactions',
-  'spells',
-  'powers',
-  'features',
-  'traits',
-  'moves',
-  'feats',
-  'talents',
-  'techniques',
-  'zdolnosci',
-  'umiejetnosci',
-  'zaklecia',
-  'akcje',
-  'cechy',
-  'moce',
-  'atuty',
-]
+// ---------- sheet tabs ----------
+
+export type FieldSection = { title?: string; fields: FieldDef[] }
+
+/** What a sheet needs from a type: its fields and tabs. */
+export type SheetType = { fields: readonly FieldDef[]; tabs: readonly TabDef[] }
 
 export type SheetTab =
-  | { kind: 'stats'; key: 'stats'; title: string }
-  | { kind: 'prose' | 'abilities'; key: string; title: string; section: number; text: string }
+  | { kind: 'fields'; key: string; title: string; sections: FieldSection[] }
+  | { kind: 'prose' | 'cards'; key: string; title: string; section: number; text: string }
 
-/** Whether a heading names a tab of the given config (title or alias). */
-const tabMatches = (def: TabDef, title: string) => [def.title, ...(def.aliases ?? [])].some((t) => normalizeName(t) === normalizeName(title))
+/** Whether a heading names a tab (by title or alias). */
+export const tabMatches = (def: Pick<TabDef, 'title' | 'aliases'>, title: string) =>
+  [def.title, ...(def.aliases ?? [])].some((t) => normalizeName(t) === normalizeName(title))
 
 /**
- * The tabs of a node: the statblock (when it has a system or stats), then its body sections. Configured tabs come
- * first in their order; other H1 sections follow. Without a statblock, a body needs at least two H1 sections to get
- * tabs, so plain documents stay one editor.
+ * The fields each fields tab shows, by tab title: the listed fields or sections, or for a tab that lists none, every
+ * field of the type that no other fields tab lists.
  */
-export function sheetTabs(body: string, opts: { statsTitle?: string; tabs?: readonly TabDef[] } = {}): SheetTab[] {
-  const sections = splitSections(body)
-  const configured = opts.tabs ?? []
-  const withHeading = sections.map((s, i) => ({ s, i })).filter((x) => x.s.heading !== undefined)
-  const intro = sectionText(sections[0])
-  const bodyTabs: SheetTab[] = []
-  if (intro) bodyTabs.push({ kind: 'prose', key: 'intro', title: 'Overview', section: 0, text: intro })
-  const order = (title: string) => {
-    const i = configured.findIndex((d) => tabMatches(d, title))
-    return i < 0 ? configured.length : i
+export function fieldLayout(type: SheetType): Map<string, FieldSection[]> {
+  const byKey = new Map(type.fields.map((f) => [f.key, f]))
+  const pick = (keys: readonly string[]) => keys.flatMap((k) => byKey.get(k) ?? [])
+  const tabs = type.tabs.filter((t) => t.kind === 'fields')
+  const listed = new Set(tabs.flatMap((t) => [...(t.fields ?? []), ...(t.sections ?? []).flatMap((s) => s.fields)]))
+  const out = new Map<string, FieldSection[]>()
+  for (const t of tabs) {
+    if (t.sections)
+      out.set(t.title, [...(t.fields ? [{ fields: pick(t.fields) }] : []), ...t.sections.map((s) => ({ title: s.title, fields: pick(s.fields) }))])
+    else if (t.fields) out.set(t.title, [{ fields: pick(t.fields) }])
+    else out.set(t.title, [{ fields: type.fields.filter((f) => !listed.has(f.key)) }])
   }
-  for (const { s, i } of withHeading.toSorted((a, b) => order(a.s.title!) - order(b.s.title!))) {
-    const def = configured.find((d) => tabMatches(d, s.title!))
-    const kind = def?.kind ?? (ABILITY_TAB_NAMES.includes(normalizeName(s.title!)) ? 'abilities' : 'prose')
-    bodyTabs.push({ kind, key: `s${i}:${s.title}`, title: s.title!, section: i, text: sectionText(s) })
-  }
-  const stats = opts.statsTitle !== undefined
-  if (!stats && withHeading.length < 2) return []
-  return [...(stats ? [{ kind: 'stats' as const, key: 'stats' as const, title: opts.statsTitle! }] : []), ...bodyTabs]
+  return out
 }
 
-// ---------- abilities ----------
+/** The tab a field shows in, if any. */
+export function tabOfField(type: SheetType, key: string): string | undefined {
+  for (const [title, sections] of fieldLayout(type)) if (sections.some((s) => s.fields.some((f) => f.key === key))) return title
+  return undefined
+}
 
-export type Ability = {
+/**
+ * Fields shown as properties under the title: the type's fields that no fields tab shows, then the node's free-form
+ * keys.
+ */
+export function propertyRows(type: SheetType, values: Record<string, unknown> = {}): FieldRow[] {
+  const placed = new Set([...fieldLayout(type).values()].flatMap((sections) => sections.flatMap((s) => s.fields.map((f) => f.key))))
+  return [
+    ...fieldRows(
+      type.fields.filter((f) => !placed.has(f.key)),
+      values,
+    ),
+    ...extraRows(type, values),
+  ]
+}
+
+/**
+ * The tabs of a node, in the type's order: fields tabs always, prose and cards tabs when the body has their section.
+ * The text before the first heading is "Overview", ahead of the body tabs; sections the type doesn't name follow at
+ * the end. Without fields tabs, a body needs at least two H1 sections to get tabs, so plain documents stay one editor.
+ */
+export function sheetTabs(body: string, type: SheetType = { fields: [], tabs: [] }): SheetTab[] {
+  const sections = splitSections(body)
+  const layout = fieldLayout(type)
+  const withHeading = sections.map((s, i) => ({ s, i })).filter((x) => x.s.heading !== undefined)
+  const used = new Set<number>()
+  const out: SheetTab[] = []
+  const intro = sectionText(sections[0])
+  let introAt = -1
+  for (const def of type.tabs) {
+    if (def.kind === 'fields') {
+      out.push({ kind: 'fields', key: `fields:${def.title}`, title: def.title, sections: layout.get(def.title) ?? [] })
+      continue
+    }
+    if (introAt < 0) introAt = out.length
+    for (const { s, i } of withHeading) {
+      if (used.has(i) || !tabMatches(def, s.title!)) continue
+      used.add(i)
+      out.push({ kind: def.kind, key: `s${i}:${s.title}`, title: s.title!, section: i, text: sectionText(s) })
+    }
+  }
+  for (const { s, i } of withHeading) if (!used.has(i)) out.push({ kind: 'prose', key: `s${i}:${s.title}`, title: s.title!, section: i, text: sectionText(s) })
+  if (intro)
+    out.splice(introAt < 0 ? out.filter((t) => t.kind === 'fields').length : introAt, 0, {
+      kind: 'prose',
+      key: 'intro',
+      title: 'Overview',
+      section: 0,
+      text: intro,
+    })
+  if (!layout.size && withHeading.length < 2) return []
+  return out
+}
+
+// ---------- cards ----------
+
+export type Card = {
   name: string
   /** Node id from a [[link]] in the name. */
   ref?: string
@@ -541,12 +460,12 @@ export type Ability = {
   /** Markdown description. */
   text: string
 }
-export type AbilityGroup = { title: string | null; intro: string; abilities: Ability[] }
+export type CardGroup = { title: string | null; intro: string; cards: Card[] }
 
 const LINK = /^\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/
 
 /** "Name {a, b}" / "[[id|Name]] {a}" / "**Name**" → name, ref, meta. */
-function abilityHead(raw: string): Pick<Ability, 'name' | 'ref' | 'meta'> {
+function cardHead(raw: string): Pick<Card, 'name' | 'ref' | 'meta'> {
   let s = raw.trim()
   let meta: string[] = []
   const braces = /\s*\{([^}]*)\}\s*$/.exec(s)
@@ -573,10 +492,10 @@ const splitMeta = (s: string) =>
     .filter(Boolean)
 
 /** A bullet or paragraph that starts with a bold name (or a [[link]]): "- **Fireball** (lvl 3) — text". */
-function abilityLine(line: string): Ability | null {
+function cardLine(line: string): Card | null {
   const m = /^(?:[-*+]\s+)?(?:(\*{2,3})(.+?)\1|(\[\[[^\]]+\]\]))(.*)$/.exec(line)
   if (!m) return null
-  const head = abilityHead(m[2] ?? m[3])
+  const head = cardHead(m[2] ?? m[3])
   if (!head.name) return null
   let rest = m[4].trim()
   const paren = /^\(([^)]*)\)/.exec(rest)
@@ -589,14 +508,14 @@ function abilityLine(line: string): Ability | null {
 }
 
 /**
- * Ability cards from an abilities tab. H2 headings group (e.g. "Reactions", "1/day", "Level 2 spells"); each H3 is
- * one ability with its content as the description, `### Name {meta, …}`; bullets or paragraphs that start with a bold
- * name are abilities too, so plain statblock markdown works as is. Other text stays as the group's intro.
+ * Cards from a cards tab. H2 headings group them (e.g. "Reactions", "1/day", "Allies"); each H3 is one card with its
+ * content as the description, `### Name {meta, …}`; bullets or paragraphs that start with a bold name are cards too,
+ * so plain markdown lists work as is. Other text stays as the group's intro.
  */
-export function parseAbilities(text: string): { intro: string; groups: AbilityGroup[] } {
-  const groups: AbilityGroup[] = [{ title: null, intro: '', abilities: [] }]
+export function parseCards(text: string): { intro: string; groups: CardGroup[] } {
+  const groups: CardGroup[] = [{ title: null, intro: '', cards: [] }]
   const intro: string[][] = [[]]
-  let current: Ability | null = null
+  let current: Card | null = null
   let fromLine = false
   let fence: string | null = null
   const close = () => {
@@ -610,58 +529,58 @@ export function parseAbilities(text: string): { intro: string; groups: AbilityGr
     const h = inFence ? null : /^(#{2,6})\s+(.+?)\s*#*\s*$/.exec(line)
     if (h && h[1].length === 2) {
       close()
-      groups.push({ title: h[2], intro: '', abilities: [] })
+      groups.push({ title: h[2], intro: '', cards: [] })
       intro.push([])
       continue
     }
     if (h && h[1].length === 3) {
       close()
-      current = { ...abilityHead(h[2]), text: '' }
+      current = { ...cardHead(h[2]), text: '' }
       fromLine = false
-      groups.at(-1)!.abilities.push(current)
+      groups.at(-1)!.cards.push(current)
       continue
     }
-    const asLine: Ability | null = !inFence && !(current && !fromLine) ? abilityLine(line) : null
+    const asLine: Card | null = !inFence && !(current && !fromLine) ? cardLine(line) : null
     if (asLine) {
       close()
       current = asLine
       fromLine = true
-      groups.at(-1)!.abilities.push(current)
+      groups.at(-1)!.cards.push(current)
       continue
     }
     if (current && fromLine) {
-      // Bullet abilities continue on indented or plain lines; a blank line, another bullet or a heading ends them.
+      // Bullet cards continue on indented or plain lines; a blank line, another bullet or a heading ends them.
       if (!line.trim() || /^[-*+]\s|^\d+[.)]\s|^#/.test(line)) close()
       else {
-        ;(current as Ability).text += `\n${line.trim()}`
+        ;(current as Card).text += `\n${line.trim()}`
         continue
       }
     }
-    if (current) (current as Ability).text += `\n${line}`
+    if (current) (current as Card).text += `\n${line}`
     else intro.at(-1)!.push(line)
   }
   close()
   groups.forEach((g, i) => (g.intro = intro[i].join('\n').trim()))
-  return { intro: groups[0].intro, groups: groups.filter((g, i) => i === 0 || g.abilities.length || g.intro) }
+  return { intro: groups[0].intro, groups: groups.filter((g, i) => i === 0 || g.cards.length || g.intro) }
 }
 
-/** Ability names → library nodes (types marked `library`), by normalized title. */
-export function abilityLibrary(nodes: readonly StoryNode[], types: readonly Pick<TypeInfo, 'id' | 'library'>[]): Map<string, StoryNode> {
+/** Card names → library nodes (types marked `library`), by normalized title. */
+export function cardLibrary(nodes: readonly StoryNode[], types: readonly Pick<TypeInfo, 'id' | 'library'>[]): Map<string, StoryNode> {
   const lib = new Set(types.filter((t) => t.library).map((t) => t.id))
   const out = new Map<string, StoryNode>()
   for (const n of nodes) if (lib.has(n.type)) out.set(normalizeName(n.title), n)
   return out
 }
 
-/** The library or linked node an ability refers to: its [[link]], else a library node with the same name. */
-export function abilityNode(a: Pick<Ability, 'name' | 'ref'>, library: Map<string, StoryNode>, byId: Map<string, StoryNode>): StoryNode | undefined {
+/** The library or linked node a card refers to: its [[link]], else a library node with the same name. */
+export function cardNode(a: Pick<Card, 'name' | 'ref'>, library: Map<string, StoryNode>, byId: Map<string, StoryNode>): StoryNode | undefined {
   if (a.ref) return byId.get(a.ref)
   return library.get(normalizeName(a.name))
 }
 
-/** Abilities of every abilities tab in a body. */
-export function bodyAbilities(body: string, tabs?: readonly TabDef[]): Ability[] {
-  return sheetTabs(body, { statsTitle: '', tabs })
-    .filter((t) => t.kind === 'abilities')
-    .flatMap((t) => (t.kind === 'abilities' ? parseAbilities(t.text).groups.flatMap((g) => g.abilities) : []))
+/** Cards of every cards tab in a body. */
+export function bodyCards(body: string, tabs: readonly TabDef[] = []): Card[] {
+  return sheetTabs(body, { fields: [], tabs })
+    .filter((t) => t.kind === 'cards')
+    .flatMap((t) => (t.kind === 'cards' ? parseCards(t.text).groups.flatMap((g) => g.cards) : []))
 }
