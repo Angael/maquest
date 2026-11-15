@@ -30,6 +30,17 @@ export function seedEmberCrown(root: string) {
         { key: 'gear', widget: 'table', keys: ['item', 'load', 'note'] },
         { key: 'motto', widget: 'quote' },
         { key: 'traits', widget: 'tags' },
+        {
+          key: 'moves',
+          widget: 'records',
+          groupBy: 'kind',
+          item: [
+            { key: 'kind', options: ['Moves', 'Rites', 'Tricks'], required: true },
+            { key: 'cost', hint: '1 stress, an action' },
+            { key: 'uses', widget: 'meter', style: 'dots' },
+            { key: 'ready', widget: 'toggle' },
+          ],
+        },
       ],
       tabs: [
         {
@@ -41,8 +52,10 @@ export function seedEmberCrown(root: string) {
             { title: 'Ties', fields: ['motto', 'bonds', 'gear', 'traits'] },
           ],
         },
+        { title: 'Moves', kind: 'fields', fields: ['moves'] },
       ],
     },
+    rite: { label: 'Rite', plural: 'Rites', color: '#f43f5e', icon: 'flame', library: true },
   })
 
   const story = p.createNode({
@@ -217,7 +230,29 @@ The bell tower has been silent for twenty years. Tonight it rang.
       ],
       motto: 'Everyone owes someone. I just keep better books.',
       traits: ['quick hands', 'night eyes', 'never thanks'],
+      moves: [
+        { name: 'Light Fingers', kind: 'Moves', cost: '1 stress', text: 'Lift one small thing from someone **within reach**; they notice only on a 1–3.' },
+        { name: 'Rooftop Run', kind: 'Moves', text: 'Cross the Ninth Ward without touching the street. Take +1 harm if you push the pace.' },
+        { name: 'Old Debts', kind: 'Moves', cost: 'a favor', text: 'Name someone who owes you. They help once, then the debt flips.' },
+        {
+          name: 'Lantern Hush',
+          kind: 'Rites',
+          cost: 'an action',
+          uses: { value: 1, max: 2 },
+          ready: true,
+          text: 'Every flame within 30 ft gutters to an ember until you speak again.',
+        },
+        { name: 'Ember Ward', kind: 'Rites', uses: { value: 2, max: 3 } },
+        { name: 'Ledger Sight', kind: 'Rites', ready: false, text: 'Read what a person owes, to whom, and how long they have left.' },
+        { name: 'Cut Purse', kind: 'Tricks', text: 'Start any scene with one coin more than you had.' },
+      ],
     },
+  })
+  p.createNode({
+    type: 'rite',
+    title: 'Ember Ward',
+    summary: 'A circle of cinders no fire-spirit will cross.',
+    body: 'Draw a ring of warm ash. Until dawn, spirits of flame **cannot cross it** or act on anyone inside.\n\nBreaking the ring ends the rite.',
   })
   const maelis = character(
     'Maelis of the Embers',

@@ -10,9 +10,12 @@ import {
   meterValue,
   noted,
   pairEntries,
-  parseCards,
   parsePairs,
   propertyRows,
+  recordGroups,
+  recordList,
+  recordProblems,
+  recordsText,
   refIds,
   replaceSection,
   scoreCells,
@@ -63,13 +66,13 @@ test('replacing a section keeps the others and one blank line after the heading'
   assert.equal(middle, '# A\n\nuno\n\n# B\ntwo')
 })
 
-test('tabs: the type order, fields tabs always, cards by config, others after, plain documents untouched', () => {
+test('tabs: the type order, fields tabs always, aliases, others after, plain documents untouched', () => {
   const type = {
     fields: [field({ key: 'hp', widget: 'meter' })],
     tabs: [
       { title: 'Stats', kind: 'fields' as const },
       { title: 'Historia', kind: 'prose' as const },
-      { title: 'Abilities', kind: 'cards' as const, aliases: ['Zdolności'] },
+      { title: 'Abilities', kind: 'prose' as const, aliases: ['Zdolności'] },
     ],
   }
   const tabs = sheetTabs(IGNATZ, type)
@@ -78,14 +81,9 @@ test('tabs: the type order, fields tabs always, cards by config, others after, p
     [
       ['fields', 'Stats'],
       ['prose', 'Historia'],
-      ['cards', 'Zdolności'],
+      ['prose', 'Zdolności'],
       ['prose', 'Stats'],
     ],
-  )
-  // Nothing is a cards tab unless the type says so.
-  assert.deepEqual(
-    sheetTabs(IGNATZ).map((t) => t.kind),
-    ['prose', 'prose', 'prose'],
   )
   // A plain document (one H1 after an intro) stays a single editor.
   assert.deepEqual(sheetTabs('Leads to the hall.\n\n# Flooded\n'), [])
@@ -97,25 +95,54 @@ test('tabs: the type order, fields tabs always, cards by config, others after, p
   )
 })
 
-test('cards: groups, headings with meta and links, bullets with bold names', () => {
-  const tab = sheetTabs(IGNATZ, { fields: [], tabs: [{ title: 'Zdolności', kind: 'cards' }] }).find((t) => t.kind === 'cards')!
-  const { groups } = parseCards(tab.kind === 'cards' ? tab.text : '')
+test('records: a list of flat maps with an item schema, grouped by an item field and checked record by record', () => {
+  const def = field({
+    key: 'abilities',
+    widget: 'records',
+    groupBy: 'kind',
+    item: [
+      { key: 'kind', options: ['Traits', 'Actions', 'Spells'], required: true },
+      { key: 'level', widget: 'stat', min: 0, max: 9 },
+      'cost',
+      { key: 'used', widget: 'toggle' },
+    ],
+  })
+  const value = [
+    { name: 'Fireball', kind: 'Spells', level: 3, cost: 'action', text: 'Boom.' },
+    { name: 'Keen Smell', kind: 'traits', text: 'Advantage on smell.' },
+    { name: '[[fly|Fly]]', kind: 'Spells', level: 3 },
+    { name: 'Bite', kind: 'Actions', text: '1d6.' },
+  ]
+  const list = recordList(def, value)
   assert.deepEqual(
-    groups.map((g) => [g.title, g.cards.map((a) => a.name)]),
+    recordGroups(def, list).map((g) => [g.title, g.records.map((r) => r.name)]),
     [
-      [null, []],
-      ['Akcje', ['Multiattack', 'Arcane Burst']],
-      ['2 / dzień', ['Fireball', 'Invisibility']],
+      ['Traits', ['Keen Smell']],
+      ['Actions', ['Bite']],
+      ['Spells', ['Fireball', 'Fly']],
     ],
   )
-  const [burst] = groups[1].cards.slice(1)
-  assert.deepEqual(burst.meta, ['+6', '120 ft'])
-  assert.equal(burst.text, 'trafienie 16 (3d8+3) force.')
-  const fireball = groups[2].cards[0]
-  assert.equal(fireball.ref, 'fireball')
-  assert.deepEqual(fireball.meta, ['krąg 4', 'akcja'])
-  assert.equal(fireball.text, 'Wersja kampanii.')
-  assert.match(groups[2].cards[1].text, /^Istota ma Invisible\.[\s\S]*not a tab/)
+  assert.equal(list[2].ref, 'fly')
+  assert.equal(fieldSummary(def, value), 'Traits: Keen Smell; Actions: Bite; Spells: Fireball, Fly')
+  assert.equal(
+    recordsText(def, value),
+    '## Traits\n- **Keen Smell** — Advantage on smell.\n\n## Actions\n- **Bite** — 1d6.\n\n## Spells\n- **Fireball** (3, action) — Boom.\n- **[[fly|Fly]]** (3)',
+  )
+  assert.deepEqual(recordProblems(def, value), [])
+  assert.deepEqual(recordProblems(def, [{ kind: 'Spells', level: 12, range: '60 ft' }, 'Bless', { name: 'Hide', kind: 'Bonus' }]), [
+    '#1 lacks name',
+    "#1 has keys the item doesn't define: range (item: name, kind, level, cost, used, text)",
+    '#1 level: value 12 is over the maximum 9',
+    '#2 is not a record',
+    '#3 (Hide) kind: expected one of Traits, Actions, Spells',
+  ])
+  assert.match(fieldProblem(def, { name: 'x' })!, /expected a list of records/)
+  // Records can't nest, and only records fields have an item.
+  assert.match(
+    typeProblems({ types: { character: { fields: [{ key: 'a', widget: 'records', item: [{ key: 'b', widget: 'records' }] }] } } })[0].message,
+    /a item: field b: records can't hold records/,
+  )
+  assert.ok(!FieldDef.safeParse({ key: 'a', item: ['b'] }).success)
 })
 
 test('types: extends merges fields by key, omit drops them, and bad definitions are reported', () => {

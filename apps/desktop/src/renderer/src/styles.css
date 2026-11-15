@@ -497,3 +497,11 @@ textarea::placeholder {
 .card-text .prose-md :is(h1, h2, h3, h4) {
   @apply mt-3 mb-1 text-base;
 }
+
+/* Record descriptions: compact markdown under a record's name. */
+.record-text .prose-md {
+  @apply text-sm leading-5;
+}
+.record-text .prose-md :is(p, ul, ol) {
+  @apply my-0.5;
+}

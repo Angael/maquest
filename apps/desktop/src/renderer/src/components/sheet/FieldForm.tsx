@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { useDebouncedCallback } from 'use-debounce'
-import { X } from 'lucide-react'
-import type { FieldDef } from '@maquest/core/schema'
+import { ArrowDown, ArrowUp, ChevronRight, Plus, X } from 'lucide-react'
+import { itemFields, type FieldDef } from '@maquest/core/schema'
 import {
   fieldLabel,
   formatPairs,
@@ -18,7 +18,7 @@ import {
   type FieldRow,
   type FieldSection,
 } from '@maquest/core/sheet'
-import { IconButton, cn } from '../ui'
+import { Button, IconButton, cn } from '../ui'
 import { GhostSelect, GhostText, PropertyRow, TagInput, ghost, oneLine } from '../inspector/fields'
 
 const SAVE_DELAY = 400
@@ -119,6 +119,8 @@ export function FieldInput({
   const placeholder = def.hint ? `e.g. ${def.hint}` : 'Empty'
   const map = isMap(value) ? value : {}
   switch (def.widget) {
+    case 'records':
+      return <RecordsInput def={def} value={value} label={label} remove={remove} onChange={onChange} />
     case 'scores': {
       const cells = scoreCells(def, value)
       return (
@@ -425,5 +427,123 @@ function CommitText({
       onChange={(e) => setText(oneLine(e.target.value))}
       onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
     />
+  )
+}
+
+/**
+ * A records field as a list of small forms: each record folds to its name (open to edit its facts and text), with
+ * buttons to move and remove it, and one to add a record.
+ */
+function RecordsInput({
+  def,
+  value,
+  label,
+  remove,
+  onChange,
+}: {
+  def: FieldDef
+  value: unknown
+  label: ReactNode
+  remove: ReactNode
+  onChange: (v: unknown) => void
+}) {
+  const list = Array.isArray(value) ? (value as unknown[]) : []
+  const [open, setOpen] = useState<Set<number>>(() => new Set())
+  const titleKey = def.titleKey ?? 'name'
+  const textKey = def.textKey ?? 'text'
+  // Every item field but the name and description, which have their own inputs.
+  const facts = itemFields(def).fields.filter((f) => f.key !== titleKey && f.key !== textKey)
+  const group = def.groupBy ? facts.find((f) => f.key === def.groupBy) : undefined
+  const write = (next: unknown[]) => onChange(next.length ? next : null)
+  const setItem = (i: number, key: string, v: unknown) => {
+    const cur = isMap(list[i]) ? (list[i] as Record<string, unknown>) : {}
+    const rec = { ...cur }
+    if (isEmptyValue(v)) delete rec[key]
+    else rec[key] = v
+    write(list.map((r, k) => (k === i ? rec : r)))
+  }
+  const move = (i: number, by: number) => {
+    const j = i + by
+    if (j < 0 || j >= list.length) return
+    const next = [...list]
+    ;[next[i], next[j]] = [next[j], next[i]]
+    write(next)
+    setOpen((o) => new Set([...o].map((k) => (k === i ? j : k === j ? i : k))))
+  }
+  const toggle = (i: number) => setOpen((o) => (o.has(i) ? new Set([...o].filter((k) => k !== i)) : new Set([...o, i])))
+  return (
+    <div className="group/row py-1" data-records-input>
+      <div className="flex h-7 items-center gap-1 text-xs text-fg-subtle">
+        {label}
+        <span className="tabular text-fg-faint">{list.length || ''}</span>
+        {remove}
+      </div>
+      <ul className="space-y-1">
+        {list.map((raw, i) => {
+          const rec = isMap(raw) ? raw : {}
+          const name = typeof rec[titleKey] === 'string' || typeof rec[titleKey] === 'number' ? String(rec[titleKey]) : ''
+          const expanded = open.has(i)
+          return (
+            <li key={i} className="rounded-md bg-surface shadow-[inset_0_0_0_1px_var(--color-line)]">
+              <div className="flex items-center gap-1 pr-1 pl-0.5">
+                <IconButton
+                  icon={ChevronRight}
+                  label={expanded ? `Fold ${name || 'record'}` : `Edit ${name || 'record'}`}
+                  size="sm"
+                  aria-expanded={expanded}
+                  className={cn('transition-transform duration-150', expanded && 'rotate-90')}
+                  onClick={() => toggle(i)}
+                />
+                <input
+                  aria-label={`${fieldLabel(def)} ${i + 1} name`}
+                  value={name}
+                  placeholder="Name"
+                  className={cn(ghost, 'h-8 min-w-0 flex-1 font-medium')}
+                  onChange={(e) => setItem(i, titleKey, oneLine(e.target.value))}
+                />
+                {group && !expanded && <span className="max-w-[35%] truncate text-2xs text-fg-subtle">{noted(rec[group.key]).value}</span>}
+                <IconButton icon={ArrowUp} label="Move up" size="sm" disabled={i === 0} onClick={() => move(i, -1)} />
+                <IconButton icon={ArrowDown} label="Move down" size="sm" disabled={i === list.length - 1} onClick={() => move(i, 1)} />
+                <IconButton
+                  icon={X}
+                  label={`Remove ${name || 'record'}`}
+                  size="sm"
+                  onClick={() => {
+                    write(list.filter((_, k) => k !== i))
+                    setOpen((o) => new Set([...o].filter((k) => k !== i).map((k) => (k > i ? k - 1 : k))))
+                  }}
+                />
+              </div>
+              {expanded && (
+                <div className="border-t border-line px-2 pt-1 pb-2">
+                  {facts.map((f) => (
+                    <FieldInput key={f.key} row={{ def: f, value: rec[f.key], known: true }} onChange={(v) => setItem(i, f.key, v)} />
+                  ))}
+                  <textarea
+                    aria-label={`${name || 'Record'} description`}
+                    value={typeof rec[textKey] === 'string' ? (rec[textKey] as string) : ''}
+                    placeholder="Description (markdown)"
+                    rows={2}
+                    className={cn(ghost, 'mt-1 block w-full resize-none py-1 leading-5 [field-sizing:content]')}
+                    onChange={(e) => setItem(i, textKey, e.target.value)}
+                  />
+                </div>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="mt-1"
+        onClick={() => {
+          write([...list, { [titleKey]: '' }])
+          setOpen((o) => new Set([...o, list.length]))
+        }}
+      >
+        <Plus size={13} aria-hidden /> Add {fieldLabel(def).toLowerCase().replace(/s$/, '')}
+      </Button>
+    </div>
   )
 }

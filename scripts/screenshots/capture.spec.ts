@@ -111,6 +111,22 @@ test('capture UI states', async ({ playwright }) => {
       await page.screenshot({ path: path.join(OUT, '04a-character-sheet-ties.png') })
     })
 
+    await shot('04c-character-records', async () => {
+      await card(ids.vess.id).click({ position: { x: 40, y: 16 } })
+      await page.getByRole('tablist', { name: 'Sheet' }).getByRole('tab', { name: 'Moves' }).click()
+      await expect(page.locator('[data-widget="records"]')).toBeVisible({ timeout: 5000 })
+      await page.locator('[data-widget="records"]').screenshot({ path: path.join(OUT, '04c-records-list.png') })
+      await page.getByRole('searchbox', { name: 'Search Moves' }).fill('ember')
+      await settle(page)
+      await page.locator('[data-widget="records"]').screenshot({ path: path.join(OUT, '04c-records-search.png') })
+      await page.getByRole('searchbox', { name: 'Search Moves' }).fill('')
+      await page.getByRole('button', { name: 'Edit Moves' }).click()
+      await page.getByRole('button', { name: 'Edit Lantern Hush' }).click()
+      await settle(page)
+      await page.locator('[data-records-input]').screenshot({ path: path.join(OUT, '04c-records-edit.png') })
+      await page.getByRole('button', { name: 'Done editing' }).click()
+    })
+
     await shot('04b-inspector-status-select', async () => {
       await card(ids.vess.id).click({ position: { x: 40, y: 16 } })
       await page.getByRole('complementary', { name: 'Inspector' }).getByRole('combobox', { name: 'Status' }).click()

@@ -311,15 +311,13 @@ function SheetSettings({ t, save }: { t: TypeStyle; save: (change: Change | null
       .join(', ')
   const [fields, setFields] = useState(ownKeys)
   const [tabs, setTabs] = useState(current)
-  const [cardTabs, setCardTabs] = useState(ofKind('cards'))
   const [fieldTabs, setFieldTabs] = useState(ofKind('fields'))
-  const snapshot = `${ownKeys}|${current}|${ofKind('cards')}|${ofKind('fields')}`
+  const snapshot = `${ownKeys}|${current}|${ofKind('fields')}`
   const [seen, setSeen] = useState(snapshot)
   if (seen !== snapshot) {
     setSeen(snapshot)
     setFields(ownKeys)
     setTabs(current)
-    setCardTabs(ofKind('cards'))
     setFieldTabs(ofKind('fields'))
   }
   const commitFields = () => {
@@ -328,11 +326,10 @@ function SheetSettings({ t, save }: { t: TypeStyle; save: (change: Change | null
     if (JSON.stringify(next) !== JSON.stringify(own)) save({ fields: next.length ? next : null })
   }
   const commitTabs = () => {
-    const cards = new Set(titles(cardTabs).map(normalizeName))
     const asFields = new Set(titles(fieldTabs).map(normalizeName))
     const next: TabDef[] = titles(tabs).map((title) => {
       const old = t.tabs.find((x) => x.title === title)
-      const kind = asFields.has(normalizeName(title)) ? 'fields' : cards.has(normalizeName(title)) ? 'cards' : 'prose'
+      const kind = asFields.has(normalizeName(title)) ? 'fields' : 'prose'
       const { fields: listed, sections, ...rest } = old ?? { title }
       return kind === 'fields' ? { ...rest, title, kind, ...(listed && { fields: listed }), ...(sections && { sections }) } : { ...rest, title, kind }
     })
@@ -343,8 +340,7 @@ function SheetSettings({ t, save }: { t: TypeStyle; save: (change: Change | null
       <div>
         <h3 className="text-sm font-medium text-fg">Sheet</h3>
         <p className="mt-0.5 text-xs text-fg-subtle">
-          What {t.plural.toLowerCase()} hold and how the inspector shows it: fields with their widgets, and tabs for fields, cards and the body&apos;s #
-          headings.
+          What {t.plural.toLowerCase()} hold and how the inspector shows it: fields with their widgets, and tabs for fields and the body&apos;s # headings.
         </p>
       </div>
       <div>
@@ -358,7 +354,7 @@ function SheetSettings({ t, save }: { t: TypeStyle; save: (change: Change | null
           onBlur={commitFields}
         />
         <p className="mt-1.5 text-xs text-fg-faint">
-          Comma separated keys; new ones are text. Ask your agent for widgets (meters, ratings, radar charts…), choices and required fields.
+          Comma separated keys; new ones are text. Ask your agent for widgets (meters, ratings, radar charts, searchable records…), choices and required fields.
         </p>
         {t.fields.length > 0 && (
           <ul className="mt-2 flex flex-wrap gap-1" aria-label="Defined fields">
@@ -375,7 +371,7 @@ function SheetSettings({ t, save }: { t: TypeStyle; save: (change: Change | null
           </ul>
         )}
       </div>
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 gap-3">
         <div>
           <Label>Tabs</Label>
           <Input
@@ -398,17 +394,6 @@ function SheetSettings({ t, save }: { t: TypeStyle; save: (change: Change | null
             onBlur={commitTabs}
           />
         </div>
-        <div>
-          <Label>Cards tabs</Label>
-          <Input
-            aria-label="Cards tabs"
-            placeholder="Abilities"
-            value={cardTabs}
-            onChange={(e) => setCardTabs(e.target.value)}
-            onKeyDown={blurOnEnter}
-            onBlur={commitTabs}
-          />
-        </div>
       </div>
       <p className="-mt-2 text-xs text-fg-faint">
         Comma separated, in order. Fields tabs show fields; the others are # headings of the body, and new {t.plural.toLowerCase()} start with them. Other
@@ -418,7 +403,7 @@ function SheetSettings({ t, save }: { t: TypeStyle; save: (change: Change | null
         <label className="flex items-center gap-2 text-sm text-fg-muted">
           <input type="checkbox" checked={t.library} className="size-4 accent-[var(--color-accent)]" onChange={(e) => save({ library: e.target.checked })} />
           Library
-          <span className="text-xs text-fg-faint">(reference text: cards with the same name link here)</span>
+          <span className="text-xs text-fg-faint">(reference text: records with the same name link here)</span>
         </label>
       )}
     </section>
