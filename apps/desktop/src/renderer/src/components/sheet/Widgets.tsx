@@ -22,6 +22,7 @@ import { useNodes } from '../../lib/queries'
 import { useUI } from '../../lib/store'
 import { useTypes } from '../../lib/styles'
 import { cn } from '../ui'
+import { Records } from './Records'
 
 /*
  * Read views of fields. Each widget is quiet chrome around the value: numbers large and tabular, labels as small
@@ -32,7 +33,7 @@ import { cn } from '../ui'
 /** Changes one field's value (null clears it). */
 export type SetField = (key: string, value: unknown) => void
 
-const eyebrow = 'text-2xs font-medium tracking-[0.06em] text-fg-subtle uppercase'
+export const eyebrow = 'text-2xs font-medium tracking-[0.06em] text-fg-subtle uppercase'
 const tile =
   'relative min-w-0 overflow-hidden rounded-lg bg-surface shadow-[inset_0_0_0_1px_var(--color-line)] bg-[radial-gradient(120%_90%_at_0%_0%,color-mix(in_oklab,var(--tint)_11%,transparent),transparent_62%)]'
 /** A one-pixel tinted highlight along a tile's top edge. */
@@ -42,7 +43,7 @@ const Sheen = () => (
     className="pointer-events-none absolute inset-x-3 top-0 h-px bg-[linear-gradient(90deg,transparent,color-mix(in_oklab,var(--tint)_55%,transparent),transparent)]"
   />
 )
-const tint = (color: string): CSSProperties => ({ '--tint': color }) as CSSProperties
+export const tint = (color: string): CSSProperties => ({ '--tint': color }) as CSSProperties
 
 /** Widgets laid out in the tile grid (one cell, or two for wide ones); the rest take a full row. */
 const cellSpan = (def: FieldDef, value: unknown): 0 | 1 | 2 => {
@@ -162,6 +163,8 @@ export function Widget({ row, color, onSet, section }: { row: FieldRow; color: s
       return <Refs row={row} />
     case 'table':
       return <Table row={row} />
+    case 'records':
+      return <Records row={row} onSet={set} />
     case 'quote':
       return <QuoteBlock row={row} />
     case 'subtitle':
@@ -175,7 +178,7 @@ export function Widget({ row, color, onSet, section }: { row: FieldRow; color: s
   }
 }
 
-function Block({ label, children, aside }: { label: string; children: ReactNode; aside?: ReactNode }) {
+export function Block({ label, children, aside }: { label: string; children: ReactNode; aside?: ReactNode }) {
   return (
     <div className="min-w-0">
       {(label || aside) && (
@@ -333,7 +336,7 @@ function Meter({ row, onSet }: { row: FieldRow; onSet?: (v: unknown) => void }) 
  * A row of dots or boxes, filled up to `value`. With `onSet`, each is a button: clicking one sets the value to it,
  * clicking the last filled one takes one away.
  */
-function Pips({
+export function Pips({
   label,
   value,
   max,

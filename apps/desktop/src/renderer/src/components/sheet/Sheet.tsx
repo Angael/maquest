@@ -12,7 +12,6 @@ import { Button, IconButton, cn } from '../ui'
 import { ghost } from '../inspector/fields'
 import { FieldSheet } from './Widgets'
 import { FieldForm, fieldPatch } from './FieldForm'
-import { CardList } from './Cards'
 
 /** Last tab viewed per node (by key), so reopening a node returns to it. */
 const lastTab = new Map<string, string>()
@@ -27,7 +26,7 @@ export function useSheet(node: StoryNode, body: string) {
 
 /**
  * Entity sheet: the type's tabs, fields tabs with their widgets and the body's H1 sections. Reading is the default;
- * fields and cards switch to editing with the pencil (meters, ratings and toggles also set with a click), prose tabs
+ * fields switch to editing with the pencil (meters, ratings and toggles also set with a click), prose tabs
  * are edited in place, and the document icon edits the whole body as one document.
  */
 export function Sheet({ node, body, onBody }: { node: StoryNode; body: string; onBody: (body: string) => void }) {
@@ -48,7 +47,7 @@ export function Sheet({ node, body, onBody }: { node: StoryNode; body: string; o
     if (tab) {
       setActive(tab.key)
       setSource(false)
-      setEditing(request.edit && (tab.kind === 'fields' || tab.kind === 'cards'))
+      setEditing(request.edit && tab.kind === 'fields')
     }
   }
   useEffect(() => {
@@ -66,7 +65,7 @@ export function Sheet({ node, body, onBody }: { node: StoryNode; body: string; o
     const added = sheetTabs(next, type).find((t) => t.kind !== 'fields' && t.title === title)
     if (added) choose(added.key)
   }
-  const editable = !source && (current?.kind === 'fields' || current?.kind === 'cards')
+  const editable = !source && current?.kind === 'fields'
 
   return (
     <Tabs.Root value={current?.key ?? null} onValueChange={(key) => choose(String(key))} className="mt-1">
@@ -90,7 +89,7 @@ export function Sheet({ node, body, onBody }: { node: StoryNode; body: string; o
         {editable && (
           <IconButton
             icon={editing ? Check : Pencil}
-            label={editing ? 'Done editing' : current?.kind === 'fields' ? `Edit ${current.title}` : 'Edit cards'}
+            label={editing ? 'Done editing' : `Edit ${current?.title}`}
             size="sm"
             aria-pressed={editing}
             className={cn(editing && 'text-accent-text')}
@@ -128,10 +127,6 @@ export function Sheet({ node, body, onBody }: { node: StoryNode; body: string; o
                     onSet={(key, value) => saveFields({ [key]: fieldPatch(node.fields[key], value) })}
                   />
                 )}
-              </div>
-            ) : t.kind === 'cards' && !editing ? (
-              <div className="px-4 pt-4">
-                <CardList text={t.text} />
               </div>
             ) : (
               <TabEditor key={t.key} tab={t} onChange={(text) => onBody(replaceSection(body, t.section, text))} />
