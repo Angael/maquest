@@ -1485,10 +1485,23 @@ This folder is a Maquest writing project (stories, chapters, scenes, entities, b
 - The author may edit or override guidelines in \`guidelines/\`. Follow project overrides over defaults.
 - Keep stats in statblocks (\`stats\`), one topic per \`# Heading\` tab, and shared rules text (spells, conditions) in library nodes; \`overview\` lists the systems and tabs.
 - After a round of changes, run \`overview({ checks: true })\` and fix what you caused. Tell the author what "Maquest detected", never "the linter".
+- The checks are yours to tune (\`project\` tool): levels and scope of built-in rules (\`checks\`), and project rules (\`customChecks\`) that require fields, stats, tags, tabs or text, forbid text, allow only certain \`##\` headings or cap words, optionally inside one tab. When the author settles a format rule, add a check for it, not only a guideline.
 `
 
 /** Earlier generated versions, replaced automatically when unedited. */
 const LEGACY_AGENT_DOCS = new Set([
+  `# Maquest project
+
+This folder is a Maquest writing project (stories, chapters, scenes, entities, backlog, node graph).
+
+- Use the **maquest** MCP server tools to read and edit this project. Don't hand-edit files unless the tools can't do it.
+- Start with the \`overview\` tool, then read the writing guidelines (\`guidelines\` tool) before making creative changes.
+- Be proactive: when the author shares ideas, add them to the project immediately (scenes, entities, links, backlog) and report what changed.
+- **You own git.** If the folder isn't a git repository yet, run \`git init\`. Commit after each meaningful change with a short, descriptive message (what changed in the story, not which files). Don't ask before committing; never rewrite or discard history the author made.
+- The author may edit or override guidelines in \`guidelines/\`. Follow project overrides over defaults.
+- Keep stats in statblocks (\`stats\`), one topic per \`# Heading\` tab, and shared rules text (spells, conditions) in library nodes; \`overview\` lists the systems and tabs.
+- After a round of changes, run \`overview({ checks: true })\` and fix what you caused. Tell the author what "Maquest detected", never "the linter".
+`,
   `# Maquest project
 
 This folder is a Maquest writing project (stories, chapters, scenes, entities, backlog, node graph).

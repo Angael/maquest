@@ -370,7 +370,7 @@ Capture structure eagerly: turn what the author says into project changes right 
 Connection labels are short names for the relationship (max ${EDGE_LABEL_MAX} chars). Never put status or TODOs in labels; use the node's status, tags or body.
 Boards are separate canvases (e.g. one per arc or investigation); each shows only the nodes placed on it.
 Edits apply immediately to markdown files on disk, and the Maquest app updates live.
-Maquest checks the project for problems (broken links, nodes on no board, empty groups, missing or malformed statblocks, copied rules text, overlong documents…), configured per project. Write results list problems with the nodes you touched; after a round of changes run overview({ checks: true }) and fix what you caused. When telling the author, say "Maquest detected …" (never "the linter").
+Maquest checks the project for problems (broken links, nodes on no board, empty groups, missing or malformed statblocks, copied rules text, overlong documents…), configured per project. The checks are yours to tune with the project tool: set levels and scope of built-in rules (checks) and add project rules (customChecks: required fields, stats, tags, tabs or text, forbidden text, allowed headings, word limits, optionally inside one tab). When the author settles a format rule, add a check for it instead of only writing it into a guideline. Write results list problems with the nodes you touched; after a round of changes run overview({ checks: true }) and fix what you caused. When telling the author, say "Maquest detected …" (never "the linter").
 The author keeps quick live notes in the app during sessions. When they change, tool results start with an IMPORTANT live-notes notice: treat it as top priority. Notes in the overview are still pending: check whether the project already reflects them, clear them with delete({ liveNotes: true }) if so, otherwise act on them or bring them up with the author.`,
   },
 )
@@ -957,7 +957,7 @@ server.registerTool(
         .array(z.unknown())
         .optional()
         .describe(
-          'Replace the project\'s own checks: [{ id, message, hint?, severity?: error|warn|info, types?, tags?, excludeTags?, require?: { fields?, stats?, tags?, summary?, body?, media?, parent?, edges?: [edge types], tabs? }, forbid?: "regex", maxWords? }].',
+          'Replace the project\'s own checks (the whole list): [{ id, message, hint?, severity?: error|warn|info, types?, tags?, excludeTags?, require?: { fields?, stats?, tags?, summary?, body?, media?, parent?, edges?: [edge types], tabs?, match?: "regex" }, tab?: "Tab" | ["Tab"], forbid?: "regex", headings?: ["regex"], maxWords? }]. tab limits match/forbid/headings/maxWords to those body tabs; headings lists the allowed ## headings there. Use them to turn the author\'s format rules into checks, e.g. { id: "abilities-only-rules", types: ["monster"], tab: "Abilities", headings: ["Traits", "Actions", "Reactions"], forbid: "\\\\*\\\\*(tactics|morale)" }.',
         ),
     },
   },

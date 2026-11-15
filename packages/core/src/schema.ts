@@ -432,10 +432,19 @@ export const CustomCheck = z.object({
       edges: z.array(z.string()).optional(),
       /** Body tabs (H1 headings) that must exist. */
       tabs: z.array(z.string()).optional(),
+      /** Text that must appear (regular expression, case-insensitive); checked in `tab` when set. */
+      match: z.string().optional(),
     })
     .optional(),
-  /** Text that must not appear in the body or fields (regular expression, case-insensitive). */
+  /**
+   * Limit `require.match`, `forbid`, `headings` and `maxWords` to these body tabs (H1 titles or their aliases).
+   * Nodes without any of the tabs skip those tests; use `require.tabs` to demand the tab itself.
+   */
+  tab: z.union([z.string(), z.array(z.string()).min(1)]).optional(),
+  /** Text that must not appear (regular expression, case-insensitive): in `tab` when set, else in the body and fields. */
   forbid: z.string().optional(),
+  /** Allowed `##` headings (regular expressions, matched against the whole heading, case-insensitive); others are reported. */
+  headings: z.array(z.string()).min(1).optional(),
   maxWords: z.number().int().positive().optional(),
 })
 export type CustomCheck = z.infer<typeof CustomCheck>

@@ -20,7 +20,7 @@ A desktop app for writing stories, novels, screenplays and tabletop RPG campaign
 
 ## Maquest checks
 
-The warning/error button in the title bar lists what Maquest detected: broken links and connections, nodes on no board, empty groups, missing or malformed statblocks, stats still kept in fields, rules text copied between sheets, overlong documents, too few clues and more. Issues name the node, say why and what to do, and offer quick fixes or "ignore for this node". Rules are set per project (severity, options, scope by type or tag, and declarative custom checks) in `maquest.json` under `checks` and `customChecks`, or in the menu's Rules tab. Checks rerun shortly after any change. Agents see the same report through `overview({ checks: true })` and after each write.
+The warning/error button in the title bar lists what Maquest detected: broken links and connections, nodes on no board, empty groups, missing or malformed statblocks, stats still kept in fields, rules text copied between sheets, overlong documents, too few clues and more. Issues name the node, say why and what to do, and offer quick fixes or "ignore for this node". Rules are set per project (severity, options, scope by type or tag, and declarative custom checks: required fields, stats, tags, tabs or text, forbidden text, allowed `##` headings and word limits, optionally inside one tab) in `maquest.json` under `checks` and `customChecks`, or in the menu's Rules tab. Checks rerun shortly after any change. Agents see the same report through `overview({ checks: true })` and after each write.
 
 ## Canvas and editing
 

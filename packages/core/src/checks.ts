@@ -655,7 +655,7 @@ export function runChecks(input: CheckInput): CheckReport {
       if (c.types && !c.types.includes(n.type)) continue
       if (c.tags && !c.tags.some((t) => n.tags.includes(t))) continue
       if (c.excludeTags?.some((t) => n.tags.includes(t))) continue
-      const missing = customMissing(c, n, graph)
+      const missing = customMissing(c, n, graph, typeOf.get(n.type)?.tabs ?? [])
       if (missing.length) issues.push({ rule: c.id, severity: c.severity, node: n.id, message: `${c.message} (${missing.join('; ')})`, hint: c.hint })
     }
   }
@@ -709,7 +709,7 @@ function isAbilityTab(title: string, tabs: readonly TabDef[]) {
   return t ? t.kind === 'abilities' : ABILITY_TAB_NAMES.includes(normalizeName(title))
 }
 
-function customMissing(c: CustomCheck, n: StoryNode, graph: Graph): string[] {
+function customMissing(c: CustomCheck, n: StoryNode, graph: Graph, tabDefs: readonly TabDef[]): string[] {
   const out: string[] = []
   const r = c.require
   if (r?.fields) {
@@ -730,22 +730,71 @@ function customMissing(c: CustomCheck, n: StoryNode, graph: Graph): string[] {
     const gone = r.edges.filter((t) => !mine.some((e) => e.type === t))
     if (gone.length) out.push(`no ${gone.join(', ')} connection`)
   }
+  const sections = splitSections(n.body)
   if (r?.tabs) {
-    const titles = new Set(splitSections(n.body).map((s) => normalizeName(s.title ?? '')))
-    const gone = r.tabs.filter((t) => !titles.has(normalizeName(t)))
+    const gone = r.tabs.filter((t) => !sections.some((s) => s.title !== null && sameTab(s.title, t, tabDefs)))
     if (gone.length) out.push(`missing tabs: ${gone.join(', ')}`)
   }
-  if (c.forbid) {
+  // Text the content tests look at: the chosen tabs only, or the whole body (and fields, for forbid).
+  const wanted = c.tab === undefined ? undefined : [c.tab].flat()
+  const scoped = wanted ? sections.filter((s) => s.title !== null && wanted.some((t) => sameTab(s.title!, t, tabDefs))) : undefined
+  if (scoped && !scoped.length) return out
+  const text = scoped ? scoped.flatMap((s) => s.lines).join('\n') : n.body
+  const where = scoped ? ` in ${scoped.map((s) => s.title).join(', ')}` : ''
+  const pattern = (source: string) => {
     try {
-      const re = new RegExp(c.forbid, 'i')
-      const hit = [n.body, ...Object.values(n.fields)].join('\n').match(re)
-      if (hit) out.push(`contains "${hit[0].slice(0, 40)}"`)
+      return new RegExp(source, 'i')
     } catch {
-      out.push(`invalid forbid pattern ${c.forbid}`)
+      out.push(`invalid pattern ${source}`)
+      return null
     }
   }
-  if (c.maxWords && words(n.body) > c.maxWords) out.push(`${words(n.body)} words (max ${c.maxWords})`)
+  if (r?.match) {
+    const re = pattern(r.match)
+    if (re && !re.test(text)) out.push(`nothing${where} matches ${r.match}`)
+  }
+  if (c.forbid) {
+    const re = pattern(c.forbid)
+    const haystack = scoped ? text : [n.body, ...Object.values(n.fields)].join('\n')
+    if (re) {
+      const hits = [...new Set(haystack.split('\n').flatMap((l) => (re.test(l) ? [l.match(re)![0].trim().slice(0, 40)] : [])))]
+      if (hits.length)
+        out.push(
+          `contains${where} ${hits
+            .slice(0, 3)
+            .map((h) => `"${h}"`)
+            .join(', ')}${hits.length > 3 ? ` (+${hits.length - 3} more)` : ''}`,
+        )
+    }
+  }
+  if (c.headings) {
+    const allowed = c.headings.map((h) => pattern(`^(?:${h})$`)).filter((re): re is RegExp => !!re)
+    const bad = [
+      ...new Set(
+        text
+          .split('\n')
+          .flatMap((l) => /^##\s+(.+?)\s*#*\s*$/.exec(l)?.[1] ?? [])
+          .filter((h) => !allowed.some((re) => re.test(h))),
+      ),
+    ]
+    if (bad.length)
+      out.push(
+        `unexpected headings${where}: ${bad
+          .slice(0, 3)
+          .map((h) => `## ${h}`)
+          .join(', ')}${bad.length > 3 ? ` (+${bad.length - 3} more)` : ''}`,
+      )
+  }
+  if (c.maxWords && words(text) > c.maxWords) out.push(`${words(text)} words${where} (max ${c.maxWords})`)
   return out
+}
+
+/** Whether a body H1 title is the tab `name` (by title or a configured alias). */
+function sameTab(title: string, name: string, tabDefs: readonly TabDef[]) {
+  const t = normalizeName(title)
+  if (t === normalizeName(name)) return true
+  const def = tabDefs.find((d) => normalizeName(d.title) === normalizeName(name))
+  return !!def?.aliases?.some((a) => normalizeName(a) === t)
 }
 
 /** Severity counts as "Maquest detected 2 errors, 5 warnings"; empty string when clean. */
