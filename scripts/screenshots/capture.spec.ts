@@ -101,6 +101,16 @@ test('capture UI states', async ({ playwright }) => {
       await expect(page.getByRole('complementary', { name: 'Inspector' })).toBeVisible()
     })
 
+    await shot('04a-inspector-character-sheet', async () => {
+      await card(ids.vess.id).click({ position: { x: 40, y: 16 } })
+      const sheet = page.locator('[data-field-sheet]')
+      await expect(sheet).toBeVisible({ timeout: 5000 })
+      await sheet.screenshot({ path: path.join(OUT, '04a-character-sheet-full.png') })
+      await sheet.getByRole('region', { name: 'Ties' }).scrollIntoViewIfNeeded()
+      await settle(page)
+      await page.screenshot({ path: path.join(OUT, '04a-character-sheet-ties.png') })
+    })
+
     await shot('04b-inspector-status-select', async () => {
       await card(ids.vess.id).click({ position: { x: 40, y: 16 } })
       await page.getByRole('complementary', { name: 'Inspector' }).getByRole('combobox', { name: 'Status' }).click()

@@ -29,8 +29,8 @@ type UI = {
   /** Node the canvas should center on once it is rendered. */
   pendingFocus: string | null
   /** A sheet tab to open once the node's inspector shows it (e.g. from the Problems menu). Not persisted. */
-  sheetRequest: { id: string; tab: 'stats'; edit: boolean } | null
-  requestSheet: (r: { id: string; tab: 'stats'; edit: boolean } | null) => void
+  sheetRequest: { id: string; tab?: string; edit: boolean } | null
+  requestSheet: (r: { id: string; tab?: string; edit: boolean } | null) => void
   /** Selection each view had when it was left, restored on return. */
   viewSelections: Partial<Record<View, { selection: Selection; selectedNodeIds: string[] }>>
   /** Nodes pinned as inspector tabs. */

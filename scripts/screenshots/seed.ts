@@ -7,7 +7,43 @@ const row = (y: number, ids: [string, number][]) => Object.fromEntries(ids.map((
 /** Seeds "The Ember Crown", a rich demo RPG campaign used by the screenshot harness. */
 export function seedEmberCrown(root: string) {
   const p = Project.init(root, { name: 'The Ember Crown', kind: 'rpg', description: 'A dark-fantasy campaign of fire, debts and a stolen crown.' })
-  p.setTypes({ clue: { label: 'Clue', plural: 'Clues', color: '#14b8a6', icon: 'search', fields: ['points to', 'found at'] } })
+  p.setTypes({
+    clue: { label: 'Clue', plural: 'Clues', color: '#14b8a6', icon: 'search', fields: ['points to', 'found at'] },
+    // A homebrew sheet, to show every widget: nothing about it is built into Maquest.
+    character: {
+      fields: [
+        'role',
+        'goal',
+        'fear',
+        'voice',
+        { key: 'calling', widget: 'subtitle' },
+        { key: 'resolve', widget: 'meter', style: 'ring', max: 10, badge: true },
+        { key: 'heat', widget: 'meter', style: 'clock', max: 8 },
+        { key: 'coin', widget: 'stat', hint: '14 or { value: 14, note: "crowns" }' },
+        { key: 'marked', label: 'Marked', widget: 'toggle' },
+        { key: 'stress', widget: 'meter', style: 'boxes', max: 9 },
+        { key: 'harm', widget: 'meter', max: 12 },
+        { key: 'approaches', widget: 'scores', style: 'radar', keys: ['daring', 'guile', 'grit', 'lore', 'charm', 'wits'], max: 5 },
+        { key: 'edges', widget: 'pairs' },
+        { key: 'standing', label: 'Standing', widget: 'scores', style: 'dots', keys: ['Cinder Court', 'Lanternwrights', 'The Ash Choir'], max: 5 },
+        { key: 'bonds', widget: 'refs' },
+        { key: 'gear', widget: 'table', keys: ['item', 'load', 'note'] },
+        { key: 'motto', widget: 'quote' },
+        { key: 'traits', widget: 'tags' },
+      ],
+      tabs: [
+        {
+          title: 'Sheet',
+          kind: 'fields',
+          sections: [
+            { fields: ['calling', 'resolve', 'heat', 'coin', 'marked', 'stress', 'harm'] },
+            { title: 'Approaches', fields: ['approaches', 'edges', 'standing'] },
+            { title: 'Ties', fields: ['motto', 'bonds', 'gear', 'traits'] },
+          ],
+        },
+      ],
+    },
+  })
 
   const story = p.createNode({
     type: 'story',
@@ -161,6 +197,28 @@ The bell tower has been silent for twenty years. Tonight it rang.
     ['npc', 'merchant'],
     '## Hooks\n\n- Owes money to Queen Iselde\n- Genuinely likes Vess\n',
   )
+  p.updateNode(vess.id, {
+    fields: {
+      calling: 'Lantern-thief of the Ninth Ward',
+      resolve: { value: 7, max: 10 },
+      heat: 5,
+      coin: { value: 14, note: 'crowns, all owed' },
+      marked: true,
+      stress: 4,
+      harm: { value: 3, max: 12 },
+      approaches: { daring: 4, guile: 5, grit: 2, lore: 1, charm: 3, wits: 4 },
+      edges: { Lockpicking: 3, Rooftops: 2, 'Old debts': 1 },
+      standing: { 'Cinder Court': 1, Lanternwrights: 4, 'The Ash Choir': 2 },
+      bonds: [corin.id],
+      gear: [
+        { item: 'Shuttered lantern', load: 1, note: 'never quite goes out' },
+        { item: 'Ash-glass picks', load: 1, note: 'opens Court locks' },
+        { item: 'Debt ledger page', load: 0, note: 'her mother’s signature' },
+      ],
+      motto: 'Everyone owes someone. I just keep better books.',
+      traits: ['quick hands', 'night eyes', 'never thanks'],
+    },
+  })
   const maelis = character(
     'Maelis of the Embers',
     'Last scion of the royal line; the crown already knows her name.',

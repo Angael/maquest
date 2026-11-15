@@ -287,7 +287,6 @@ export const handlers = {
   },
   /** Changes check rule settings (null resets a rule). */
   setChecks: (patch: Record<string, unknown>) => p().setChecks(patch),
-  setSystems: (patch: Record<string, unknown>) => p().setSystems(patch),
   importMedia: (absPath: string) => p().importMedia(absPath),
   writeMedia: (name: string, data: Uint8Array) => p().writeMedia(name, data),
   listMedia: () => p().listMedia(),

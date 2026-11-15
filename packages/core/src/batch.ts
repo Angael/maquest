@@ -13,7 +13,6 @@ import {
   type Project,
   type UpdateNodeInput,
 } from './project'
-import { isStatKey } from './sheet'
 import {
   ALLOWED_PARENTS,
   EDGE_LABEL_MAX,
@@ -127,7 +126,8 @@ export type WriteOp = {
   summary?: string
   tags?: string[]
   pinned?: boolean
-  fields?: Record<string, string | null>
+  /** Merged into the existing fields (maps one level deep); null removes a key. */
+  fields?: Record<string, unknown>
   body?: string
   /** Path of a file whose content replaces the body (see readBodyFile). */
   bodyFile?: string
@@ -140,10 +140,6 @@ export type WriteOp = {
   /** Also place the node on these boards. */
   boards?: string[]
   clock?: Clock | null
-  /** Statblock system for this node (default: its type's); null falls back to the type's. */
-  system?: string | null
-  /** Statblock values, merged into the existing ones (null removes a key). */
-  stats?: Record<string, unknown>
   /** Rules Maquest should not report for this node; null clears. */
   checks?: { off: string[] } | null
 }
@@ -168,7 +164,6 @@ type Planned = { type: NodeType; title: string; parent?: string; body: string }
  */
 export function writeNodes(p: Project, ops: readonly WriteOp[]): BatchResult<WriteResult> {
   const types = new Set(p.types().map((t) => t.id))
-  const systems = p.systems()
   const boards = p.boards()
   const guidelineIds = p.guidelines({ includeDisabled: true }).map((g) => g.id)
   const nodes = new Map<string, Planned>(p.listNodes().map((n) => [n.id, { type: n.type, title: n.title, parent: n.parent, body: n.body }]))
@@ -201,9 +196,7 @@ export function writeNodes(p: Project, ops: readonly WriteOp[]): BatchResult<Wri
   const problems = ops.map((op, i) =>
     check(() => {
       if (op.body !== undefined && op.bodyFile !== undefined) throw new MaquestError('Pass body or bodyFile, not both')
-      if (op.system && !systems.has(op.system)) throw new MaquestError(`Unknown statblock system: ${op.system}. Systems: ${[...systems.keys()].join(', ')}`)
-      for (const key of Object.keys(op.stats ?? {}))
-        if (!isStatKey(key)) throw new MaquestError(`Invalid stat key "${key}": use letters, digits, dashes or underscores`)
+      for (const key of Object.keys(op.fields ?? {})) if (!key.trim()) throw new MaquestError('Field keys cannot be empty')
       const fileBody = op.bodyFile === undefined ? undefined : readBodyFile(p.root, op.bodyFile)
       bodies[i] = fileBody
       const creating = op.create || op.id === undefined
@@ -287,10 +280,8 @@ export function writeNodes(p: Project, ops: readonly WriteOp[]): BatchResult<Wri
           parent: op.parent ?? undefined,
           status: op.status ?? undefined,
           clock: op.clock ?? undefined,
-          system: op.system ?? undefined,
-          stats: op.stats && Object.fromEntries(Object.entries(op.stats).filter((e) => e[1] !== null)),
           checks: op.checks ?? undefined,
-          fields: op.fields && Object.fromEntries(Object.entries(op.fields).filter((e): e is [string, string] => e[1] !== null)),
+          fields: op.fields && Object.fromEntries(Object.entries(op.fields).filter((e) => e[1] !== null)),
           body: appendBody ? `${body ?? ''}${appendBody}` : body,
         } satisfies CreateNodeInput)
         done.push(`created ${node.id}`)

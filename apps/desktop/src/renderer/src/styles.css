@@ -488,12 +488,12 @@ textarea::placeholder {
 }
 
 /* Rules text in ability popovers: denser than documents. */
-.ability-text .prose-md {
+.card-text .prose-md {
   @apply text-sm leading-6;
 }
-.ability-text .prose-md :is(p, ul, ol) {
+.card-text .prose-md :is(p, ul, ol) {
   @apply my-1.5;
 }
-.ability-text .prose-md :is(h1, h2, h3, h4) {
+.card-text .prose-md :is(h1, h2, h3, h4) {
   @apply mt-3 mb-1 text-base;
 }

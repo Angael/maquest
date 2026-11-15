@@ -8,7 +8,7 @@ import { DEFAULT_GUIDELINES } from './guidelines/defaults'
 import { TEMPLATES } from './templates'
 import { arrange, type LayoutMode } from './layout'
 import { RULES, runChecks, type CheckReport, type QuickFix } from './checks'
-import { resolveSystems, isStatKey, type ResolvedSystem } from './sheet'
+import { isEmptyValue, mergeValues, plainText, propertyRows } from './sheet'
 import type { EdgeType } from './schema'
 import {
   ALLOWED_PARENTS,
@@ -40,7 +40,6 @@ import {
   GuidelineScope,
   CustomCheck,
   RuleSetting,
-  SystemDef,
   PHASE_WIDTH,
   Phase,
   NodeMeta,
@@ -49,6 +48,8 @@ import {
   isBuiltinType,
   TYPE_ID,
   projectTypes,
+  typeProblems,
+  BUILTIN_TYPE_KEYS,
   TypeDef,
   type TypeInfo,
   type Guideline,
@@ -93,7 +94,7 @@ export function textMatches(n: StoryNode, terms: string[], max = 5): TextMatch[]
   const places: [string, string][] = [
     ['title', n.title],
     ['summary', n.summary ?? ''],
-    ...Object.entries(n.fields).map(([k, v]): [string, string] => [`field ${k}`, v]),
+    ...Object.entries(n.fields).map(([k, v]): [string, string] => [`field ${k}`, plainText(v)]),
     ...n.body.split('\n').map((line, i): [string, string] => [`body line ${i + 1}`, line]),
   ]
   const out: TextMatch[] = []
@@ -223,10 +224,8 @@ export type CreateNodeInput = {
   pinned?: boolean
   media?: string[]
   src?: string
-  fields?: Record<string, string>
+  fields?: Record<string, unknown>
   clock?: Clock
-  system?: string
-  stats?: Record<string, unknown>
   checks?: { off: string[] }
   /** Use the type's starter template when body/fields are not given. Default true. */
   template?: boolean
@@ -244,14 +243,10 @@ export type UpdateNodeInput = {
   pinned?: boolean
   media?: string[]
   src?: string
-  /** Merged into existing fields; null removes a field. */
-  fields?: Record<string, string | null>
+  /** Merged into the existing fields (maps one level deep, so { scores: { dex: 16 } } changes one score); null removes. */
+  fields?: Record<string, unknown>
   /** null removes the clock */
   clock?: Clock | null
-  /** Statblock system for this node; null falls back to its type's. */
-  system?: string | null
-  /** Merged into the existing stats (maps one level deep, so { scores: { dex: 16 } } changes one score); null removes. */
-  stats?: Record<string, unknown>
   /** Rules Maquest should not report for this node; null clears. */
   checks?: { off: string[] } | null
   body?: string
@@ -400,25 +395,6 @@ export class Project {
     return next
   }
 
-  /** Adds, replaces (a def) or removes (null) project statblock systems. Defs are validated. */
-  setSystems(patch: Record<string, unknown>) {
-    const systems: Record<string, unknown> = { ...this.config().systems }
-    for (const [id, def] of Object.entries(patch)) {
-      if (!TYPE_ID.test(id)) throw new MaquestError(`Invalid system id "${id}": use a lowercase slug, e.g. "my-dnd"`)
-      if (def === null) {
-        delete systems[id]
-        continue
-      }
-      const parsed = SystemDef.safeParse(def)
-      if (!parsed.success)
-        throw new MaquestError(`systems.${id}: ${parsed.error.issues.map((i) => `${i.path.join('.') || 'system'}: ${i.message}`).join('; ')}`)
-      systems[id] = def
-    }
-    const { problems } = resolveSystems(systems)
-    if (problems.length) throw new MaquestError(problems.map((p) => `systems.${p.system}: ${p.message}`).join('; '))
-    return this.updateConfig({ systems: Object.keys(systems).length ? systems : undefined })
-  }
-
   /** Changes check rule settings (null resets a rule to its default) and, when given, replaces the custom checks. */
   setChecks(patch: Record<string, unknown> = {}, custom?: unknown[]) {
     const known = new Set(RULES.map((r) => r.id))
@@ -483,10 +459,12 @@ export class Project {
         if (v === null || v === undefined || v === '') delete merged[k]
         else merged[k] = v
       }
-      if (isBuiltinType(id) && (merged.dir || merged.fields || merged.body !== undefined)) {
-        throw new MaquestError(`Built-in type ${id}: only label, plural, color, icon, system, tabs and library can be changed`)
+      if (isBuiltinType(id) && (merged.dir || merged.body !== undefined)) {
+        throw new MaquestError(`Built-in type ${id}: only ${BUILTIN_TYPE_KEYS.join(', ')} can be changed`)
       }
-      const def = TypeDef.parse(merged)
+      const parsed = TypeDef.safeParse(merged)
+      if (!parsed.success) throw new MaquestError(`types.${id}: ${parsed.error.issues.map((i) => `${i.path.join('.') || 'type'}: ${i.message}`).join('; ')}`)
+      const def = parsed.data
       if (!isBuiltinType(id) && defs[id]?.dir !== def.dir && defs[id] && this.listNodes({ type: id }).length) {
         throw new MaquestError(`Type ${id} has nodes; its folder cannot change`)
       }
@@ -494,6 +472,8 @@ export class Project {
       if (Object.keys(def).length || !isBuiltinType(id)) defs[id] = def
       else delete defs[id]
     }
+    const problems = typeProblems({ types: defs }).filter((x) => x.type in patch)
+    if (problems.length) throw new MaquestError(problems.map((x) => `types.${x.type}: ${x.message}`).join('; '))
     const types = projectTypes({ types: defs })
     const reserved = new Set([GUIDELINES_DIR, MEDIA_DIR])
     for (const t of types) {
@@ -510,7 +490,7 @@ export class Project {
   private readNodeFile(file: string): StoryNode | null {
     try {
       const { data, body } = parseFrontmatter(fs.readFileSync(file, 'utf8'))
-      const meta = NodeMeta.safeParse({ title: path.basename(file, '.md'), ...data, id: path.basename(file, '.md') })
+      const meta = NodeMeta.safeParse({ title: path.basename(file, '.md'), ...legacyMeta(data), id: path.basename(file, '.md') })
       if (!meta.success) return null
       return { ...meta.data, body, path: path.relative(this.root, file) }
     } catch {
@@ -538,7 +518,7 @@ export class Project {
           out.push({ path: rel, problem: `frontmatter is not valid YAML (${(e as Error).message.split('\n')[0]})` })
           continue
         }
-        const meta = NodeMeta.safeParse({ title: path.basename(f, '.md'), ...data, id: path.basename(f, '.md') })
+        const meta = NodeMeta.safeParse({ title: path.basename(f, '.md'), ...legacyMeta(data), id: path.basename(f, '.md') })
         if (!meta.success) {
           out.push({ path: rel, problem: meta.error.issues.map((i) => `${i.path.join('.') || 'frontmatter'}: ${i.message}`).join('; ') })
           continue
@@ -553,11 +533,6 @@ export class Project {
       }
     }
     return out
-  }
-
-  /** Statblock systems available to this project: presets plus its own. */
-  systems(): Map<string, ResolvedSystem> {
-    return resolveSystems(this.config().systems).systems
   }
 
   /** Runs Maquest checks over the whole project. */
@@ -597,21 +572,21 @@ export class Project {
         const n = this.requireNode(fix.node)
         const re = linkPattern(fix.target)
         const plain = (s: string) => s.replaceAll(re, (_m, alias: string | undefined) => alias?.slice(1) || fix.target)
-        const fields = Object.fromEntries(Object.entries(n.fields).map(([k, v]) => [k, plain(v)]))
+        const fields = Object.fromEntries(Object.entries(n.fields).map(([k, v]) => [k, typeof v === 'string' ? plain(v) : v]))
         this.updateNode(n.id, { body: plain(n.body), fields, summary: n.summary && plain(n.summary) })
         return
       }
-      case 'move-fields': {
+      case 'rename-fields': {
         const n = this.requireNode(fix.node)
-        const stats: Record<string, unknown> = {}
-        const fields: Record<string, null> = {}
-        for (const [field, key] of Object.entries(fix.fields)) {
-          const v = n.fields[field]
-          if (v === undefined) continue
-          stats[key] = /^[+-]?\d+(\.\d+)?$/.test(v.trim()) ? Number(v) : v
-          fields[field] = null
+        const fields: Record<string, unknown> = {}
+        for (const [from, to] of Object.entries(fix.fields)) {
+          const v = n.fields[from]
+          if (v === undefined || from === to) continue
+          if (n.fields[to] === undefined || isEmptyValue(n.fields[to]))
+            fields[to] = typeof v === 'string' && /^[+-]?\d+(\.\d+)?$/.test(v.trim()) ? Number(v) : v
+          fields[from] = null
         }
-        this.updateNode(n.id, { stats, fields })
+        this.updateNode(n.id, { fields })
         return
       }
       case 'arrange':
@@ -642,7 +617,7 @@ export class Project {
         if (filter.tag && !n.tags.includes(filter.tag)) continue
         if (filter.status && n.status !== filter.status) continue
         if (terms.length) {
-          const hay = `${n.title}\n${n.summary ?? ''}\n${n.body}\n${Object.values(n.fields).join('\n')}`.toLowerCase()
+          const hay = `${n.title}\n${n.summary ?? ''}\n${n.body}\n${Object.values(n.fields).map(plainText).join('\n')}`.toLowerCase()
           if (!terms.some((t) => hay.includes(t))) continue
         }
         out.push(n)
@@ -705,7 +680,7 @@ export class Project {
         ? undefined
         : info.builtin
           ? TEMPLATES[input.type]
-          : { fields: Object.fromEntries(info.fields.map((f) => [f, ''])), body: info.body }
+          : { fields: Object.fromEntries(propertyRows(info).flatMap((r) => (r.def.widget === 'text' ? [[r.def.key, '']] : []))), body: info.body }
     const now = new Date().toISOString()
     const order =
       input.order ??
@@ -725,15 +700,20 @@ export class Project {
         pinned: input.pinned,
         media: input.media,
         src: input.src,
-        fields: { ...tpl?.fields, ...input.fields },
+        fields: mergeValues(tpl?.fields ?? {}, input.fields ?? {}),
         clock: input.clock && checkClock(input.clock),
-        system: input.system,
-        stats: input.stats && Object.keys(input.stats).length ? checkStats(input.stats) : undefined,
         checks: input.checks?.off.length ? input.checks : undefined,
         created: now,
         updated: now,
       }),
-      body: input.body ?? (input.template !== false && info.tabs.length ? info.tabs.map((t) => `# ${t.title}\n`).join('\n') : (tpl?.body ?? '')),
+      body:
+        input.body ??
+        (input.template !== false && info.tabs.some((t) => t.kind !== 'fields')
+          ? info.tabs
+              .filter((t) => t.kind !== 'fields')
+              .map((t) => `# ${t.title}\n`)
+              .join('\n')
+          : (tpl?.body ?? '')),
     }
     this.writeNode(node)
     return this.requireNode(id)
@@ -746,12 +726,7 @@ export class Project {
     const parent = patch.parent === null ? undefined : (patch.parent ?? cur.parent)
     if (parent === id) throw new MaquestError('A node cannot be its own parent')
     this.checkParent(id, type, parent)
-    const fields = { ...cur.fields }
-    for (const [k, v] of Object.entries(patch.fields ?? {})) {
-      if (v === null) delete fields[k]
-      else fields[k] = v
-    }
-    const stats = patch.stats ? mergeStats(cur.stats ?? {}, patch.stats) : cur.stats
+    const fields = patch.fields ? mergeValues(cur.fields, patch.fields) : cur.fields
     let body = patch.body ?? cur.body
     if (patch.edits?.length) body = applyEdits(body, patch.edits, id)
     if (patch.appendBody) body = `${body.trimEnd()}\n\n${patch.appendBody}\n`
@@ -770,8 +745,6 @@ export class Project {
       src: patch.src ?? cur.src,
       fields,
       clock: patch.clock === null ? undefined : patch.clock ? checkClock(patch.clock) : cur.clock,
-      system: patch.system === null ? undefined : (patch.system ?? cur.system),
-      stats: stats && Object.keys(stats).length ? stats : undefined,
       checks: patch.checks === null ? undefined : patch.checks ? (patch.checks.off.length ? patch.checks : undefined) : cur.checks,
       body,
       updated: new Date().toISOString(),
@@ -1414,29 +1387,17 @@ function checkLabel(label?: string) {
   }
 }
 
-function checkStats(stats: Record<string, unknown>) {
-  for (const key of Object.keys(stats))
-    if (!isStatKey(key)) throw new MaquestError(`Invalid stat key "${key}": use letters, digits, dashes or underscores (e.g. "ac", "scores")`)
-  return stats
-}
-
-const isMap = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
-
-/** Merges a stats patch: null removes a key; maps merge one level deep (null removes a sub-key). */
-export function mergeStats(cur: Record<string, unknown>, patch: Record<string, unknown>): Record<string, unknown> {
-  const out = { ...cur }
-  for (const [k, v] of Object.entries(checkStats(patch))) {
-    if (v === null) delete out[k]
-    else if (isMap(v) && isMap(out[k])) {
-      const merged: Record<string, unknown> = { ...(out[k] as Record<string, unknown>) }
-      for (const [sk, sv] of Object.entries(v)) {
-        if (sv === null) delete merged[sk]
-        else merged[sk] = sv
-      }
-      out[k] = merged
-    } else out[k] = v
-  }
-  return out
+/**
+ * Frontmatter of older versions in today's shape: statblock `stats` join the fields (a non-empty field of the same
+ * key wins) and the per-node `system` goes away; the next write saves the new shape.
+ */
+export function legacyMeta(data: Record<string, unknown>): Record<string, unknown> {
+  if (!('stats' in data) && !('system' in data)) return data
+  const { stats, system: _system, ...rest } = data
+  if (!stats || typeof stats !== 'object' || Array.isArray(stats)) return rest
+  const fields = rest.fields && typeof rest.fields === 'object' && !Array.isArray(rest.fields) ? { ...(rest.fields as Record<string, unknown>) } : {}
+  for (const [k, v] of Object.entries(stats)) if (fields[k] === undefined || isEmptyValue(fields[k])) fields[k] = v
+  return { ...rest, fields }
 }
 
 function checkClock(clock: Clock): Clock {
@@ -1483,13 +1444,26 @@ This folder is a Maquest writing project (stories, chapters, scenes, entities, b
 - Be proactive: when the author shares ideas, add them to the project immediately (scenes, entities, links, backlog) and report what changed.
 - **You own git.** If the folder isn't a git repository yet, run \`git init\`. Commit after each meaningful change with a short, descriptive message (what changed in the story, not which files). Don't ask before committing; never rewrite or discard history the author made.
 - The author may edit or override guidelines in \`guidelines/\`. Follow project overrides over defaults.
-- Keep stats in statblocks (\`stats\`), one topic per \`# Heading\` tab, and shared rules text (spells, conditions) in library nodes; \`overview\` lists the systems and tabs.
+- Keep structured data (numbers, ratings, lists) in \`fields\`, one topic per \`# Heading\` tab, and shared reference text in library nodes; \`overview\` lists each type's fields and tabs. When the author settles what a type's sheet holds, define it on the type (\`project\` tool: \`types.<id>.fields\` and \`tabs\`).
 - After a round of changes, run \`overview({ checks: true })\` and fix what you caused. Tell the author what "Maquest detected", never "the linter".
-- The checks are yours to tune (\`project\` tool): levels and scope of built-in rules (\`checks\`), and project rules (\`customChecks\`) that require fields, stats, tags, tabs or text, forbid text, allow only certain \`##\` headings or cap words, optionally inside one tab. When the author settles a format rule, add a check for it, not only a guideline.
+- The checks are yours to tune (\`project\` tool): levels and scope of built-in rules (\`checks\`), and project rules (\`customChecks\`) that require fields, tags, tabs or text, forbid text, allow only certain \`##\` headings or cap words, optionally inside one tab. When the author settles a format rule, add a check for it, not only a guideline.
 `
 
 /** Earlier generated versions, replaced automatically when unedited. */
 const LEGACY_AGENT_DOCS = new Set([
+  `# Maquest project
+
+This folder is a Maquest writing project (stories, chapters, scenes, entities, backlog, node graph).
+
+- Use the **maquest** MCP server tools to read and edit this project. Don't hand-edit files unless the tools can't do it.
+- Start with the \`overview\` tool, then read the writing guidelines (\`guidelines\` tool) before making creative changes.
+- Be proactive: when the author shares ideas, add them to the project immediately (scenes, entities, links, backlog) and report what changed.
+- **You own git.** If the folder isn't a git repository yet, run \`git init\`. Commit after each meaningful change with a short, descriptive message (what changed in the story, not which files). Don't ask before committing; never rewrite or discard history the author made.
+- The author may edit or override guidelines in \`guidelines/\`. Follow project overrides over defaults.
+- Keep stats in statblocks (\`stats\`), one topic per \`# Heading\` tab, and shared rules text (spells, conditions) in library nodes; \`overview\` lists the systems and tabs.
+- After a round of changes, run \`overview({ checks: true })\` and fix what you caused. Tell the author what "Maquest detected", never "the linter".
+- The checks are yours to tune (\`project\` tool): levels and scope of built-in rules (\`checks\`), and project rules (\`customChecks\`) that require fields, stats, tags, tabs or text, forbid text, allow only certain \`##\` headings or cap words, optionally inside one tab. When the author settles a format rule, add a check for it, not only a guideline.
+`,
   `# Maquest project
 
 This folder is a Maquest writing project (stories, chapters, scenes, entities, backlog, node graph).
