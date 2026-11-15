@@ -132,6 +132,36 @@ test('custom checks require fields, stats, tags and edges', () => {
   assert.throws(() => p.setChecks({}, [{ id: 'Bad Id', message: 'x' }]), /customChecks\[0\]/)
 })
 
+test('custom checks look inside one tab: match, forbid and allowed headings', () => {
+  const p = tmp()
+  p.setTypes({ character: { tabs: [{ title: 'Abilities', kind: 'abilities', aliases: ['Zdolności'] }, { title: 'Tactics' }] } })
+  const body = '# Zdolności\n## Traits\n- **Morale:** flees at half HP\n## As a companion\n- **Bless** (lvl 1)\n# Notes\nMorale is high.\n'
+  const n = p.createNode({ type: 'character', title: 'Anselm', body })
+  const clean = p.createNode({ type: 'character', title: 'Bram', body: '# Abilities\n## Traits\n- **Keen Smell** — advantage\n# Tactics\nFlees at half HP.\n' })
+  p.updateBoard('main', { addNodes: [n.id, clean.id] })
+  p.setChecks({}, [
+    {
+      id: 'abilities-only',
+      message: 'Only rules in Abilities',
+      types: ['character'],
+      tab: 'Abilities',
+      forbid: '\\*\\*(morale|tactics)',
+      headings: ['Traits', 'Actions', 'Spells, level \\d'],
+    },
+    { id: 'tactics-tab', message: 'Fighters need tactics', types: ['character'], require: { tabs: ['Tactics'] } },
+    { id: 'tactics-say-when', message: 'Say when they flee', types: ['character'], tab: 'Tactics', require: { match: 'flees' } },
+  ])
+  const issues = p.check().issues.filter((i) => i.node === n.id || i.node === clean.id)
+  assert.deepEqual(
+    issues.map((i) => `${i.node} ${i.rule}: ${i.message}`),
+    [
+      'anselm abilities-only: Only rules in Abilities (contains in Zdolności "**Morale"; unexpected headings in Zdolności: ## As a companion)',
+      'anselm tactics-tab: Fighters need tactics (missing tabs: Tactics)',
+    ],
+  )
+  assert.throws(() => p.setChecks({}, [{ id: 'x', message: 'x', tab: [] }]), /customChecks\[0\]/)
+})
+
 test('unreadable node files are reported', () => {
   const p = tmp()
   fs.writeFileSync(path.join(p.root, 'characters', 'broken.md'), '---\ntitle: [unclosed\n---\n')
