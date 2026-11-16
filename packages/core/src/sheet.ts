@@ -362,6 +362,13 @@ export function replaceSection(body: string, index: number, text: string): strin
   return joinSections(sections)
 }
 
+/** Writes a prose tab's text: its section, or a new `# title` section at the end when the body has none yet. */
+export function writeTab(body: string, tab: { title: string; section: number }, text: string): string {
+  if (tab.section >= 0) return replaceSection(body, tab.section, text)
+  if (!text.trim()) return body
+  return `${body.trimEnd()}${body.trim() ? '\n\n' : ''}# ${tab.title}\n\n${text.trim()}\n`
+}
+
 // ---------- sheet tabs ----------
 
 export type FieldSection = { title?: string; fields: FieldDef[] }
@@ -371,6 +378,7 @@ export type SheetType = { fields: readonly FieldDef[]; tabs: readonly TabDef[] }
 
 export type SheetTab =
   | { kind: 'fields'; key: string; title: string; sections: FieldSection[] }
+  /** `section` is the body section's index, or -1 for a tab of the type that the body doesn't have yet. */
   | { kind: 'prose'; key: string; title: string; section: number; text: string }
 
 /** Whether a heading names a tab (by title or alias). */
@@ -429,6 +437,15 @@ export function sheetTabs(body: string, type: SheetType = { fields: [], tabs: []
   const used = new Set<number>()
   const out: SheetTab[] = []
   const intro = sectionText(sections[0])
+  const keys = new Set<string>()
+  // Prose tabs are keyed by title, so a tab keeps its key when its section is written for the first time.
+  const keyOf = (title: string) => {
+    const base = `p:${normalizeName(title)}`
+    let key = base
+    for (let n = 2; keys.has(key); n++) key = `${base}~${n}`
+    keys.add(key)
+    return key
+  }
   let introAt = -1
   for (const def of type.tabs) {
     if (def.kind === 'fields') {
@@ -436,13 +453,17 @@ export function sheetTabs(body: string, type: SheetType = { fields: [], tabs: []
       continue
     }
     if (introAt < 0) introAt = out.length
+    let found = false
     for (const { s, i } of withHeading) {
       if (used.has(i) || !tabMatches(def, s.title!)) continue
       used.add(i)
-      out.push({ kind: 'prose', key: `s${i}:${s.title}`, title: s.title!, section: i, text: sectionText(s) })
+      found = true
+      out.push({ kind: 'prose', key: keyOf(s.title!), title: s.title!, section: i, text: sectionText(s) })
     }
+    // The type's tabs show on every node, empty until written, so each node offers the same sheet.
+    if (!found) out.push({ kind: 'prose', key: keyOf(def.title), title: def.title, section: -1, text: '' })
   }
-  for (const { s, i } of withHeading) if (!used.has(i)) out.push({ kind: 'prose', key: `s${i}:${s.title}`, title: s.title!, section: i, text: sectionText(s) })
+  for (const { s, i } of withHeading) if (!used.has(i)) out.push({ kind: 'prose', key: keyOf(s.title!), title: s.title!, section: i, text: sectionText(s) })
   if (intro)
     out.splice(introAt < 0 ? out.filter((t) => t.kind === 'fields').length : introAt, 0, {
       kind: 'prose',
@@ -451,8 +472,24 @@ export function sheetTabs(body: string, type: SheetType = { fields: [], tabs: []
       section: 0,
       text: intro,
     })
-  if (!layout.size && withHeading.length < 2) return []
+  if (!type.tabs.length && withHeading.length < 2) return []
   return out
+}
+
+const sameValue = (a: unknown, b: unknown) => normalizeName(plainText(a)) === normalizeName(plainText(b))
+
+/**
+ * Whether a field needs a value among `values` (a node's fields or one record): `required`, or every condition of
+ * `requiredWhen` holds (text compared ignoring case and accents; a list means any of its values).
+ */
+export function isRequired(def: Pick<FieldDef, 'required' | 'requiredWhen'>, values: Record<string, unknown>): boolean {
+  if (def.required) return true
+  if (!def.requiredWhen) return false
+  return Object.entries(def.requiredWhen).every(([key, want]) => {
+    const have = values[key]
+    if (isEmptyValue(have)) return false
+    return (Array.isArray(want) ? want : [want]).some((w) => sameValue(have, w))
+  })
 }
 
 // ---------- records ----------
@@ -529,7 +566,7 @@ export function recordProblems(def: FieldDef, v: unknown): string[] {
       out.push(`${at} is not a record`)
       return
     }
-    const missing = fields.filter((f) => f.required && isEmptyValue(raw[f.key])).map((f) => f.key)
+    const missing = fields.filter((f) => isRequired(f, raw) && isEmptyValue(raw[f.key])).map((f) => f.key)
     if (missing.length) out.push(`${at} lacks ${missing.join(', ')}`)
     const unknown = Object.keys(raw).filter((k) => !known.has(k))
     if (unknown.length) out.push(`${at} has keys the item doesn't define: ${unknown.join(', ')} (item: ${[...known].join(', ')})`)

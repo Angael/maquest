@@ -14,6 +14,9 @@ export const ICON_NAMES = [...BY_NAME.keys()]
 const compact = (s: string) => s.replaceAll('-', '')
 const BY_COMPACT = new Map(ICON_NAMES.map((name) => [compact(name), BY_NAME.get(name)!]))
 
+/** The lucide icon of a name, or undefined when there is none. */
+export const findIcon = (name: string | undefined): LucideIcon | undefined => (name ? (BY_NAME.get(name) ?? BY_COMPACT.get(compact(name))) : undefined)
+
 export const iconFor = (name: string): LucideIcon => BY_NAME.get(name) ?? BY_COMPACT.get(compact(name)) ?? icons.Shapes
 
 export type TypeStyle = Omit<TypeInfo, 'icon'> & { icon: LucideIcon; iconName: string }

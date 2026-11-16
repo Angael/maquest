@@ -281,3 +281,33 @@ test('custom checks scoped to a fields tab read its fields, records as markdown'
     ['Only rules (contains in Abilities "**Morale"; unexpected headings in Abilities: ## As a companion)'],
   )
 })
+
+test('records without a description and text fields that repeat a records group are reported', () => {
+  const p = tmp()
+  p.setTypes({
+    character: {
+      fields: [
+        { key: 'spells', label: 'Zaklęcia' },
+        { key: 'abilities', widget: 'records', groupBy: 'kind', item: [{ key: 'kind', options: ['Feature', 'Zaklęcia'] }] },
+      ],
+    },
+    spell: { label: 'Spell', library: true },
+  })
+  p.createNode({ type: 'spell', title: 'Shield', body: '+5 AC until the start of your next turn.' })
+  const n = p.createNode({
+    type: 'character',
+    title: 'Isolde',
+    fields: {
+      spells: 'Shield, Hold Person',
+      abilities: [
+        { name: 'Shield', kind: 'Zaklęcia' },
+        { name: 'Hold Person', kind: 'Zaklęcia' },
+        { name: 'Song', kind: 'Feature', text: 'Heals a bit.' },
+      ],
+    },
+  })
+  p.updateBoard('main', { addNodes: [n.id] })
+  const issues = p.check().issues.filter((i) => i.node === n.id)
+  assert.equal(issues.find((i) => i.rule === 'record-undescribed')?.message, 'Abilities: no description for Hold Person')
+  assert.match(issues.find((i) => i.rule === 'field-duplicates-records')!.message, /Zaklęcia repeats the records in Abilities → Zaklęcia/)
+})

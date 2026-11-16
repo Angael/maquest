@@ -4,6 +4,7 @@ import { TYPE_ID, typeInfo, type TabDef, type TypeDef } from '@maquest/core/sche
 import { fieldLabel, normalizeName } from '@maquest/core/sheet'
 import { api } from '../lib/api'
 import { useAction, useConfig, useNodes } from '../lib/queries'
+import { useUI } from '../lib/store'
 import { useTypes, type TypeStyle } from '../lib/styles'
 import { Button, Input, Label, Textarea, Tooltip, cn } from './ui'
 import { IconPicker } from './views/IconPicker'
@@ -35,7 +36,8 @@ export function Types() {
   const { data: nodes } = useNodes()
   const { data: config } = useConfig()
   const setTypes = useAction(api.setTypes)
-  const [active, setActive] = useState('character')
+  const active = useUI((s) => s.typeFocus)
+  const setActive = useUI((s) => s.setTypeFocus)
   const t = types.list.find((x) => x.id === active) ?? types.list[0]
   const save = (id: string, change: Change | null) => setTypes.mutate([{ [id]: change }])
   const counts = useMemo(() => {

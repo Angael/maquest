@@ -1,4 +1,4 @@
-import { memo, useId, useMemo, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react'
+import { createElement, memo, useId, useMemo, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react'
 import { Check, Minus } from 'lucide-react'
 import type { FieldDef, StoryNode } from '@maquest/core/schema'
 import {
@@ -20,7 +20,7 @@ import {
 } from '@maquest/core/sheet'
 import { useNodes } from '../../lib/queries'
 import { useUI } from '../../lib/store'
-import { useTypes } from '../../lib/styles'
+import { findIcon, useTypes } from '../../lib/styles'
 import { cn } from '../ui'
 import { Records } from './Records'
 
@@ -178,12 +178,24 @@ export function Widget({ row, color, onSet, section }: { row: FieldRow; color: s
   }
 }
 
-export function Block({ label, children, aside }: { label: string; children: ReactNode; aside?: ReactNode }) {
+/** A field's label with its icon (the field's `icon`, a lucide name), if it has one. */
+export function FieldLabel({ def, label = fieldLabel(def), size = 12 }: { def: FieldDef; label?: string; size?: number }) {
+  const Icon = findIcon(def.icon)
+  if (!Icon) return <>{label}</>
+  return (
+    <span className="inline-flex min-w-0 items-center gap-1">
+      {createElement(Icon, { size, 'aria-hidden': true, className: 'shrink-0 text-[color-mix(in_oklab,var(--tint)_75%,var(--color-fg-subtle))]' })}
+      <span className="truncate">{label}</span>
+    </span>
+  )
+}
+
+export function Block({ label, children, aside, def }: { label: string; children: ReactNode; aside?: ReactNode; def?: FieldDef }) {
   return (
     <div className="min-w-0">
       {(label || aside) && (
         <div className="mb-1.5 flex items-baseline gap-2">
-          {label && <span className={eyebrow}>{label}</span>}
+          {label && <span className={eyebrow}>{def ? <FieldLabel def={def} label={label} /> : label}</span>}
           {aside && <span className="ml-auto text-2xs text-fg-faint">{aside}</span>}
         </div>
       )}
@@ -196,7 +208,9 @@ function TextLine({ row }: { row: FieldRow }) {
   const { value, note } = noted(row.value)
   return (
     <>
-      <dt className="truncate text-fg-subtle">{fieldLabel(row.def)}</dt>
+      <dt className="truncate text-fg-subtle">
+        <FieldLabel def={row.def} size={13} />
+      </dt>
       <dd className="min-w-0 break-words text-fg">
         {value}
         {note && <span className="text-fg-subtle"> ({note})</span>}
@@ -211,7 +225,9 @@ function Stat({ row }: { row: FieldRow }) {
   return (
     <div className={cn(tile, 'h-full px-3 pt-2 pb-2.5')} data-widget="stat">
       <Sheen />
-      <div className={cn(eyebrow, 'truncate')}>{fieldLabel(row.def)}</div>
+      <div className={cn(eyebrow, 'truncate')}>
+        <FieldLabel def={row.def} />
+      </div>
       <div
         className={cn(
           'mt-0.5 break-words text-fg',
@@ -250,7 +266,9 @@ function Toggle({ row, onSet }: { row: FieldRow; onSet?: (v: unknown) => void })
         <Icon size={13} strokeWidth={2.5} aria-hidden />
       </span>
       <span className="min-w-0">
-        <span className={cn(eyebrow, 'block truncate')}>{fieldLabel(row.def)}</span>
+        <span className={cn(eyebrow, 'block truncate')}>
+          <FieldLabel def={row.def} />
+        </span>
         <span className={cn('block text-sm font-medium', on ? 'text-fg' : 'text-fg-subtle')}>{on === null ? plainText(row.value) : on ? 'Yes' : 'No'}</span>
       </span>
     </button>
@@ -285,7 +303,9 @@ function Meter({ row, onSet }: { row: FieldRow; onSet?: (v: unknown) => void }) 
       <div className={cn(tile, 'h-full px-3 pt-2 pb-3')} data-widget="meter">
         <Sheen />
         <div className="flex items-baseline gap-2">
-          <span className={cn(eyebrow, 'truncate')}>{label}</span>
+          <span className={cn(eyebrow, 'truncate')}>
+            <FieldLabel def={def} />
+          </span>
           <span className="ml-auto">{amount}</span>
         </div>
         {ratio !== null && (
@@ -468,7 +488,7 @@ function Scores({ row, color, onSet }: { row: FieldRow; color: string; onSet?: (
   if (style === 'radar' && cells.length >= 3) return <Radar label={label} cells={cells} max={def.max ?? top} min={def.min ?? 0} color={color} />
   if (style === 'bars' || (style === 'radar' && cells.length < 3))
     return (
-      <Block label={label}>
+      <Block def={row.def} label={label}>
         <div className="space-y-1.5" data-widget="scores">
           {cells.map((c) => {
             const ratio = c.number === null ? 0 : Math.max(0, Math.min(1, (c.number - (def.min ?? 0)) / (top - (def.min ?? 0) || 1)))
@@ -496,7 +516,7 @@ function Scores({ row, color, onSet }: { row: FieldRow; color: string; onSet?: (
     const map = row.value && typeof row.value === 'object' && !Array.isArray(row.value) ? (row.value as Record<string, unknown>) : {}
     const all = scoreCells(def, row.value)
     return (
-      <Block label={label}>
+      <Block def={row.def} label={label}>
         <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-x-6 gap-y-1.5" data-widget="scores">
           {all.map((c) => (
             <div key={c.key} className="flex min-w-0 items-center gap-3">
@@ -509,7 +529,7 @@ function Scores({ row, color, onSet }: { row: FieldRow; color: string; onSet?: (
     )
   }
   return (
-    <Block label={label}>
+    <Block def={row.def} label={label}>
       <div className="grid grid-cols-[repeat(auto-fill,minmax(64px,1fr))] gap-1.5" data-widget="scores">
         {cells.map((c) => (
           <div key={c.key} className={cn(tile, 'flex flex-col items-center px-1 pt-1.5 pb-2')}>
@@ -623,7 +643,7 @@ function Radar({ label, cells, max, min, color }: { label: string; cells: Return
 
 function Pairs({ row }: { row: FieldRow }) {
   return (
-    <Block label={fieldLabel(row.def)}>
+    <Block def={row.def} label={fieldLabel(row.def)}>
       <div className="flex flex-wrap gap-1.5" data-widget="pairs">
         {pairEntries(row.def, row.value).map((e) => (
           <span key={e.key} className="inline-flex h-7 items-center gap-1.5 rounded-md bg-surface px-2 text-xs shadow-[inset_0_0_0_1px_var(--color-line)]">
@@ -638,7 +658,7 @@ function Pairs({ row }: { row: FieldRow }) {
 
 function Tags({ row }: { row: FieldRow }) {
   return (
-    <Block label={fieldLabel(row.def)}>
+    <Block def={row.def} label={fieldLabel(row.def)}>
       <div className="flex flex-wrap gap-1" data-widget="tags">
         {listItems(row.value).map((t) => (
           <span
@@ -655,7 +675,7 @@ function Tags({ row }: { row: FieldRow }) {
 
 function List({ row }: { row: FieldRow }) {
   return (
-    <Block label={fieldLabel(row.def)}>
+    <Block def={row.def} label={fieldLabel(row.def)}>
       <ul className="space-y-1 text-sm leading-5 text-fg" data-widget="list">
         {listItems(row.value, /\n/).map((t, i) => (
           <li key={`${i}:${t}`} className="flex gap-2.5">
@@ -676,7 +696,7 @@ function Refs({ row }: { row: FieldRow }) {
   const types = useTypes()
   const select = useUI((s) => s.select)
   return (
-    <Block label={fieldLabel(row.def)}>
+    <Block def={row.def} label={fieldLabel(row.def)}>
       <div className="flex flex-wrap gap-1.5" data-widget="refs">
         {refIds(row.value).map((id) => {
           const n = byId.get(id)
@@ -711,7 +731,7 @@ function Refs({ row }: { row: FieldRow }) {
 function Table({ row }: { row: FieldRow }) {
   const { columns, rows } = tableRows(row.def, row.value)
   return (
-    <Block label={fieldLabel(row.def)} aside={rows.length > 3 ? `${rows.length} rows` : undefined}>
+    <Block def={row.def} label={fieldLabel(row.def)} aside={rows.length > 3 ? `${rows.length} rows` : undefined}>
       <div className="overflow-x-auto rounded-lg shadow-[inset_0_0_0_1px_var(--color-line)]" data-widget="table">
         <table className="w-full border-collapse text-sm">
           <thead>

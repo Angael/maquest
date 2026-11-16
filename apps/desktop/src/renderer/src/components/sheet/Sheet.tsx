@@ -1,15 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Tabs } from '@base-ui/react/tabs'
-import { Check, FileText, Pencil, Plus } from 'lucide-react'
-import type { StoryNode } from '@maquest/core/schema'
-import { isEmptyValue, replaceSection, sheetTabs, type SheetTab } from '@maquest/core/sheet'
+import { Check, FileText, Pencil, Plus, Settings2 } from 'lucide-react'
+import type { StoryNode, TabDef } from '@maquest/core/schema'
+import { isEmptyValue, normalizeName, sheetTabs, splitSections, tabMatches, writeTab, type SheetTab } from '@maquest/core/sheet'
 import { api } from '../../lib/api'
 import { useAction } from '../../lib/queries'
 import { useUI } from '../../lib/store'
 import { useTypes } from '../../lib/styles'
 import { MarkdownEditor } from '../MarkdownEditor'
-import { Button, IconButton, cn } from '../ui'
-import { ghost } from '../inspector/fields'
+import { Button, IconButton, Input, Popover, cn } from '../ui'
 import { FieldSheet } from './Widgets'
 import { FieldForm, fieldPatch } from './FieldForm'
 
@@ -59,11 +58,15 @@ export function Sheet({ node, body, onBody }: { node: StoryNode; body: string; o
     lastTab.set(node.id, key)
     setEditing(false)
   }
-  const addTab = (title: string) => {
-    const next = `${body.trimEnd()}${body.trim() ? '\n\n' : ''}# ${title}\n`
-    onBody(next)
-    const added = sheetTabs(next, type).find((t) => t.kind !== 'fields' && t.title === title)
-    if (added) choose(added.key)
+  /** Shows a tab just added (by title, once it exists). */
+  const [pending, setPending] = useState<string | null>(null)
+  if (pending) {
+    const added = tabs.find((t) => normalizeName(t.title) === normalizeName(pending))
+    if (added) {
+      setPending(null)
+      setActive(added.key)
+      lastTab.set(node.id, added.key)
+    }
   }
   const editable = !source && current?.kind === 'fields'
 
@@ -85,7 +88,7 @@ export function Sheet({ node, body, onBody }: { node: StoryNode; body: string; o
             ))}
           </Tabs.List>
         )}
-        {!source && <AddTab taken={tabs.map((t) => t.title)} onAdd={addTab} />}
+        {!source && <AddTab node={node} body={body} onBody={onBody} onAdded={setPending} />}
         {editable && (
           <IconButton
             icon={editing ? Check : Pencil}
@@ -129,7 +132,7 @@ export function Sheet({ node, body, onBody }: { node: StoryNode; body: string; o
                 )}
               </div>
             ) : (
-              <TabEditor key={t.key} tab={t} onChange={(text) => onBody(replaceSection(body, t.section, text))} />
+              <TabEditor key={t.key} tab={t} onChange={(text) => onBody(writeTab(body, t, text))} />
             )}
           </Tabs.Panel>
         ))
@@ -186,39 +189,99 @@ function EmptyFields({ title, none, onFill }: { title: string; none: boolean; on
   )
 }
 
-function AddTab({ taken, onAdd }: { taken: string[]; onAdd: (title: string) => void }) {
-  const [adding, setAdding] = useState(false)
+/** Adds a tab: to the type (every node of it gets the tab) or to this node's body only. */
+export function AddTab({
+  node,
+  body,
+  onBody,
+  onAdded,
+  typeOnly,
+}: {
+  node: StoryNode
+  body: string
+  onBody: (body: string) => void
+  onAdded?: (title: string) => void
+  /** Only offer adding to the type (a plain document needs two sections of its own to become tabs). */
+  typeOnly?: boolean
+}) {
+  const types = useTypes()
+  const type = types.of(node.type)
+  const setTypes = useAction(api.setTypes)
+  const openType = useUI((s) => s.openType)
+  const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
-  const input = useRef<HTMLInputElement>(null)
   const title = name.trim().replaceAll(/\s+/g, ' ')
-  const commit = () => {
-    if (title && !taken.includes(title)) onAdd(title)
+  const taken = !!title && (sheetTabs(body, type).some((t) => normalizeName(t.title) === normalizeName(title)) || type.tabs.some((t) => tabMatches(t, title)))
+  const close = () => {
     setName('')
-    setAdding(false)
+    setOpen(false)
   }
-  if (!adding) return <IconButton icon={Plus} label="Add tab" size="sm" onClick={() => setAdding(true)} />
+  const addToType = () => {
+    if (!title || taken) return
+    // A type without tabs starts from the node's headings, so the body keeps its sections as tabs.
+    const existing: TabDef[] = type.tabs.length
+      ? [...type.tabs]
+      : splitSections(body)
+          .filter((x) => x.title)
+          .map((x) => ({ title: x.title!, kind: 'prose' as const }))
+    setTypes.mutate([{ [type.id]: { tabs: [...existing, { title, kind: 'prose' }] } }])
+    // A node that had no tabs opens its sheet on the new one.
+    lastTab.set(node.id, `p:${normalizeName(title)}`)
+    onAdded?.(title)
+    close()
+  }
+  const addHere = () => {
+    if (!title || taken) return
+    onBody(`${body.trimEnd()}${body.trim() ? '\n\n' : ''}# ${title}\n`)
+    onAdded?.(title)
+    close()
+  }
   return (
-    <input
-      ref={input}
-      autoFocus
-      aria-label="New tab title"
-      placeholder="Tab title…"
-      value={name}
-      autoComplete="off"
-      className={cn(ghost, 'h-6 w-28 shrink-0 bg-surface text-xs shadow-[inset_0_0_0_1px_var(--color-line-strong)]')}
-      onChange={(e) => setName(e.target.value)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') {
+    <Popover
+      open={open}
+      onOpenChange={(o) => (o ? setOpen(true) : close())}
+      side="bottom"
+      align="end"
+      className="w-64 p-3"
+      trigger={<IconButton icon={Plus} label="Add tab" size="sm" />}
+    >
+      <form
+        onSubmit={(e) => {
           e.preventDefault()
-          commit()
-        } else if (e.key === 'Escape') {
-          e.preventDefault()
-          e.stopPropagation()
-          setName('')
-          setAdding(false)
-        }
-      }}
-      onBlur={commit}
-    />
+          addToType()
+        }}
+        className="space-y-2.5"
+      >
+        <Input
+          autoFocus
+          aria-label="New tab title"
+          placeholder="Tab title, e.g. History"
+          value={name}
+          autoComplete="off"
+          onChange={(e) => setName(e.target.value)}
+        />
+        {taken && <p className="text-xs text-fg-subtle">There is already a {title} tab.</p>}
+        <div className="flex flex-col gap-1.5">
+          <Button type="submit" variant="primary" size="sm" disabled={!title || taken}>
+            Add to all {type.plural.toLowerCase()}
+          </Button>
+          {!typeOnly && (
+            <Button variant="ghost" size="sm" disabled={!title || taken} onClick={addHere}>
+              Only this {type.label.toLowerCase()}
+            </Button>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            close()
+            openType(type.id)
+          }}
+          className="flex items-center gap-1 rounded-sm text-left text-xs text-fg-subtle outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/70"
+        >
+          <Settings2 size={12} aria-hidden className="shrink-0" /> Edit the {type.label.toLowerCase()} sheet: tabs, fields, widgets
+        </button>
+      </form>
+    </Popover>
   )
 }

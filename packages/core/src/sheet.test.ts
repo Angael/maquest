@@ -6,6 +6,7 @@ import {
   fieldLayout,
   fieldProblem,
   fieldSummary,
+  isRequired,
   joinSections,
   meterValue,
   noted,
@@ -22,6 +23,7 @@ import {
   sheetTabs,
   splitSections,
   tableRows,
+  writeTab,
 } from './sheet'
 
 const field = (f: Record<string, unknown>) => FieldDef.parse(f)
@@ -91,7 +93,33 @@ test('tabs: the type order, fields tabs always, aliases, others after, plain doc
   // Intro text is the Overview, ahead of the body tabs.
   assert.deepEqual(
     sheetTabs('Hello.\n\n# Historia\nx', type).map((t) => t.title),
-    ['Stats', 'Overview', 'Historia'],
+    ['Stats', 'Overview', 'Historia', 'Abilities'],
+  )
+  // The type's prose tabs show even when the body lacks them; writing one adds its section.
+  const prose = { fields: [], tabs: [{ title: 'History', kind: 'prose' as const }] }
+  const empty = sheetTabs('', prose)
+  assert.deepEqual(
+    empty.map((t) => [t.title, t.kind === 'prose' && t.section]),
+    [['History', -1]],
+  )
+  const written = writeTab('', empty[0] as { title: string; section: number }, 'Born in the marsh.')
+  assert.equal(written, '# History\n\nBorn in the marsh.\n')
+  assert.equal(sheetTabs(written, prose)[0].key, empty[0].key)
+  assert.equal(writeTab('x', { title: 'History', section: -1 }, '  '), 'x')
+})
+
+test('requiredWhen: required only when other values match, in nodes and in records', () => {
+  const level = field({ key: 'level', widget: 'stat', requiredWhen: { kind: ['Spell', 'Cantrip'] } })
+  assert.equal(isRequired(level, { kind: 'spell' }), true)
+  assert.equal(isRequired(level, { kind: 'Feature' }), false)
+  assert.equal(isRequired(level, {}), false)
+  const def = field({ key: 'abilities', widget: 'records', item: [{ key: 'kind', options: ['Spell', 'Feature'] }, level] })
+  assert.deepEqual(
+    recordProblems(def, [
+      { name: 'Shield', kind: 'Spell' },
+      { name: 'Rage', kind: 'Feature' },
+    ]),
+    ['#1 (Shield) lacks level'],
   )
 })
 

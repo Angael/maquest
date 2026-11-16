@@ -20,6 +20,8 @@ type UI = {
   board: string
   /** Guideline open in the Guidelines view. */
   guideline: string | null
+  /** Type the Types view shows. */
+  typeFocus: string
   /** Map node open in the Map view. */
   map: string | null
   /** Opens a map node in the map editor. */
@@ -70,6 +72,9 @@ type UI = {
   setConnectType: (t: EdgeType | 'auto') => void
   setBoard: (id: string) => void
   setGuideline: (id: string | null) => void
+  /** Opens the Types view on a type. */
+  openType: (id: string) => void
+  setTypeFocus: (id: string) => void
   setLayoutMode: (mode: LayoutMode) => void
 }
 
@@ -87,6 +92,7 @@ export const useUI = create<UI>()(
       connectType: 'auto',
       board: 'main',
       guideline: null,
+      typeFocus: 'character',
       map: null,
       openMap: (map) =>
         set((s) => ({
@@ -174,6 +180,11 @@ export const useUI = create<UI>()(
       setConnectType: (connectType) => set({ connectType }),
       setBoard: (board) => set({ board, selection: null, selectedNodeIds: [] }),
       setGuideline: (guideline) => set({ guideline }),
+      setTypeFocus: (typeFocus) => set({ typeFocus }),
+      openType: (typeFocus) => {
+        set({ typeFocus })
+        useUI.getState().setView('types')
+      },
       setLayoutMode: (layoutMode) => set({ layoutMode }),
     }),
     {

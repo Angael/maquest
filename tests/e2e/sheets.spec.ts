@@ -164,3 +164,25 @@ test('the problems menu lists what Maquest detected, with quick fixes and ignore
   await expect.poll(() => project.getNode('wight')?.checks?.off).toEqual(['field-missing'])
   await expect(page.getByText('Everything checks out.')).toBeVisible()
 })
+
+test('records without text show the library description; a tab added to a type shows on every node of it', async ({ desktop }) => {
+  const { page, project, ids } = desktop
+  await page.locator('.react-flow__node[data-id="wight"]').click()
+  await page.getByRole('tablist', { name: 'Sheet' }).getByRole('tab', { name: 'Actions' }).click()
+  await expect(page.locator('[data-record="Fireball"] [data-library-text]')).toContainText('8d6 fire')
+
+  // A plain location has no tabs; adding one to its type gives every location the tab.
+  await page.locator(`.react-flow__node[data-id="${ids[0]}"]`).click()
+  await expect(page.getByRole('tablist', { name: 'Sheet' })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Add tab' }).click()
+  await page.getByRole('textbox', { name: 'New tab title' }).fill('History')
+  await page.getByRole('button', { name: 'Add to all locations' }).click()
+  await expect.poll(() => project.config().types?.location?.tabs?.map((t) => t.title)).toEqual(['History'])
+  await expect(page.getByRole('tablist', { name: 'Sheet' }).getByRole('tab', { name: 'History', selected: true })).toBeVisible()
+  await page.locator('.cm-content').click()
+  await page.keyboard.type('Built over a well.')
+  await expect.poll(() => project.getNode(ids[0])?.body).toContain('# History\n\nBuilt over a well.')
+
+  await page.locator(`.react-flow__node[data-id="${ids[1]}"]`).click()
+  await expect(page.getByRole('tablist', { name: 'Sheet' }).getByRole('tab', { name: 'History' })).toBeVisible()
+})

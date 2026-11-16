@@ -27,6 +27,7 @@ import {
   fieldLabel,
   fieldProblem,
   isEmptyValue,
+  isRequired,
   libraryIndex,
   libraryNode,
   normalizeName,
@@ -291,6 +292,23 @@ export const RULES: RuleMeta[] = [
     options: [{ key: 'minChars', label: 'Min copied chars', type: 'number', default: 120 }],
   },
   {
+    id: 'record-undescribed',
+    title: 'Records without a description',
+    category: 'sheets',
+    level: 'warn',
+    description: 'A record (an ability, spell, item…) has no description of its own and no library node with one, so the sheet only shows its name.',
+    fix: "Write what it does in the record's description key, or create a library node with the same name and the full text.",
+  },
+  {
+    id: 'field-duplicates-records',
+    title: 'Fields repeating records',
+    category: 'sheets',
+    level: 'warn',
+    description:
+      'A text field holds the same things as a group of a records field (e.g. a "Spells" text next to spell records), so the sheet shows them twice.',
+    fix: 'Keep them only as records: move anything missing into records (or another field, like spellcasting) and clear the text field (write fields: { key: null }).',
+  },
+  {
     id: 'clue-minimum',
     title: 'Too few clues',
     category: 'rpg',
@@ -506,9 +524,49 @@ export function runChecks(input: CheckInput): CheckReport {
   }
   for (const n of subjects('field-missing')) {
     const type = typeOf.get(n.type)
-    const missing = type?.fields.filter((f) => f.required && isEmptyValue(n.fields[f.key])) ?? []
+    const missing = type?.fields.filter((f) => isRequired(f, n.fields) && isEmptyValue(n.fields[f.key])) ?? []
     if (missing.length)
       emit({ rule: 'field-missing', node: n.id, message: `lacks ${missing.map(fieldLabel).join(', ')}`, open: tabOfField(type!, missing[0].key) })
+  }
+
+  const libraryByName = libraryIndex(nodes, types)
+  for (const n of subjects('record-undescribed')) {
+    const type = typeOf.get(n.type)
+    if (!type || type.library) continue
+    for (const def of type.fields) {
+      if (def.widget !== 'records') continue
+      const bare = recordList(def, n.fields[def.key]).filter((r) => !r.text && !libraryNode(r, libraryByName, byId)?.body.trim())
+      if (bare.length)
+        emit({
+          rule: 'record-undescribed',
+          node: n.id,
+          message: `${fieldLabel(def)}: no description for ${bare.map((r) => r.name || `#${r.index + 1}`).join(', ')}`,
+          hint: `Write what each does under ${def.textKey ?? 'text'}, or add a library node with the same name.`,
+          open: tabOfField(type, def.key),
+        })
+    }
+  }
+  for (const n of subjects('field-duplicates-records')) {
+    const type = typeOf.get(n.type)
+    if (!type) continue
+    const groups = new Map<string, string>()
+    for (const def of type.fields)
+      if (def.widget === 'records')
+        for (const r of recordList(def, n.fields[def.key])) if (r.group) groups.set(normalizeName(r.group), `${fieldLabel(def)} → ${r.group}`)
+    if (!groups.size) continue
+    for (const f of type.fields) {
+      if (f.widget === 'records' || isEmptyValue(n.fields[f.key])) continue
+      const names = [f.key, f.label ?? '', ...(f.aliases ?? [])].filter(Boolean).map(normalizeName)
+      const hit = names.map((x) => groups.get(x)).find(Boolean)
+      if (hit)
+        emit({
+          rule: 'field-duplicates-records',
+          node: n.id,
+          message: `${fieldLabel(f)} repeats the records in ${hit}`,
+          hint: `Move what's missing into the records, then clear it (fields: { ${f.key}: null }).`,
+          open: tabOfField(type, f.key),
+        })
+    }
   }
 
   if (level('shared-record') !== 'off') {

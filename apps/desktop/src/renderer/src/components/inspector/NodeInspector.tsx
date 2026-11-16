@@ -13,7 +13,7 @@ import { InspectorHeader, useCopy } from './Header'
 import { GhostSelect, GhostText, PropertyRow, TagInput, ghost, oneLine } from './fields'
 import { BoardsProperty, ClockProperty, MediaProperty, STATUSES, STATUS_LABEL, StatusDot, attachMedia } from './properties'
 import { Connections, Contains } from './Connections'
-import { Sheet, useSheet } from '../sheet/Sheet'
+import { AddTab, Sheet, useSheet } from '../sheet/Sheet'
 import { FieldInput, fieldPatch } from '../sheet/FieldForm'
 import { mergeValues, propertyRows } from '@maquest/core/sheet'
 import { MapThumb } from '../map/MapThumb'
@@ -178,7 +178,10 @@ function BodyArea({ node, body, onBody }: { node: StoryNode; body: string; onBod
   if (tabs.length) return <Sheet node={node} body={body} onBody={onBody} />
   return (
     <>
-      <div className="mx-4 mt-3 border-t border-line" />
+      <div className="mx-4 mt-3 flex items-center gap-2 border-t border-line pt-1">
+        <span className="flex-1 text-2xs text-fg-faint">One document · add a tab to split it</span>
+        <AddTab node={node} body={body} onBody={onBody} typeOnly />
+      </div>
       <MarkdownEditor value={body} onChange={onBody} variant="document" label="Content" placeholder="Start writing…" minHeight="160px" />
     </>
   )

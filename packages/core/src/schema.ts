@@ -373,6 +373,16 @@ export const FieldDef = z
     hint: z.string().optional(),
     /** Checks report nodes of the type without a value. */
     required: z.boolean().optional(),
+    /**
+     * Required only when other fields (of the node, or of the same record) have these values, e.g.
+     * { kind: "Spell" } or { kind: ["Spell", "Cantrip"] }. Text compares ignoring case and accents.
+     */
+    requiredWhen: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.array(z.union([z.string(), z.number(), z.boolean()]))])).optional(),
+    /** Lucide icon name in kebab-case shown with the field's label, e.g. "shield" or "heart". */
+    icon: z
+      .string()
+      .regex(/^[a-z0-9-]+$/, 'icon must be a kebab-case lucide icon name')
+      .optional(),
     /** Shown as a chip on the node's canvas card. */
     badge: z.boolean().optional(),
     /** Other names of this field (e.g. older or translated keys), so checks can offer to rename them. */
