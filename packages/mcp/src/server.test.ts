@@ -186,3 +186,34 @@ test('checks: overview summarizes, checks: true lists issues, writes report the 
   assert.equal(configured.isError, false, configured.text)
   assert.equal(p.config().checks?.['field-missing'], 'off')
 })
+
+test('agents draw a map with layers and export it to svg', async (t) => {
+  const { p, call } = await connect(t)
+  const created = await call('write', { nodes: [{ type: 'map', title: 'Town square' }] })
+  assert.equal(created.isError, false, created.text)
+  const id = p.listNodes({ type: 'map' })[0].id
+  const edit = await call('map', {
+    action: 'edit',
+    id,
+    ops: [
+      { op: 'layer', name: 'Before the battle', group: 'battle' },
+      { op: 'layer', name: 'After the battle', group: 'battle', visible: false },
+      { op: 'add', object: { kind: 'room', x: 10, y: 8, shape: { type: 'rect', w: 8, h: 6 } } },
+      { op: 'add', object: { kind: 'room', op: 'subtract', x: 14, y: 8, layers: ['layer2'], shape: { type: 'ellipse', rx: 1.5, ry: 1.5 } } },
+      { op: 'add', object: { kind: 'door', x: 10, y: 11, width: 1 } },
+      { op: 'token', set: { name: 'Aria', x: 10.5, y: 8.5, player: true } },
+      { op: 'show', layer: 'layer2' },
+    ],
+  })
+  assert.equal(edit.isError, false, edit.text)
+  assert.match(edit.text, /showing layer2; layer1 hidden/)
+  const read = await call('map', { action: 'read', id, full: true })
+  assert.match(read.text, /room2 room circle r1.5 subtract at \(14, 8\) layers layer2/)
+  assert.match(read.text, /token1 token "Aria"/)
+  const bad = await call('map', { action: 'edit', id, ops: [{ op: 'add', object: { kind: 'room', layers: ['nope'], shape: { type: 'rect', w: 1, h: 1 } } }] })
+  assert.equal(bad.isError, true)
+  assert.match(bad.text, /Unknown layer nope/)
+  const exported = await call('map', { action: 'export', id })
+  assert.equal(exported.isError, false, exported.text)
+  assert.match(fs.readFileSync(path.join(p.root, 'media', `${id}.svg`), 'utf8'), /<svg xmlns="http:\/\/www.w3.org\/2000\/svg"/)
+})

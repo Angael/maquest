@@ -1,4 +1,5 @@
 import path from 'node:path'
+import fs from 'node:fs'
 import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
@@ -57,6 +58,7 @@ import {
   type FieldDef,
   type TypeInfo,
 } from '@maquest/core'
+import { MapOp, OBJECT_KINDS, TEXTURES, mapSummary, mapSvg } from '@maquest/core/map'
 
 function arg(name: string) {
   const i = process.argv.indexOf(`--${name}`)
@@ -449,6 +451,7 @@ server.registerTool(
       section('Notes', byType('note')),
       section('Backlog', byType('idea')),
       section('Media nodes', byType('media')),
+      section('Maps (edit with "map")', byType('map')),
       `## Connections\n${edges.length} total${edgeStats ? ` (${edgeStats})` : ''}`,
       `## Boards (read with "board")\n${p.boards().map(boardSummary).join('\n')}`,
       (() => {
@@ -650,7 +653,7 @@ server.registerTool(
   'write',
   {
     title: 'Create or update nodes',
-    description: `Batch create/update nodes. Types: story, chapter, scene, note, character, location, faction, item, idea (backlog), media. New nodes get starter templates (fields like want/need/flaw for characters, goal/conflict/outcome for scenes). Markdown bodies may embed media: ![alt](media/file.png). Links to other nodes: [[node-id]].
+    description: `Batch create/update nodes. Types: story, chapter, scene, note, character, location, faction, item, idea (backlog), media, map (a battle map / floor plan; draw it with the map tool). New nodes get starter templates (fields like want/need/flaw for characters, goal/conflict/outcome for scenes). Markdown bodies may embed media: ![alt](media/file.png). Links to other nodes: [[node-id]].
 Entity sheets: each H1 heading (# Title) of a body is a tab in the app; keep one topic per tab (e.g. # Backstory, # Notes) and put numbers and structured data in fields, not in the body. Lists of things with the same shape (abilities, spells, moves, inventory) go in a records field as [{ name, text, …item keys }]; a records field is written whole. Reference text shared by several sheets belongs in one node of a library type (overview marks them); a record named like a library node, or "[[id]]", shows that node's text, so records only add local changes.
 Results list what Maquest detected about the written nodes (broken links, missing required fields…): fix those or tell the author. The whole batch is checked first, in order, so items may use ids created or renamed earlier in it; if any item fails the check, nothing is written. Results are per item (#n): when a batch stops part-way, it says which items were saved, which failed and which did not run.`,
     inputSchema: { nodes: z.array(WriteItem).min(1) },
@@ -937,6 +940,67 @@ server.registerTool(
     if (action === 'list') return p.listMedia().join('\n') || 'No media.'
     if (!src) throw new Error('import requires path')
     return `imported ${p.importMedia(src, name)}`
+  }),
+)
+
+const MIME: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', svg: 'image/svg+xml' }
+
+server.registerTool(
+  'map',
+  {
+    title: 'Maps',
+    description: `Battle maps / floor plans of map nodes (create one with write type=map). The document is maps/<id>.map.json; the app shows edits live.
+Coordinates and lengths are grid cells: (0,0) is the top-left corner, cell (c,r) spans c..c+1, cell centers are at .5. x/y is an object's center (rect, ellipse, image, door, label, light) or the origin its path points are relative to. rotation in degrees, clockwise.
+Object kinds (${OBJECT_KINDS.join(', ')}):
+- room { shape, op: add|subtract }: all visible rooms merge/cut in order into one floor whose outline becomes walls.
+- area { shape, op, fill }: painted terrain under rooms; subtract erases paint below it.
+- wall { shape, width?, color? }: free-standing wall, blocks sight. path { shape, stroke {color,width,dash?}, fill? }: roads, rivers, decoration.
+- door { width (default 1), variant door|double|window|secret, open }: put it on a wall, rotation along the wall (0 = horizontal wall, 90 = vertical).
+- image { src: media path, w, h, opacity? }, label { text, size, color }, light { bright, dim, color } (radii in cells).
+Shapes: { type: rect, w, h, radius? } | { type: ellipse, rx, ry } | { type: path, points: [{ x, y, in?, out? }], closed } (in/out = bezier handles relative to the point).
+Fill: { color?: #rrggbb, texture?: ${TEXTURES.join('|')} or a media path, scale? (cells per tile), opacity? }.
+Layers: objects and tokens list layer ids (empty = always shown). Layers with the same group are exclusive: op show swaps them (e.g. "before" / "after" the battle).
+Tokens: { name, x, y (cell centers), size, color, player (reveals fog), vision?, darkvision?, node? (character id) }.
+Actions: read (summary; full=true lists every object), edit (ops in order, all or nothing), export (SVG file).`,
+    inputSchema: {
+      action: z.enum(['read', 'edit', 'export']),
+      id: z.string().describe('Map node id'),
+      full: z.boolean().optional().describe('read: list every object and token'),
+      ops: z
+        .array(MapOp)
+        .optional()
+        .describe(
+          'edit: add {object}, update {id, set}, remove {ids}, order {id, to front|back|forward|backward}, layer {id?, name?, visible?, group?, objects?, removeObjects?}, show {layer}, token {id?, set}, grid {set: cols, rows, size (px per cell in exports), unit {amount, name}, diagonal equal|alternate|euclid, show}, style {set: background, floor, wall {color, width}}, fog {enabled?, ambient light|dim|dark?, reset?}, bake {ids, mode union|subtract|intersect|exclude} (merge shapes into the first), join {ids} (two open paths into one, or close one)',
+        ),
+      path: z.string().optional().describe('export: output file (absolute or project-relative; default media/<id>.svg)'),
+      fog: z.boolean().optional().describe('export: draw the fog of war as players see it'),
+      grid: z.boolean().optional().describe('export: draw grid lines (default: the map setting)'),
+      tokens: z.boolean().optional().describe('export: draw tokens (default true)'),
+    },
+  },
+  safe(({ action, id, full, ops, path: out, fog, grid, tokens }) => {
+    const p = project()
+    if (action === 'read') return `${p.requireNode(id).title}\n${mapSummary(p.readMap(id), full)}`
+    if (action === 'edit') {
+      if (!ops?.length) throw new Error('edit needs ops')
+      const r = p.editMap(id, ops)
+      return `${r.results.join('\n')}\n${mapSummary(r.doc).split('\n').slice(0, 4).join('\n')}`
+    }
+    const doc = p.readMap(id)
+    // Images are embedded so the file works anywhere.
+    const href = (src: string) => {
+      try {
+        const ext = src.split('.').pop()!.toLowerCase()
+        return `data:${MIME[ext] ?? 'application/octet-stream'};base64,${fs.readFileSync(p.resolve(src)).toString('base64')}`
+      } catch {
+        return src
+      }
+    }
+    const svg = mapSvg(doc, { imageHref: href, fog: fog ? 'player' : 'none', lighting: fog ? 'player' : 'none', grid, tokens })
+    const target = out ? (path.isAbsolute(out) ? out : p.resolve(out)) : p.resolve(`media/${id}.svg`)
+    fs.mkdirSync(path.dirname(target), { recursive: true })
+    fs.writeFileSync(target, svg)
+    return `exported ${path.relative(p.root, target).startsWith('..') ? target : path.relative(p.root, target)} (${Math.round(svg.length / 1024)} KB, ${doc.grid.cols * doc.grid.size}×${doc.grid.rows * doc.grid.size} px)`
   }),
 )
 
