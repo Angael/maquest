@@ -217,12 +217,12 @@ function RecordRow({ def, record: r, linked, words, setItem }: { def: FieldDef; 
       </div>
       {r.text ? (
         <div className="card-text record-text text-fg-muted">
-          <MarkdownPreview source={r.text} />
+          <MarkdownPreview source={r.text} breaks />
         </div>
       ) : (
         shared && (
           <div className="card-text record-text text-fg-muted" data-library-text>
-            <MarkdownPreview source={shared} />
+            <MarkdownPreview source={shared} breaks />
           </div>
         )
       )}
@@ -274,9 +274,9 @@ function LibraryCard({ linked, own, name, facts }: { linked?: Linked; own: strin
       )}
       {linked?.node.summary && <p className="mt-2 text-sm leading-5 text-fg-muted">{linked.node.summary}</p>}
       <div className={cn('card-text mt-2', !shared && !own && 'text-sm text-fg-faint')}>
-        {shared && <MarkdownPreview source={shared} />}
+        {shared && <MarkdownPreview source={shared} breaks />}
         {own && shared && <div className={cn(eyebrow, 'mt-3 mb-1')}>On this sheet</div>}
-        {own && <MarkdownPreview source={own} />}
+        {own && <MarkdownPreview source={own} breaks />}
         {!shared && !own && 'No description.'}
       </div>
     </div>
