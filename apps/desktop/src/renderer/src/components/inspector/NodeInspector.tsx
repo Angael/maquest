@@ -162,7 +162,7 @@ function BodyArea({ node, body, onBody }: { node: StoryNode; body: string; onBod
     <>
       <div className="mx-4 mt-3 flex items-center gap-2 border-t border-line pt-1">
         <span className="flex-1 text-2xs text-fg-faint">One document · add a tab to split it</span>
-        <AddTab node={node} body={body} onBody={onBody} />
+        <AddTab node={node} body={body} onBody={onBody} typeOnly />
       </div>
       <MarkdownEditor value={body} onChange={onBody} variant="document" label="Content" placeholder="Start writing…" minHeight="160px" />
     </>

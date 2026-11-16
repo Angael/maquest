@@ -190,7 +190,20 @@ function EmptyFields({ title, none, onFill }: { title: string; none: boolean; on
 }
 
 /** Adds a tab: to the type (every node of it gets the tab) or to this node's body only. */
-export function AddTab({ node, body, onBody, onAdded }: { node: StoryNode; body: string; onBody: (body: string) => void; onAdded?: (title: string) => void }) {
+export function AddTab({
+  node,
+  body,
+  onBody,
+  onAdded,
+  typeOnly,
+}: {
+  node: StoryNode
+  body: string
+  onBody: (body: string) => void
+  onAdded?: (title: string) => void
+  /** Only offer adding to the type (a plain document needs two sections of its own to become tabs). */
+  typeOnly?: boolean
+}) {
   const types = useTypes()
   const type = types.of(node.type)
   const setTypes = useAction(api.setTypes)
@@ -212,6 +225,8 @@ export function AddTab({ node, body, onBody, onAdded }: { node: StoryNode; body:
           .filter((x) => x.title)
           .map((x) => ({ title: x.title!, kind: 'prose' as const }))
     setTypes.mutate([{ [type.id]: { tabs: [...existing, { title, kind: 'prose' }] } }])
+    // A node that had no tabs opens its sheet on the new one.
+    lastTab.set(node.id, `p:${normalizeName(title)}`)
     onAdded?.(title)
     close()
   }
@@ -250,9 +265,11 @@ export function AddTab({ node, body, onBody, onAdded }: { node: StoryNode; body:
           <Button type="submit" variant="primary" size="sm" disabled={!title || taken}>
             Add to all {type.plural.toLowerCase()}
           </Button>
-          <Button variant="ghost" size="sm" disabled={!title || taken} onClick={addHere}>
-            Only this {type.label.toLowerCase()}
-          </Button>
+          {!typeOnly && (
+            <Button variant="ghost" size="sm" disabled={!title || taken} onClick={addHere}>
+              Only this {type.label.toLowerCase()}
+            </Button>
+          )}
         </div>
         <button
           type="button"
