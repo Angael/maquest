@@ -185,13 +185,13 @@ test('clicking a sidebar entry pans an off-screen card into view', async ({ desk
   await expect(card).toHaveClass(/selected/)
 })
 
-test('Ctrl+middle drag pans, mouse wheel zooms, touchpad scroll pans', async ({ desktop }) => {
+test('Ctrl+middle drag pans and the wheel zooms', async ({ desktop }) => {
   const { page } = desktop
   const viewport = page.locator('.react-flow__viewport')
   const transform = () => viewport.evaluate((el) => new DOMMatrix(getComputedStyle(el).transform))
   const box = (await page.locator('.react-flow__pane').boundingBox())!
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-  let before = await transform()
+  const before = await transform()
   await page.keyboard.down('Control')
   await page.mouse.down({ button: 'middle' })
   await page.mouse.move(box.x + box.width / 2 + 120, box.y + box.height / 2 + 40, { steps: 4 })
@@ -200,16 +200,9 @@ test('Ctrl+middle drag pans, mouse wheel zooms, touchpad scroll pans', async ({ 
   const after = await transform()
   expect(Math.round(after.e - before.e)).toBe(120)
   expect(Math.round(after.f - before.f)).toBe(40)
-  // A coarse wheel notch zooms.
-  before = after
+  // The wheel zooms.
   await page.mouse.wheel(0, -100)
-  await expect.poll(async () => (await transform()).a).toBeGreaterThan(before.a)
-  // Fine two-axis deltas (a touchpad) pan at the same zoom.
-  await page.waitForTimeout(600)
-  before = await transform()
-  await page.mouse.wheel(12.5, 7.5)
-  await expect.poll(async () => (await transform()).e).toBeCloseTo(before.e - 12.5)
-  expect((await transform()).a).toBeCloseTo(before.a)
+  await expect.poll(async () => (await transform()).a).toBeGreaterThan(after.a)
 })
 
 test('auto-layout runs the chosen style and remembers it', async ({ desktop }) => {

@@ -1014,8 +1014,6 @@ export function Canvas() {
         multiSelectionKeyCode={['Control', 'Meta', 'Shift']}
         selectionKeyCode={null}
         panOnDrag={false}
-        zoomOnScroll={false}
-        zoomOnPinch={false}
         deleteKeyCode={null}
         minZoom={0.1}
         onlyRenderVisibleElements
