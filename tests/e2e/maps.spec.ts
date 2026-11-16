@@ -99,6 +99,10 @@ test('the Maps view lists maps, creates one and opens maps in their own tabs', a
   await expect(page.getByRole('button', { name: 'Open Old Mill' })).toBeVisible()
   // The sidebar lists maps too.
   await expect(page.getByRole('region', { name: 'Maps' }).getByRole('button', { name: 'Old Mill' })).toBeVisible()
+  await page.getByRole('region', { name: 'Maps' }).getByRole('button', { name: 'Old Mill' }).click({ button: 'middle' })
+  await expect(page.getByRole('button', { name: 'Close Old Mill' })).toBeVisible()
+  await expect(page.locator('[data-map-list]').getByRole('button', { name: 'New map', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Close Old Mill' }).click()
   await page.locator('[data-map-list]').getByRole('button', { name: 'New map', exact: true }).click()
   await expect(page.getByRole('img', { name: 'Map' })).toBeVisible()
   await expect.poll(() => project.listNodes({ type: 'map' }).length).toBe(2)

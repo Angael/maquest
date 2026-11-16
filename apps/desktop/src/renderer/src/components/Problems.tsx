@@ -8,6 +8,7 @@ import { useUI } from '../lib/store'
 import { useTypes } from '../lib/styles'
 import { Button, IconButton, Input, Menu, MenuItem, MenuLabel, MenuSeparator, Popover, Segmented, cn } from './ui'
 import { GhostSelect } from './inspector/fields'
+import { nodeLinkProps } from '../lib/nodeLink'
 
 const SEVERITY: Record<Severity, { icon: LucideIcon; label: string; plural: string; className: string }> = {
   error: { icon: CircleAlert, label: 'Error', plural: 'Errors', className: 'text-danger' },
@@ -225,7 +226,7 @@ function IssueRow({ issue, close }: { issue: Issue; close: () => void }) {
         {(node || board) && (
           <button
             type="button"
-            onClick={open}
+            {...(node ? nodeLinkProps(node.id, open) : { onClick: open })}
             className="mr-1.5 inline-flex max-w-full items-center gap-1 rounded align-bottom font-medium text-fg outline-none hover:underline hover:decoration-fg-faint hover:underline-offset-2 focus-visible:ring-2 focus-visible:ring-accent/70"
           >
             {T && <T.icon size={13} aria-hidden className="shrink-0" style={{ color: T.color }} />}

@@ -1,3 +1,4 @@
+import { nodeLinkProps } from '../../lib/nodeLink'
 import { memo, useDeferredValue, useMemo, useState, type ReactNode } from 'react'
 import { Check, Search, X } from 'lucide-react'
 import type { FieldDef, StoryNode } from '@maquest/core/schema'
@@ -18,7 +19,6 @@ import {
   type RecordEntry,
 } from '@maquest/core/sheet'
 import { useNodes } from '../../lib/queries'
-import { useUI } from '../../lib/store'
 import { useTypes } from '../../lib/styles'
 import { MarkdownPreview } from '../MarkdownEditor'
 import { Popover, cn } from '../ui'
@@ -232,7 +232,6 @@ function RecordRow({ def, record: r, linked, words, setItem }: { def: FieldDef; 
 
 /** The record's name; a record that stands for a library node links to it and shows its text on hover. */
 function RecordName({ record: r, linked, words }: { record: RecordEntry; linked?: Linked; words: string[] }) {
-  const select = useUI((s) => s.select)
   const name = <Highlight text={r.name || 'Unnamed'} words={words} />
   if (!linked) return <span className="min-w-0 text-sm leading-6 font-semibold text-fg">{name}</span>
   return (
@@ -244,7 +243,7 @@ function RecordName({ record: r, linked, words }: { record: RecordEntry; linked?
       trigger={
         <button
           type="button"
-          onClick={() => select({ kind: 'node', id: linked.node.id })}
+          {...nodeLinkProps(linked.node.id)}
           className="min-w-0 rounded-sm text-left text-sm leading-6 font-semibold text-fg underline decoration-[color-mix(in_oklab,var(--tint)_60%,transparent)] decoration-dotted decoration-1 underline-offset-[3px] outline-none hover:decoration-solid focus-visible:ring-2 focus-visible:ring-accent/70"
         >
           {name}
@@ -374,7 +373,6 @@ function Fact({ def, value, onSet }: { def: FieldDef; value: unknown; onSet?: (v
 }
 
 function RecordTile({ def, record: r, linked, words, setItem }: { def: FieldDef; record: RecordEntry; linked?: Linked; words: string[]; setItem: SetItem }) {
-  const select = useUI((s) => s.select)
   const facts = recordFacts(def)
     .filter((f) => !interactive(f) && !isEmptyValue(r.values[f.key]))
     .map((f) => fieldSummary(f, r.values[f.key]))
@@ -383,7 +381,7 @@ function RecordTile({ def, record: r, linked, words, setItem }: { def: FieldDef;
     <button
       type="button"
       data-record={r.name}
-      onClick={linked ? () => select({ kind: 'node', id: linked.node.id }) : undefined}
+      {...(linked ? nodeLinkProps(linked.node.id) : {})}
       className="flex h-full min-h-12 w-full min-w-0 flex-col items-start gap-1 rounded-lg bg-surface px-2.5 py-2 text-left shadow-[inset_0_0_0_1px_var(--color-line)] outline-none transition-[box-shadow,background-color] duration-100 hover:bg-hover hover:shadow-[inset_0_0_0_1px_var(--color-line-strong)] focus-visible:ring-2 focus-visible:ring-accent/70 data-[popup-open]:bg-hover data-[popup-open]:shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--tint)_55%,transparent)]"
     >
       <span

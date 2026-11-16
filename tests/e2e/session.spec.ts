@@ -114,8 +114,17 @@ test('middle click opens nodes as inspector tabs', async ({ desktop }) => {
   await tabs.getByRole('tab', { name: 'Hall' }).click()
   await expect(page.getByRole('textbox', { name: 'Title' })).toHaveValue('Hall')
   await page.getByRole('button', { name: 'Close Hall' }).click()
-  await expect(tabs.getByRole('tab')).toHaveText(['Cellar'])
+  await expect(tabs).toBeHidden()
   await expect(page.getByRole('textbox', { name: 'Title' })).toHaveValue('Cellar')
+})
+
+test('middle click on a sidebar row opens the node in a new tab', async ({ desktop }) => {
+  const { page, ids } = desktop
+  await page.locator(`.react-flow__node[data-id="${ids[0]}"]`).click()
+  await page.locator('[data-sidebar]').getByRole('button', { name: 'Cellar', exact: true }).click({ button: 'middle' })
+  const tabs = page.getByRole('tablist', { name: 'Open nodes' })
+  await expect(tabs.getByRole('tab')).toHaveText(['Hall', 'Cellar'])
+  await expect(tabs.getByRole('tab', { name: 'Cellar' })).toHaveAttribute('aria-selected', 'true')
 })
 
 test('typing bare list markers line by line keeps every line', async ({ desktop }) => {

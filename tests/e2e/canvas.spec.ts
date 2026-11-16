@@ -185,6 +185,26 @@ test('clicking a sidebar entry pans an off-screen card into view', async ({ desk
   await expect(card).toHaveClass(/selected/)
 })
 
+test('Ctrl+middle drag pans and the wheel zooms', async ({ desktop }) => {
+  const { page } = desktop
+  const viewport = page.locator('.react-flow__viewport')
+  const transform = () => viewport.evaluate((el) => new DOMMatrix(getComputedStyle(el).transform))
+  const box = (await page.locator('.react-flow__pane').boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  const before = await transform()
+  await page.keyboard.down('Control')
+  await page.mouse.down({ button: 'middle' })
+  await page.mouse.move(box.x + box.width / 2 + 120, box.y + box.height / 2 + 40, { steps: 4 })
+  await page.mouse.up({ button: 'middle' })
+  await page.keyboard.up('Control')
+  const after = await transform()
+  expect(Math.round(after.e - before.e)).toBe(120)
+  expect(Math.round(after.f - before.f)).toBe(40)
+  // The wheel zooms.
+  await page.mouse.wheel(0, -100)
+  await expect.poll(async () => (await transform()).a).toBeGreaterThan(after.a)
+})
+
 test('auto-layout runs the chosen style and remembers it', async ({ desktop }) => {
   const { page, project } = desktop
   const ids = [...desktop.ids, ...['Attic', 'Garden', 'Stable', 'Chapel', 'Well', 'Gate'].map((title) => project.createNode({ type: 'location', title }).id)]
@@ -218,7 +238,7 @@ test('cards in nested groups follow saved layouts after the groups are dragged',
   // A fractional zoom gives fractional drag offsets, which made carried cards drift from the saved layout.
   const pane = (await page.locator('.react-flow__pane').boundingBox())!
   await page.mouse.move(pane.x + pane.width / 2, pane.y + pane.height / 2)
-  await page.mouse.wheel(0, 37)
+  await page.mouse.wheel(0, 100)
   await page.waitForTimeout(300)
   const drag = async (group: string, dx: number, dy: number) => {
     const before = project.board().groups.find((g) => g.id === group)!.x

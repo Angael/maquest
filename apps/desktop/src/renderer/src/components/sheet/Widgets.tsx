@@ -1,3 +1,4 @@
+import { nodeLinkProps } from '../../lib/nodeLink'
 import { createElement, memo, useId, useMemo, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react'
 import { Check, Minus } from 'lucide-react'
 import type { FieldDef, StoryNode } from '@maquest/core/schema'
@@ -19,7 +20,6 @@ import {
   type FieldSection,
 } from '@maquest/core/sheet'
 import { useNodes } from '../../lib/queries'
-import { useUI } from '../../lib/store'
 import { findIcon, useTypes } from '../../lib/styles'
 import { cn } from '../ui'
 import { Records } from './Records'
@@ -694,7 +694,6 @@ function Refs({ row }: { row: FieldRow }) {
   const { data: nodes = NO_NODES } = useNodes()
   const byId = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes])
   const types = useTypes()
-  const select = useUI((s) => s.select)
   return (
     <Block def={row.def} label={fieldLabel(row.def)}>
       <div className="flex flex-wrap gap-1.5" data-widget="refs">
@@ -715,7 +714,7 @@ function Refs({ row }: { row: FieldRow }) {
             <button
               key={id}
               type="button"
-              onClick={() => select({ kind: 'node', id })}
+              {...nodeLinkProps(id)}
               className="inline-flex h-7 max-w-full items-center gap-1.5 rounded-md bg-surface pr-2.5 pl-2 text-xs text-fg shadow-[inset_0_0_0_1px_var(--color-line)] outline-none transition-[box-shadow,background-color] duration-100 hover:bg-hover hover:shadow-[inset_0_0_0_1px_var(--color-line-strong)] focus-visible:ring-2 focus-visible:ring-accent/70"
             >
               <T.icon size={13} aria-hidden style={{ color: T.color }} className="shrink-0" />

@@ -7,12 +7,12 @@ import { useUI } from '../../lib/store'
 import { EDGE_STYLE, useTypes } from '../../lib/styles'
 import { IconButton } from '../ui'
 import { SectionHeading } from './fields'
+import { nodeLinkProps } from '../../lib/nodeLink'
 
 const reveal = 'opacity-0 group-focus-within/row:opacity-100 group-hover/row:opacity-100'
 
 /** Child nodes in order. */
 export const Contains = memo(function Contains({ items }: { items: StoryNode[] }) {
-  const select = useUI((s) => s.select)
   const types = useTypes()
   if (!items.length) return null
   return (
@@ -25,7 +25,7 @@ export const Contains = memo(function Contains({ items }: { items: StoryNode[] }
             <li key={c.id}>
               <button
                 type="button"
-                onClick={() => select({ kind: 'node', id: c.id })}
+                {...nodeLinkProps(c.id)}
                 className="flex h-7 w-full min-w-0 items-center gap-2 rounded-md px-1.5 text-left text-sm text-fg-muted outline-none hover:bg-hover hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/70"
               >
                 <S.icon size={14} aria-hidden className="shrink-0" style={{ color: S.color }} />
@@ -68,7 +68,7 @@ export const Connections = memo(function Connections({ id, byId }: { id: string;
               <button
                 type="button"
                 className="flex min-w-0 items-center gap-1.5 rounded text-left text-sm text-fg-muted outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/70"
-                onClick={() => select({ kind: 'node', id: other?.id ?? (out ? e.target : e.source) })}
+                {...nodeLinkProps(other?.id ?? (out ? e.target : e.source))}
               >
                 {S && <S.icon size={13} aria-hidden className="shrink-0" style={{ color: S.color }} />}
                 <span className="truncate">{other?.title ?? (out ? e.target : e.source)}</span>

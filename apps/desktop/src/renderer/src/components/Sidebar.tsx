@@ -7,6 +7,7 @@ import { queryClient, useAction, useNodes, useOutline } from '../lib/queries'
 import { useUI } from '../lib/store'
 import { useTypes, type TypeStyle } from '../lib/styles'
 import { IconButton, cn } from './ui'
+import { openNodeTab, preventMiddleDown } from '../lib/nodeLink'
 
 /** Row being dragged in the sidebar, so siblings of the same type can show where it would land. */
 let draggedRow: { id: string; type: NodeType } | null = null
@@ -104,11 +105,12 @@ const Row = memo(function Row({
         event.currentTarget.focus()
         actions.focus(id)
       }}
+      onMouseDown={preventMiddleDown}
       onAuxClick={(event) => {
-        // Middle click opens a map in a background tab.
-        if (event.button !== 1 || type !== 'map') return
+        if (event.button !== 1) return
         event.preventDefault()
-        useUI.getState().openMap(id, true)
+        if (type === 'map') useUI.getState().openMap(id, true)
+        else openNodeTab(id)
       }}
       onKeyDown={(event) => {
         if (event.target !== event.currentTarget) return

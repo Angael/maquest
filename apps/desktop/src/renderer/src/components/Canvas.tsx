@@ -6,7 +6,6 @@ import {
   MarkerType,
   Panel,
   ReactFlow,
-  PanOnScrollMode,
   SelectionMode,
   useReactFlow,
   type Connection,
@@ -60,6 +59,7 @@ import { CanvasControls, CanvasMinimap } from './canvas/CanvasControls'
 import { ViewMenu } from './canvas/ViewMenu'
 import { AddNodeMenu, NodeMenu } from './canvas/menus'
 import { PhaseLanes } from './canvas/PhaseLanes'
+import { useCanvasNavigation } from './canvas/useCanvasNavigation'
 import { hoverEdge, hoverNode } from './canvas/hover'
 import { FIT_VIEW, cardSize, isCard, reuseItems, type AnyFlowNode, type CardFlowNode } from './canvas/shared'
 
@@ -229,6 +229,7 @@ export function Canvas() {
   )
   const [nodeMenu, setNodeMenu] = useState<{ x: number; y: number; ids: string[] } | null>(null)
   const middlePress = useRef<{ x: number; y: number } | null>(null)
+  useCanvasNavigation(workspace)
   const openNodeMenu = (event: { preventDefault: () => void; clientX: number; clientY: number }, id?: string) => {
     event.preventDefault()
     if (readOnly) return
@@ -905,7 +906,10 @@ export function Canvas() {
         if (e.button === 0) return
         // Middle and right presses never focus or select a card: they pan or open its menu.
         if ((e.target as Element).closest('.react-flow__node')) e.preventDefault()
-        if (e.button === 1) middlePress.current = { x: e.clientX, y: e.clientY }
+        if (e.button === 1) {
+          e.preventDefault() // No autoscroll; middle drag pans the canvas.
+          middlePress.current = { x: e.clientX, y: e.clientY }
+        }
       }}
       onAuxClick={(e) => {
         // A middle click (not a pan) on a card opens it in a new inspector tab.
@@ -1009,9 +1013,7 @@ export function Canvas() {
         selectionMode={SelectionMode.Partial}
         multiSelectionKeyCode={['Control', 'Meta', 'Shift']}
         selectionKeyCode={null}
-        panOnDrag={[1]}
-        panOnScroll
-        panOnScrollMode={PanOnScrollMode.Free}
+        panOnDrag={false}
         deleteKeyCode={null}
         minZoom={0.1}
         onlyRenderVisibleElements

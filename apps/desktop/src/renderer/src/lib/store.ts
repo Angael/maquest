@@ -85,6 +85,9 @@ type UI = {
 
 const toggle = <T>(list: T[], v: T) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v])
 
+/** A lone tab for the viewed node is just the normal view, so drop it and hide the strip. */
+const solo = (tabs: string[], viewed: string | null | undefined) => (tabs.length === 1 && tabs[0] === viewed ? [] : tabs)
+
 export const useUI = create<UI>()(
   persist(
     (set) => ({
@@ -147,15 +150,15 @@ export const useUI = create<UI>()(
         set((s) => {
           const i = s.tabs.indexOf(id)
           const tabs = s.tabs.filter((t) => t !== id)
-          if (s.selection?.kind !== 'node' || s.selection.id !== id) return { tabs }
+          if (s.selection?.kind !== 'node' || s.selection.id !== id) return { tabs: solo(tabs, s.selection?.kind === 'node' ? s.selection.id : null) }
           const next = tabs[Math.min(i, tabs.length - 1)]
-          return { tabs, selection: next ? { kind: 'node', id: next } : null, selectedNodeIds: next ? [next] : [] }
+          return { tabs: solo(tabs, next), selection: next ? { kind: 'node', id: next } : null, selectedNodeIds: next ? [next] : [] }
         }),
       setTabs: (tabs, focus) =>
         set((s) => {
           const viewed = s.selection?.kind === 'node' ? s.selection.id : null
-          if (!viewed || !focus || !s.tabs.includes(viewed) || tabs.includes(viewed)) return { tabs }
-          return { tabs, selection: { kind: 'node', id: focus }, selectedNodeIds: [focus] }
+          if (!viewed || !focus || !s.tabs.includes(viewed) || tabs.includes(viewed)) return { tabs: solo(tabs, viewed) }
+          return { tabs: solo(tabs, focus), selection: { kind: 'node', id: focus }, selectedNodeIds: [focus] }
         }),
       setLiveNotesOpen: (liveNotesOpen) => set({ liveNotesOpen }),
       setLiveNotesSize: (liveNotesSize) => set({ liveNotesSize }),

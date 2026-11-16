@@ -15,6 +15,7 @@ import { useNodes } from '../lib/queries'
 import { useUI } from '../lib/store'
 import { livePreview, setNodeTitles } from '../lib/livePreview'
 import { cn } from './ui'
+import { nodeLinkProps, openNodeTab } from '../lib/nodeLink'
 
 const NO_NODES: { id: string; title: string }[] = []
 const embed = (paths: string[]) => paths.map((p) => `![${p.split('/').pop()}](${p})`).join('\n')
@@ -104,7 +105,7 @@ export function MarkdownPreview({ source, breaks }: { source: string; breaks?: b
             ),
           a: ({ href, children }) =>
             href?.startsWith('#node:') ? (
-              <a href="#" onClick={(e) => (e.preventDefault(), select({ kind: 'node', id: href.slice(6) }))}>
+              <a href="#" {...nodeLinkProps(href.slice(6))} onClick={(e) => (e.preventDefault(), select({ kind: 'node', id: href.slice(6) }))}>
                 {children}
               </a>
             ) : (
@@ -161,7 +162,7 @@ export const MarkdownEditor = memo(function MarkdownEditor({
       EditorView.lineWrapping,
       mediaHandlers,
       editorTheme,
-      livePreview({ open: (id) => select({ kind: 'node', id }) }),
+      livePreview({ open: (id, newTab) => (newTab ? openNodeTab(id) : select({ kind: 'node', id })) }),
     ],
     [select],
   )

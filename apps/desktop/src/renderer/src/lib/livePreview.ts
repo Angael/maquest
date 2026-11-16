@@ -12,8 +12,8 @@ type SyntaxNode = ReturnType<typeof syntaxTree>['topNode']
  * The document text is never rewritten, only decorated.
  */
 export interface LivePreviewOptions {
-  /** Called when a `[[node-id]]` chip is clicked. */
-  open: (id: string) => void
+  /** Called when a node link is clicked; `newTab` on a middle click. */
+  open: (id: string, newTab?: boolean) => void
 }
 
 /** Replaces the node id -> title map used to label `[[node-id]]` chips. */
@@ -124,7 +124,7 @@ class NodeLinkWidget extends WidgetType {
   constructor(
     readonly id: string,
     readonly label: string,
-    readonly open: (id: string) => void,
+    readonly open: (id: string, newTab?: boolean) => void,
   ) {
     super()
   }
@@ -137,8 +137,10 @@ class NodeLinkWidget extends WidgetType {
     el.textContent = this.label
     el.title = this.id
     el.addEventListener('mousedown', (e) => {
+      if (e.button !== 0 && e.button !== 1) return
+      // preventDefault also stops a middle press from autoscrolling or pasting the X11 selection.
       e.preventDefault()
-      this.open(this.id)
+      this.open(this.id, e.button === 1)
     })
     return el
   }
@@ -398,17 +400,19 @@ const lineActive = (view: EditorView, pos: number) => {
 const linkClick = (opts: LivePreviewOptions) =>
   EditorView.domEventHandlers({
     mousedown(e, view) {
-      if (e.button !== 0 || e.shiftKey || e.altKey) return false
+      const middle = e.button === 1
+      if ((e.button !== 0 && !middle) || e.shiftKey || e.altKey) return false
       const pos = view.posAtCoords({ x: e.clientX, y: e.clientY })
       if (pos == null) return false
-      if (!(e.metaKey || e.ctrlKey) && lineActive(view, pos)) return false
+      // A middle click on a link opens it in a new tab even on the line being edited.
+      if (!middle && !(e.metaKey || e.ctrlKey) && lineActive(view, pos)) return false
       const link = linkAt(view, pos)
       if (!link) return false
       e.preventDefault()
-      if ('node' in link) opts.open(link.node)
+      if ('node' in link) opts.open(link.node, middle)
       else if (link.url.startsWith('media/')) openImage(mediaUrl(link.url))
       else if (/^[a-z][a-z0-9+.-]*:/i.test(link.url)) window.open(link.url, '_blank', 'noreferrer')
-      else opts.open(link.url.replace(/^#?(node:)?/, ''))
+      else opts.open(link.url.replace(/^#?(node:)?/, ''), middle)
       return true
     },
   })
