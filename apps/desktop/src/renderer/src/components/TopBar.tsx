@@ -17,6 +17,7 @@ import {
   PanelLeft,
   Search,
   Shapes,
+  X,
 } from 'lucide-react'
 import { api } from '../lib/api'
 import { useCurrent, useNodes, useRecent } from '../lib/queries'
@@ -31,6 +32,7 @@ export const MOD = window.maquest.platform === 'darwin' ? '⌘' : 'Ctrl'
 
 const VIEWS: { id: View; label: string; icon: typeof Network }[] = [
   { id: 'canvas', label: 'Canvas', icon: Network },
+  { id: 'maps', label: 'Maps', icon: MapIcon },
   { id: 'backlog', label: 'Backlog', icon: Lightbulb },
   { id: 'guidelines', label: 'Guidelines', icon: BookMarked },
   { id: 'types', label: 'Types', icon: Shapes },
@@ -138,40 +140,80 @@ function SidebarToggle() {
   )
 }
 
+const tabClass = (on: boolean) =>
+  cn(
+    'flex h-7 items-center gap-1.5 rounded-md px-2 text-sm font-medium outline-none focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent transition-colors duration-100',
+    on ? 'bg-active text-fg' : 'text-fg-subtle hover:bg-hover hover:text-fg',
+  )
+
 function ViewTabs() {
   const view = useUI((s) => s.view)
   const setView = useUI((s) => s.setView)
   const { data: nodes } = useNodes()
   const ideas = useMemo(() => nodes?.reduce((count, n) => count + (n.type === 'idea' ? 1 : 0), 0) ?? 0, [nodes])
-  // The map view shows up once a map has been opened.
-  const map = useUI((s) => s.map)
-  const mapTitle = map ? (nodes?.find((n) => n.id === map)?.title ?? null) : null
-  const views = mapTitle ? [VIEWS[0], { id: 'map' as const, label: mapTitle, icon: MapIcon }, ...VIEWS.slice(1)] : VIEWS
   return (
-    <nav aria-label="Views" className="flex items-center gap-0.5">
-      {views.map(({ id, label, icon: Icon }) => {
+    <nav aria-label="Views" className="flex min-w-0 items-center gap-0.5">
+      {VIEWS.map(({ id, label, icon: Icon }) => {
         const on = view === id
         return (
-          <button
-            key={id}
-            type="button"
-            aria-current={on ? 'page' : undefined}
-            onClick={() => setView(id)}
-            className={cn(
-              'flex h-7 items-center gap-1.5 rounded-md px-2 text-sm font-medium outline-none focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent transition-colors duration-100',
-              on ? 'bg-active text-fg' : 'text-fg-subtle hover:bg-hover hover:text-fg',
-            )}
-          >
-            <Icon size={14} aria-hidden className={on ? 'text-fg-muted' : undefined} />
-            <span className="max-w-40 truncate">{label}</span>
-            {id === 'backlog' && ideas > 0 && (
-              <span className="tabular -mr-0.5 ml-0.5 rounded-[4px] bg-active px-1 text-2xs leading-4 text-fg-muted">{ideas}</span>
-            )}
-          </button>
+          <span key={id} className="contents">
+            <button type="button" aria-current={on ? 'page' : undefined} onClick={() => setView(id)} className={tabClass(on)}>
+              <Icon size={14} aria-hidden className={on ? 'text-fg-muted' : undefined} />
+              <span className="max-w-40 truncate">{label}</span>
+              {id === 'backlog' && ideas > 0 && (
+                <span className="tabular -mr-0.5 ml-0.5 rounded-[4px] bg-active px-1 text-2xs leading-4 text-fg-muted">{ideas}</span>
+              )}
+            </button>
+            {id === 'maps' && <MapTabs />}
+          </span>
         )
       })}
     </nav>
   )
+}
+
+/** One tab per open map, right after Maps; middle click or the cross closes it. */
+function MapTabs() {
+  const maps = useUI((s) => s.maps)
+  const current = useUI((s) => (s.view === 'map' ? s.map : null))
+  const { data: nodes } = useNodes()
+  const titles = useMemo(() => new Map(nodes?.map((n) => [n.id, n.title])), [nodes])
+  // Maps deleted on disk (or by an agent) lose their tab.
+  useEffect(() => {
+    if (!nodes) return
+    for (const id of maps) if (!titles.has(id)) useUI.getState().closeMap(id)
+  }, [maps, nodes, titles])
+  return maps
+    .filter((id) => titles.has(id))
+    .map((id) => {
+      const on = current === id
+      const title = titles.get(id)!
+      return (
+        <div
+          key={id}
+          className={cn(tabClass(on), 'group/tab gap-1 pr-0.5')}
+          onAuxClick={(e) => e.button === 1 && useUI.getState().closeMap(id)}
+          onMouseDown={(e) => e.button === 1 && e.preventDefault()}
+        >
+          <button
+            type="button"
+            aria-current={on ? 'page' : undefined}
+            onClick={() => useUI.getState().openMap(id)}
+            className="flex h-full min-w-0 items-center gap-1.5 outline-none"
+          >
+            <MapIcon size={14} aria-hidden className={cn('shrink-0', on ? 'text-accent-text' : undefined)} />
+            <span className="max-w-36 truncate">{title}</span>
+          </button>
+          <IconButton
+            icon={X}
+            size="sm"
+            label={`Close ${title}`}
+            className={cn('size-5 opacity-0 group-hover/tab:opacity-100 focus-visible:opacity-100', on && 'opacity-100')}
+            onClick={() => useUI.getState().closeMap(id)}
+          />
+        </div>
+      )
+    })
 }
 
 function SearchTrigger() {

@@ -3,7 +3,7 @@ import { ChevronRight, Plus } from 'lucide-react'
 import type { NodeType, OutlineNode, StoryNode } from '@maquest/core/schema'
 import { NODE_DRAG_TYPE, useCreateNode, useRevealNode } from '../lib/actions'
 import { api } from '../lib/api'
-import { useAction, useNodes, useOutline } from '../lib/queries'
+import { queryClient, useAction, useNodes, useOutline } from '../lib/queries'
 import { useUI } from '../lib/store'
 import { useTypes, type TypeStyle } from '../lib/styles'
 import { IconButton, cn } from './ui'
@@ -54,7 +54,8 @@ const Row = memo(function Row({
   reorderable?: boolean
 }) {
   const [dropAt, setDropAt] = useState<'before' | 'after' | null>(null)
-  const selected = useUI((s) => s.selection?.kind === 'node' && s.selection.id === id)
+  // A map row is current while its map is shown; other rows follow the selection.
+  const selected = useUI((s) => (type === 'map' ? s.view === 'map' && s.map === id : s.selection?.kind === 'node' && s.selection.id === id))
   const actions = useActions()
   const child = CHILD[type]
   const Icon = style.icon
@@ -102,6 +103,12 @@ const Row = memo(function Row({
       onClick={(event) => {
         event.currentTarget.focus()
         actions.focus(id)
+      }}
+      onAuxClick={(event) => {
+        // Middle click opens a map in a background tab.
+        if (event.button !== 1 || type !== 'map') return
+        event.preventDefault()
+        useUI.getState().openMap(id, true)
       }}
       onKeyDown={(event) => {
         if (event.target !== event.currentTarget) return
@@ -229,7 +236,7 @@ export function Sidebar() {
     for (const n of nodes ?? []) map.set(n.type, [...(map.get(n.type) ?? []), n])
     return map
   }, [nodes])
-  const sections = useMemo(() => [...types.list.filter((t) => t.entity), types.of('note')], [types])
+  const sections = useMemo(() => [...types.list.filter((t) => t.entity), types.of('map'), types.of('note')], [types])
 
   // Rows only see stable callbacks; the latest closures live in a ref.
   const latest = useRef({ create, reveal, select, byType, reorder })
@@ -238,8 +245,19 @@ export function Sidebar() {
   })
   const actions = useMemo<Actions>(
     () => ({
-      focus: (id) => (useUI.getState().view === 'canvas' ? latest.current.reveal(id) : latest.current.select({ kind: 'node', id })),
-      create: (type, parent) => void latest.current.create(type, { parent }),
+      focus: (id) => {
+        // Maps open in their own tab.
+        if (latest.current.byType.get('map')?.some((n) => n.id === id)) return useUI.getState().openMap(id)
+        if (useUI.getState().view === 'canvas') latest.current.reveal(id)
+        else latest.current.select({ kind: 'node', id })
+      },
+      create: (type, parent) =>
+        void (type === 'map'
+          ? api.createMap('New map').then(async (n) => {
+              await queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] !== 'app' })
+              useUI.getState().openMap(n.id)
+            })
+          : latest.current.create(type, { parent })),
       /** Drag-and-drop within a section: rewrites the order of that type's nodes. */
       move: (type, target, dragged, after) => {
         const ids = (latest.current.byType.get(type) ?? []).map((n) => n.id).filter((id) => id !== dragged)
