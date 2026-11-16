@@ -505,3 +505,7 @@ textarea::placeholder {
 .record-text .prose-md :is(p, ul, ol) {
   @apply my-0.5;
 }
+.canvas-panning,
+.canvas-panning * {
+  cursor: grabbing !important;
+}
