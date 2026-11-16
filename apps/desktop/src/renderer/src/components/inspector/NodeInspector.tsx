@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useDebouncedCallback } from 'use-debounce'
-import { CopyPlus, FolderOpen, Gauge, ImagePlus, Inbox, Link2, Plus, TextCursorInput, Trash2 } from 'lucide-react'
+import { CopyPlus, FolderOpen, Map as MapIcon, Gauge, ImagePlus, Inbox, Link2, Plus, TextCursorInput, Trash2 } from 'lucide-react'
 import { ALLOWED_PARENTS, type NodeType, type Status, type StoryNode } from '@maquest/core/schema'
 import { api } from '../../lib/api'
 import { currentBoardId, queryClient, useAction, useNodes } from '../../lib/queries'
@@ -16,6 +16,7 @@ import { Connections, Contains } from './Connections'
 import { Sheet, useSheet } from '../sheet/Sheet'
 import { FieldInput, fieldPatch } from '../sheet/FieldForm'
 import { mergeValues, propertyRows } from '@maquest/core/sheet'
+import { MapThumb } from '../map/MapThumb'
 
 type Draft = Pick<StoryNode, 'title' | 'summary' | 'body' | 'fields' | 'tags'>
 /** Unsaved changes; `fields` holds only changed keys, null marking removal (maps merge one level, like the server). */
@@ -114,6 +115,23 @@ export function NodeInspector({ id }: { id: string }) {
           onChange={(e) => change({ summary: oneLine(e.target.value) })}
         />
       </div>
+
+      {node.type === 'map' && (
+        <div className="mt-3 px-4">
+          <button
+            type="button"
+            onClick={() => useUI.getState().openMap(node.id)}
+            className="group/map relative block w-full overflow-hidden rounded-lg shadow-[inset_0_0_0_1px_var(--color-line)] outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            aria-label={`Open map ${node.title}`}
+          >
+            <MapThumb id={node.id} className="max-h-64" />
+          </button>
+          <Button variant="subtle" size="md" className="mt-2 w-full" onClick={() => useUI.getState().openMap(node.id)}>
+            <MapIcon size={14} aria-hidden />
+            Open map editor
+          </Button>
+        </div>
+      )}
 
       <div
         className="mt-3 px-4"

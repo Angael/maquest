@@ -11,7 +11,7 @@ export type AnyFlowNode = CardFlowNode | GroupFlowNode
 export const isCard = (n: FlowNode): n is CardFlowNode => n.type === 'card'
 
 export const cardSize = (n: CardFlowNode) => ({
-  width: n.measured?.width ?? (n.data.node.type === 'media' ? 288 : CARD_SIZE.width),
+  width: n.measured?.width ?? (n.data.node.type === 'media' || n.data.node.type === 'map' ? 288 : CARD_SIZE.width),
   height: n.measured?.height ?? CARD_SIZE.height,
 })
 

@@ -4,7 +4,7 @@ import type { EdgeType, NodeType } from '@maquest/core/schema'
 import { entityOf } from '@maquest/core/schema'
 import type { LayoutMode } from '@maquest/core/layout'
 
-export type View = 'canvas' | 'backlog' | 'guidelines' | 'types'
+export type View = 'canvas' | 'backlog' | 'guidelines' | 'types' | 'map'
 export type Selection = { kind: 'node'; id: string } | { kind: 'edge'; id: string } | null
 
 type UI = {
@@ -20,6 +20,10 @@ type UI = {
   board: string
   /** Guideline open in the Guidelines view. */
   guideline: string | null
+  /** Map node open in the Map view. */
+  map: string | null
+  /** Opens a map node in the map editor. */
+  openMap: (id: string) => void
   /** 'focus' shows edge names only for hovered / selected / focused lines. */
   edgeLabels: 'focus' | 'always'
   /** Draw involves/located-at/member-of/owns as lines instead of chips on the card. */
@@ -83,6 +87,15 @@ export const useUI = create<UI>()(
       connectType: 'auto',
       board: 'main',
       guideline: null,
+      map: null,
+      openMap: (map) =>
+        set((s) => ({
+          map,
+          view: 'map',
+          ...(s.view === 'map' ? {} : { viewSelections: { ...s.viewSelections, [s.view]: { selection: s.selection, selectedNodeIds: s.selectedNodeIds } } }),
+          selection: null,
+          selectedNodeIds: [],
+        })),
       edgeLabels: 'focus',
       referenceLines: false,
       layoutMode: 'smart',

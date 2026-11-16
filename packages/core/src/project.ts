@@ -10,6 +10,7 @@ import { arrange, type LayoutMode } from './layout'
 import { RULES, runChecks, type CheckReport, type QuickFix } from './checks'
 import { isEmptyValue, mergeValues, plainText, propertyRows } from './sheet'
 import type { EdgeType } from './schema'
+import { MapDoc, applyMapOps, emptyMap, stringifyMap, type MapOp } from './map'
 import {
   ALLOWED_PARENTS,
   Board,
@@ -68,6 +69,8 @@ export const GUIDELINE_USAGE_FILE = 'usage.json'
 /** Scratch notes the author jots down mid-session for the agent to pick up. */
 export const LIVE_NOTES_FILE = 'live-notes.md'
 export const MEDIA_DIR = 'media'
+/** Map documents sit next to their node file: maps/<id>.map.json. */
+export const MAP_EXT = '.map.json'
 
 export class MaquestError extends Error {}
 
@@ -716,6 +719,7 @@ export class Project {
           : (tpl?.body ?? '')),
     }
     this.writeNode(node)
+    if (input.type === 'map' && !fs.existsSync(this.mapPath(id))) this.writeMap(id, emptyMap())
     return this.requireNode(id)
   }
 
@@ -792,6 +796,8 @@ export class Project {
     const { path: oldPath, ...rest } = cur
     this.writeNode({ ...rest, id: next, updated: new Date().toISOString() })
     fs.rmSync(path.join(this.root, oldPath), { force: true })
+    const oldMap = path.join(this.root, oldPath.replace(/\.md$/, MAP_EXT))
+    if (fs.existsSync(oldMap)) fs.renameSync(oldMap, path.join(this.root, path.dirname(oldPath), `${next}${MAP_EXT}`))
     for (const child of this.children(id)) {
       const { path: _path, ...c } = child
       this.writeNode({ ...c, parent: next })
@@ -852,6 +858,7 @@ export class Project {
       this.relink(id, opts.replaceWith)
     }
     fs.rmSync(path.join(this.root, n.path), { force: true })
+    fs.rmSync(path.join(this.root, n.path.replace(/\.md$/, MAP_EXT)), { force: true })
     deleted.push(id)
     const g = this.graph()
     g.edges = g.edges.filter((e) => e.source !== id && e.target !== id)
@@ -1344,6 +1351,45 @@ export class Project {
     const file = path.join(this.root, LIVE_NOTES_FILE)
     if (!text.trim()) fs.rmSync(file, { force: true })
     else writeAtomic(file, text)
+  }
+
+  // ---------- maps ----------
+
+  /** Absolute path of a map node's document (next to its .md file). */
+  mapPath(id: string): string {
+    const n = this.requireNode(id)
+    if (n.type !== 'map') throw new MaquestError(`${id} is a ${n.type}, not a map`)
+    return path.join(this.root, n.path.replace(/\.md$/, MAP_EXT))
+  }
+
+  /** A map's document; a missing file reads as an empty map. Invalid files throw with the problems. */
+  readMap(id: string): MapDoc {
+    const file = this.mapPath(id)
+    if (!fs.existsSync(file)) return emptyMap()
+    let raw: unknown
+    try {
+      raw = JSON.parse(fs.readFileSync(file, 'utf8'))
+    } catch (e) {
+      throw new MaquestError(`${path.relative(this.root, file)} is not valid JSON: ${(e as Error).message}`)
+    }
+    const parsed = MapDoc.safeParse(raw)
+    if (!parsed.success)
+      throw new MaquestError(
+        `${path.relative(this.root, file)} is not a valid map: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`,
+      )
+    return parsed.data
+  }
+
+  writeMap(id: string, doc: MapDoc): MapDoc {
+    const valid = MapDoc.parse(doc)
+    writeAtomic(this.mapPath(id), stringifyMap(valid))
+    return valid
+  }
+
+  editMap(id: string, ops: MapOp[]): { doc: MapDoc; results: string[] } {
+    const r = applyMapOps(this.readMap(id), ops)
+    this.writeMap(id, r.doc)
+    return r
   }
 
   // ---------- media ----------

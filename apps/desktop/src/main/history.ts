@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { GRAPH_FILE, Graph, MaquestError, parseFrontmatter, type Board, type Edge, type Position, type Project } from '@maquest/core'
+import { GRAPH_FILE, MAP_EXT, Graph, MaquestError, parseFrontmatter, type Board, type Edge, type Position, type Project } from '@maquest/core'
 
 type Snapshot = { files: Map<string, string>; graph: Graph }
 type Change<T> = { key: string; before: T | undefined; after: T | undefined }
@@ -22,7 +22,7 @@ function snapshot(project: Project): Snapshot {
     const absolute = path.join(project.root, dir)
     if (!fs.existsSync(absolute)) continue
     for (const name of fs.readdirSync(absolute)) {
-      if (name.endsWith('.md')) files.set(path.join(dir, name), fs.readFileSync(path.join(absolute, name), 'utf8'))
+      if (name.endsWith('.md') || name.endsWith(MAP_EXT)) files.set(path.join(dir, name), fs.readFileSync(path.join(absolute, name), 'utf8'))
     }
   }
   // A malformed graph must never be silently replaced by history restoration.
@@ -120,11 +120,18 @@ export class ProjectHistory {
     apply(members, entry.members)
 
     // Check relationships against the merged result, including new external links/children.
-    const ids = new Set([...files.keys()].map((file) => path.basename(file, '.md')))
-    if (ids.size !== files.size) throw new MaquestError('Cannot restore history: a node id is already used in another folder. No files were changed.')
-    const removedIds = new Set([...current.files.keys()].map((file) => path.basename(file, '.md')).filter((id) => !ids.has(id)))
+    // Map documents (maps/x.map.json) travel with their node file; only .md files are nodes.
+    const nodeFiles = [...files].filter(([file]) => file.endsWith('.md'))
+    const ids = new Set(nodeFiles.map(([file]) => path.basename(file, '.md')))
+    if (ids.size !== nodeFiles.length) throw new MaquestError('Cannot restore history: a node id is already used in another folder. No files were changed.')
+    const removedIds = new Set(
+      [...current.files.keys()]
+        .filter((file) => file.endsWith('.md'))
+        .map((file) => path.basename(file, '.md'))
+        .filter((id) => !ids.has(id)),
+    )
     const changedFiles = new Set(entry.files.map((delta) => delta.key))
-    for (const [file, content] of files) {
+    for (const [file, content] of nodeFiles) {
       const parent = parseFrontmatter(content).data.parent
       if (typeof parent === 'string' && !ids.has(parent) && (removedIds.has(parent) || changedFiles.has(file))) {
         throw new MaquestError(`Cannot restore history: ${file} refers to missing parent ${parent}. No files were changed.`)
