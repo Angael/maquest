@@ -85,7 +85,7 @@ export const Records = memo(function Records({ row, onSet }: { row: FieldRow; on
     })
 
   return (
-    <Block label={fieldLabel(row.def)} aside={records.length > 1 ? `${records.length}` : undefined}>
+    <Block def={row.def} label={fieldLabel(row.def)} aside={records.length > 1 ? `${records.length}` : undefined}>
       <div data-widget="records" className="space-y-2.5">
         {records.length >= SEARCH_FROM && (
           <div className="flex flex-wrap items-center gap-1.5">
@@ -207,7 +207,8 @@ function Highlight({ text, words }: { text: string; words: string[] }) {
 }
 
 function RecordRow({ def, record: r, linked, words, setItem }: { def: FieldDef; record: RecordEntry; linked?: Linked; words: string[]; setItem: SetItem }) {
-  const shared = linked?.node.summary?.trim()
+  // Without its own text a record shows its library node's description, so the sheet says what it does.
+  const shared = linked?.node.body.trim() || linked?.node.summary?.trim()
   return (
     <li data-record={r.name} className="border-t border-line px-3 py-2 first:border-t-0">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -219,7 +220,11 @@ function RecordRow({ def, record: r, linked, words, setItem }: { def: FieldDef; 
           <MarkdownPreview source={r.text} />
         </div>
       ) : (
-        shared && <p className="mt-0.5 text-sm leading-5 text-fg-subtle">{shared}</p>
+        shared && (
+          <div className="card-text record-text text-fg-muted" data-library-text>
+            <MarkdownPreview source={shared} />
+          </div>
+        )
       )}
     </li>
   )

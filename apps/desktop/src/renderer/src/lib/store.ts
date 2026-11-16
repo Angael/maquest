@@ -20,6 +20,8 @@ type UI = {
   board: string
   /** Guideline open in the Guidelines view. */
   guideline: string | null
+  /** Type the Types view shows. */
+  typeFocus: string
   /** 'focus' shows edge names only for hovered / selected / focused lines. */
   edgeLabels: 'focus' | 'always'
   /** Draw involves/located-at/member-of/owns as lines instead of chips on the card. */
@@ -66,6 +68,9 @@ type UI = {
   setConnectType: (t: EdgeType | 'auto') => void
   setBoard: (id: string) => void
   setGuideline: (id: string | null) => void
+  /** Opens the Types view on a type. */
+  openType: (id: string) => void
+  setTypeFocus: (id: string) => void
   setLayoutMode: (mode: LayoutMode) => void
 }
 
@@ -83,6 +88,7 @@ export const useUI = create<UI>()(
       connectType: 'auto',
       board: 'main',
       guideline: null,
+      typeFocus: 'character',
       edgeLabels: 'focus',
       referenceLines: false,
       layoutMode: 'smart',
@@ -161,6 +167,11 @@ export const useUI = create<UI>()(
       setConnectType: (connectType) => set({ connectType }),
       setBoard: (board) => set({ board, selection: null, selectedNodeIds: [] }),
       setGuideline: (guideline) => set({ guideline }),
+      setTypeFocus: (typeFocus) => set({ typeFocus }),
+      openType: (typeFocus) => {
+        set({ typeFocus })
+        useUI.getState().setView('types')
+      },
       setLayoutMode: (layoutMode) => set({ layoutMode }),
     }),
     {

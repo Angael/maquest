@@ -54,6 +54,7 @@ import {
   recordsText,
   extraRows,
   isEmptyValue,
+  isRequired,
   type FieldDef,
   type TypeInfo,
 } from '@maquest/core'
@@ -225,7 +226,7 @@ function nodeText(p: Project, n: StoryNode, body?: { heading: string; text: stri
 function fieldsText(type: TypeInfo | undefined, n: StoryNode): string[] {
   const defined = (type?.fields ?? []).flatMap((def) => {
     const v = n.fields[def.key]
-    if (isEmptyValue(v)) return def.required ? [`${def.key}: (missing, required)`] : []
+    if (isEmptyValue(v)) return isRequired(def, n.fields) ? [`${def.key}: (missing, required)`] : []
     if (def.widget === 'records') return [`${def.key}: ${Array.isArray(v) ? v.length : 0} records\n${recordsText(def, v).replaceAll(/^## /gm, '### ')}`]
     return [`${def.key}: ${fieldSummary(def, v)}`]
   })
@@ -956,7 +957,7 @@ server.registerTool(
         .optional()
         .describe(
           `Add or change node types by id; each setting given replaces the current one, null resets it. Settings: label, plural, color (#rrggbb), icon (lucide name), dir and body (custom types only), library (reference text that same-named records link to), extends (another type id to inherit fields, and tabs unless set), omit (inherited field keys to drop), fields, tabs.
-fields: what the type's sheet holds, in order: a key (plain text) or { key, label?, widget, hint?, required?, badge? (chip on the canvas card), aliases? (other names checks map to the key), options? (allowed values), keys?/labels? (sub-keys or table columns and their labels), min?/max?, style?, modifier? ({ base, step }: scores show floor((v-base)/step)), signed?, color?, item?/titleKey?/textKey?/groupBy? (records) }. With extends, an entry with an inherited key changes just the settings it gives.
+fields: what the type's sheet holds, in order: a key (plain text) or { key, label?, widget, hint?, required?, requiredWhen? ({ otherKey: value or [values] }: required only then, e.g. a spell level when kind is "Spell"; in records it looks at the same record), icon? (lucide icon name shown with the label, e.g. "shield", "heart", "footprints"), badge? (chip on the canvas card), aliases? (other names checks map to the key), options? (allowed values), keys?/labels? (sub-keys or table columns and their labels), min?/max?, style?, modifier? ({ base, step }: scores show floor((v-base)/step)), signed?, color?, item?/titleKey?/textKey?/groupBy? (records) }. With extends, an entry with an inherited key changes just the settings it gives.
 Widgets (${WIDGETS.join(', ')}): text "label: value" (options make a choice); subtitle (italic line under the title); quote; stat (big tile: 40 or { value, note }); toggle (true/false); meter (5, "5/9" or { value, max }; style bar|ring|dots|boxes|clock); scores ({ key: number }; style grid|bars|radar|dots); pairs (named values as chips, { Stealth: 6 }); tags; list; refs (node ids); table ([{ column: value }]); records (a searchable list of records, [{ name, text, … }]: item is the schema of one record, fields of any other widget, and checks report records that don't fit it or have other keys; name (titleKey) is required, text (textKey) is the markdown description, groupBy an item key whose options order the groups; style list|cards (tiles with the text on hover); toggles and meters in records set with a click).
 tabs: the sheet in order. { title, kind: "fields", fields?: [keys] | sections?: [{ title?, fields: [keys] }] } shows fields with their widgets (with no list: every field no other fields tab lists); { title, kind: "prose", aliases? } is the body's # Title section as markdown. Fields in no tab show as properties under the title.
 Example: {"character": {"fields": [{"key": "hp", "label": "HP", "widget": "meter", "required": true, "badge": true}, {"key": "social", "widget": "scores", "style": "radar", "keys": ["knowledge", "guts", "charm"], "max": 5}, {"key": "moves", "widget": "records", "groupBy": "kind", "item": [{"key": "kind", "options": ["Basic", "Special"], "required": true}, "cost", {"key": "uses", "widget": "meter", "style": "dots"}]}], "tabs": [{"title": "Stats", "kind": "fields", "fields": ["hp", "social"]}, {"title": "Moves", "kind": "fields", "fields": ["moves"]}, {"title": "Story"}]}, "spell": {"label": "Spell", "library": true}}. null as a type resets a built-in or removes an empty custom type.`,
