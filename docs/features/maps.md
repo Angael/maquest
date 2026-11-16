@@ -5,21 +5,21 @@ feature can continue across conversations and agents. Branch for the first itera
 
 ## Requirements (from the author)
 
-- [ ] Export a map to SVG.
-- [ ] Maps can be placed on the canvas as nodes.
-- [ ] Layers; any object can be on several layers. Use case: "town before the battle" / "town after the battle" and a
+- [x] Export a map to SVG.
+- [x] Maps can be placed on the canvas as nodes.
+- [x] Layers; any object can be on several layers. Use case: "town before the battle" / "town after the battle" and a
       quick swap between them.
-- [ ] The map maker understands **walls** and **paths**:
-  - [ ] rooms, doors, curves, circles, rectangles, rotating them;
-  - [ ] boolean operators (a circle cuts out of / merges with what is under it);
-  - [ ] curves can be joined together.
-- [ ] Simple image placement.
-- [ ] Painting colors / textures underneath (terrain).
-- [ ] Light, vision and fog of war: drag player tokens through the map, the map reveals what they see.
-- [ ] Grid:
-  - [ ] customizable cell count;
-  - [ ] ruler: straight line, or "cells the cursor passed through", measured center to center;
-  - [ ] grid unit (e.g. D&D 2024 "5 ft", or "100 m") so the ruler reports real distances.
+- [x] The map maker understands **walls** and **paths**:
+  - [x] rooms, doors, curves, circles, rectangles, rotating them;
+  - [x] boolean operators (a circle cuts out of / merges with what is under it);
+  - [x] curves can be joined together.
+- [x] Simple image placement.
+- [x] Painting colors / textures underneath (terrain).
+- [x] Light, vision and fog of war: drag player tokens through the map, the map reveals what they see.
+- [x] Grid:
+  - [x] customizable cell count;
+  - [x] ruler: straight line, or "cells the cursor passed through", measured center to center;
+  - [x] grid unit (e.g. D&D 2024 "5 ft", or "100 m") so the ruler reports real distances.
 
 ## Design
 
@@ -71,22 +71,38 @@ feature can continue across conversations and agents. Branch for the first itera
 
 ## Status
 
-Phase 1 (this iteration) — core model, renderer, editor, canvas node, MCP, SVG export.
+Phase 1 is implemented on branch `feat/map-maker`. All requirements above have a first working version.
 
-| Area                                    | State       |
-| --------------------------------------- | ----------- |
-| Live note                               | done        |
-| Core schema + geometry + booleans       | in progress |
-| SVG renderer (core) + export            | todo        |
-| Map node type + storage                 | todo        |
-| Editor view (tools, select/move/rotate) | todo        |
-| Layers panel + exclusive swap           | todo        |
-| Grid settings + ruler (line / cells)    | todo        |
-| Images, terrain painting, textures      | todo        |
-| Tokens, vision, lights, fog of war      | todo        |
-| Canvas node thumbnail                   | todo        |
-| MCP `map` tool                          | todo        |
-| Tests (unit + e2e)                      | todo        |
+| Area                                                                                                                     | State | Where                                                                                        |
+| ------------------------------------------------------------------------------------------------------------------------ | ----- | -------------------------------------------------------------------------------------------- |
+| Schema, ids, layers helpers, `stringifyMap` (one object per line)                                                        | done  | `packages/core/src/map/schema.ts`                                                            |
+| Geometry: flattening, booleans (`polygon-clipping`), door cuts, sight, fog merge, ruler math                             | done  | `packages/core/src/map/geometry.ts`                                                          |
+| SVG renderer (editor, thumbnails, export), textures                                                                      | done  | `packages/core/src/map/render.ts`, `textures.ts`, `svg.ts`                                   |
+| Batch ops + agent summaries (`applyMapOps`, `mapSummary`)                                                                | done  | `packages/core/src/map/ops.ts`                                                               |
+| `map` node type, storage, rename/delete, undo history                                                                    | done  | `project.ts` (`readMap`/`writeMap`/`editMap`), `apps/desktop/src/main/history.ts`            |
+| MCP `map` tool (read / edit / export)                                                                                    | done  | `packages/mcp/src/index.ts`                                                                  |
+| Editor view: tool rail, tool options, viewport (pan/zoom, select, move, rotate, resize, point + handle editing, marquee) | done  | `apps/desktop/src/renderer/src/components/map/`                                              |
+| Room/area shapes (rect, ellipse, polygon with curves, freehand), Alt = subtract                                          | done  | `MapViewport.tsx`                                                                            |
+| Walls, paths, brush (color or texture), doors snapped to walls, images (pick or drop files), labels, lights, tokens      | done  | `MapViewport.tsx`                                                                            |
+| Combine (bake) and join/close lines                                                                                      | done  | `MapPanel.tsx` → core `bakeObjects`/`joinObjects`                                            |
+| Layers panel, exclusive groups with a swap control, "draw on layer"                                                      | done  | `MapPanel.tsx`                                                                               |
+| Grid size, unit, diagonal rule, color/opacity, export px per cell                                                        | done  | `MapPanel.tsx`                                                                               |
+| Ruler: cells walked (center to center) and straight line                                                                 | done  | `MapViewport.tsx`                                                                            |
+| Fog of war, ambient light/dim/dark, darkvision, lights; GM / Players view                                                | done  | core `sight`, `MapViewport.tsx`                                                              |
+| Canvas card thumbnail + inspector preview, Map tab in the title bar                                                      | done  | `MapThumb.tsx`, `StoryCard.tsx`                                                              |
+| SVG export (menu: map only / with tokens / as players see it / no grid)                                                  | done  | `handlers.ts` `exportMapSvg`                                                                 |
+| Tests                                                                                                                    | done  | `packages/core/src/map.test.ts`, `packages/mcp/src/server.test.ts`, `tests/e2e/maps.spec.ts` |
+
+### Known gaps (next candidates)
+
+- No in-editor clipboard (copy/paste between maps); duplicate (Ctrl+D) only.
+- Adding/removing single points on an existing path (only moving points and handles).
+- Hex grids.
+- Fog: no manual GM reveal/hide brush; explored fog is stored as polygons and can grow on very long sessions.
+- Image objects do not block sight; no "wall from image" tracing.
+- Player-facing second window.
+- Per-structure floor/wall styles (today one floor and wall style per map; walls can override color/width).
+- Undo for map edits uses the app-wide history (each commit is a step; token drags count too).
 
 ## Ideas / later
 
@@ -99,3 +115,5 @@ Phase 1 (this iteration) — core model, renderer, editor, canvas node, MCP, SVG
 ## Log
 
 - 2026-11-16 — Feature started; requirements and design written down.
+- 2026-11-16 — Phase 1 implemented: core model + geometry + renderer, MCP `map` tool, editor view with all tools,
+  layers, grid/ruler, fog of war, SVG export, canvas thumbnails, unit + MCP + e2e tests.

@@ -253,8 +253,8 @@ function ObjectFields({ o, patch }: { o: MapObject; patch: (p: Record<string, un
       )}
       {shape?.type === 'ellipse' && (
         <div className="grid grid-cols-2 gap-1.5">
-          <NumField label="Radius X" value={shape.rx} min={0.1} onChange={(rx) => patch({ shape: { ...shape, rx } })} />
-          <NumField label="Radius Y" value={shape.ry} min={0.1} onChange={(ry) => patch({ shape: { ...shape, ry } })} />
+          <NumField label="Rx" value={shape.rx} min={0.1} onChange={(rx) => patch({ shape: { ...shape, rx } })} />
+          <NumField label="Ry" value={shape.ry} min={0.1} onChange={(ry) => patch({ shape: { ...shape, ry } })} />
         </div>
       )}
       {shape?.type === 'path' && (
