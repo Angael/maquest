@@ -1,0 +1,182 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { toast } from 'sonner'
+import { ArrowLeft, Download, Eye, Maximize, ShieldUser } from 'lucide-react'
+import type { MapDoc } from '@maquest/core/map'
+import { api } from '../../lib/api'
+import { queryClient, useMap, useNode } from '../../lib/queries'
+import { useUI } from '../../lib/store'
+import { Button, IconButton, Menu, MenuItem, Segmented, cn, floating } from '../ui'
+import { MapViewport } from './MapViewport'
+import { MapPanel } from './MapPanel'
+import { ToolOptions, ToolRail, useToolKeys } from './MapToolbar'
+import { useMapUI } from './mapStore'
+import { duplicateIds, moveIds, removeIds, reorder } from './edit'
+
+/** The map editor view: the map, its tools and a side panel (selection, layers, fog, grid, style). */
+export function MapEditor() {
+  const id = useUI((s) => s.map)
+  const node = useNode(id)
+  const { data: saved, error } = useMap(id)
+  const [doc, setDoc] = useState<MapDoc | null>(null)
+  const saving = useRef(0)
+  const queue = useRef(Promise.resolve())
+  const select = useMapUI((s) => s.select)
+
+  // Files are the source of truth: take the file's version whenever it changes and no save of ours is in flight.
+  useEffect(() => {
+    if (saved && saving.current === 0) setDoc(saved)
+  }, [saved])
+  useEffect(() => {
+    select([])
+  }, [id, select])
+  // Drop selected ids that no longer exist (e.g. an agent removed them).
+  useEffect(() => {
+    if (!doc) return
+    const ids = new Set([...doc.objects.map((o) => o.id), ...doc.tokens.map((t) => t.id)])
+    const sel = useMapUI.getState().selected
+    if (sel.some((s) => !ids.has(s))) select(sel.filter((s) => ids.has(s)))
+  }, [doc, select])
+
+  const commit = useCallback(
+    (next: MapDoc) => {
+      if (!id) return
+      setDoc(next)
+      saving.current++
+      queue.current = queue.current
+        .then(() => api.saveMap(id, next))
+        .then(
+          (written) => void queryClient.setQueryData(['map', id], written),
+          (e: Error) => {
+            toast.error(`Could not save the map: ${e.message}`)
+            void queryClient.invalidateQueries({ queryKey: ['map', id] })
+          },
+        )
+        .finally(() => {
+          saving.current--
+        })
+    },
+    [id],
+  )
+
+  useToolKeys(!!doc)
+  useEditorKeys(doc, commit)
+
+  if (!id) return <Empty text="No map open. Open a map node from the canvas or the sidebar." />
+  if (error) return <Empty text={(error as Error).message} />
+  if (!doc) return null
+
+  return (
+    <div className="absolute inset-0 flex">
+      <div className="relative min-w-0 flex-1">
+        <MapViewport doc={doc} commit={commit} mapId={id} />
+        <div className="pointer-events-none absolute inset-x-3 top-3 flex items-start gap-2">
+          <div className={cn(floating, 'pointer-events-auto flex h-9 items-center gap-1 pr-2 pl-1')}>
+            <IconButton icon={ArrowLeft} label="Back to the canvas" onClick={() => useUI.getState().setView('canvas')} />
+            <span className="max-w-60 truncate font-serif text-sm font-medium text-fg">{node?.title ?? id}</span>
+          </div>
+          <div className="pointer-events-auto">
+            <ToolOptions />
+          </div>
+          <div className="flex-1" />
+          <ViewControls id={id} />
+        </div>
+        <div className="pointer-events-none absolute top-15 left-3 flex">
+          <div className="pointer-events-auto">
+            <ToolRail />
+          </div>
+        </div>
+      </div>
+      <aside aria-label="Map settings" className="flex w-76 shrink-0 flex-col border-l border-line bg-panel">
+        <MapPanel doc={doc} commit={commit} />
+      </aside>
+    </div>
+  )
+}
+
+function ViewControls({ id }: { id: string }) {
+  const viewMode = useMapUI((s) => s.viewMode)
+  const set = useMapUI((s) => s.set)
+  const exportSvg = async (opts: Parameters<typeof api.exportMapSvg>[1]) => {
+    try {
+      const file = await api.exportMapSvg(id, opts)
+      if (file) toast.success(`Exported ${file}`)
+    } catch (e) {
+      toast.error(`Export failed: ${(e as Error).message}`)
+    }
+  }
+  return (
+    <div className={cn(floating, 'pointer-events-auto flex h-9 items-center gap-1 px-1')}>
+      <Segmented
+        label="View as"
+        value={viewMode}
+        onChange={(v) => set({ viewMode: v })}
+        options={[
+          { value: 'gm', label: 'GM', icon: ShieldUser, showLabel: true },
+          { value: 'player', label: 'Players', icon: Eye, showLabel: true },
+        ]}
+      />
+      <IconButton icon={Maximize} label="Fit map to screen" onClick={() => window.dispatchEvent(new Event('maquest:map-fit'))} />
+      <Menu
+        trigger={
+          <Button size="md" variant="ghost">
+            <Download size={14} aria-hidden />
+            Export
+          </Button>
+        }
+      >
+        <MenuItem onClick={() => void exportSvg({ tokens: false })}>SVG: map only</MenuItem>
+        <MenuItem onClick={() => void exportSvg({ tokens: true })}>SVG: with tokens</MenuItem>
+        <MenuItem onClick={() => void exportSvg({ tokens: true, fog: 'player', lighting: 'player' })}>SVG: as players see it</MenuItem>
+        <MenuItem onClick={() => void exportSvg({ tokens: false, grid: false })}>SVG: no grid, no tokens</MenuItem>
+      </Menu>
+    </div>
+  )
+}
+
+function Empty({ text }: { text: string }) {
+  return <div className="flex h-full items-center justify-center p-8 text-sm text-fg-subtle">{text}</div>
+}
+
+/** Delete, duplicate, nudge, order, select all, undo/redo and Esc while the map view is open. */
+function useEditorKeys(doc: MapDoc | null, commit: (d: MapDoc) => void) {
+  useEffect(() => {
+    const keys = (e: KeyboardEvent) => {
+      const d = doc
+      if (!d || useUI.getState().view !== 'map') return
+      if (e.target instanceof Element && e.target.closest('input, textarea, select, [contenteditable], [role="menu"], [role="dialog"]')) return
+      const { selected, select, snap, set, tool } = useMapUI.getState()
+      const mod = e.ctrlKey || e.metaKey
+      const key = e.key.toLowerCase()
+      if (mod && (key === 'z' || key === 'y')) {
+        e.preventDefault()
+        void (key === 'y' || e.shiftKey ? api.redo() : api.undo()).catch((err: Error) => toast.error(err.message))
+      } else if (mod && key === 'a') {
+        e.preventDefault()
+        select([...d.objects.map((o) => o.id), ...d.tokens.map((t) => t.id)])
+      } else if (mod && key === 'd' && selected.length) {
+        e.preventDefault()
+        const r = duplicateIds(d, selected)
+        commit(r.doc)
+        select(r.ids)
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && selected.length) {
+        e.preventDefault()
+        commit(removeIds(d, selected))
+        select([])
+      } else if (e.key.startsWith('Arrow') && selected.length && !mod) {
+        e.preventDefault()
+        const by = e.shiftKey ? 0.1 : snap || 0.5
+        const dx = e.key === 'ArrowLeft' ? -by : e.key === 'ArrowRight' ? by : 0
+        const dy = e.key === 'ArrowUp' ? -by : e.key === 'ArrowDown' ? by : 0
+        commit(moveIds(d, selected, dx, dy, false))
+      } else if ((e.key === '[' || e.key === ']') && selected.length) {
+        e.preventDefault()
+        commit(reorder(d, selected, e.key === ']' ? (e.shiftKey ? 'front' : 'forward') : e.shiftKey ? 'back' : 'backward'))
+      } else if (e.key === 'Escape') {
+        if (selected.length) select([])
+        else if (tool !== 'select') set({ tool: 'select' })
+      }
+    }
+    window.addEventListener('keydown', keys)
+    return () => window.removeEventListener('keydown', keys)
+  }, [doc, commit])
+}

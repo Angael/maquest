@@ -23,6 +23,7 @@ import {
   type Position,
   type QuickFix,
 } from '@maquest/core'
+import { mapSvg, type MapDoc, type MapOp, type RenderOptions } from '@maquest/core/map'
 import { ProjectHistory } from './history'
 import { isGitRepo, syncFromRemote } from './gitSync'
 
@@ -287,9 +288,40 @@ export const handlers = {
   },
   /** Changes check rule settings (null resets a rule). */
   setChecks: (patch: Record<string, unknown>) => p().setChecks(patch),
+  // ---- maps ----
+  readMap: (id: string) => p().readMap(id),
+  /** Saves a whole map document from the editor; one undo step. */
+  saveMap: (id: string, doc: MapDoc) => history.record(p(), () => p().writeMap(id, doc)),
+  editMap: (id: string, ops: MapOp[]) => history.record(p(), () => p().editMap(id, ops).doc),
+  /** Asks where to save and writes the map as a standalone SVG (images embedded). Returns the path or null. */
+  exportMapSvg: async (id: string, opts: Pick<RenderOptions, 'grid' | 'tokens' | 'fog' | 'lighting'> = {}) => {
+    const project = p()
+    const node = project.requireNode(id)
+    const r = await dialog.showSaveDialog({
+      title: 'Export map as SVG',
+      defaultPath: path.join(app.getPath('documents'), `${node.id}.svg`),
+      filters: [{ name: 'SVG image', extensions: ['svg'] }],
+    })
+    if (r.canceled || !r.filePath) return null
+    const svg = mapSvg(project.readMap(id), { ...opts, imageHref: (src) => embedMedia(project, src) })
+    fs.writeFileSync(r.filePath, svg)
+    return r.filePath
+  },
   importMedia: (absPath: string) => p().importMedia(absPath),
   writeMedia: (name: string, data: Uint8Array) => p().writeMedia(name, data),
   listMedia: () => p().listMedia(),
+}
+
+const MIME: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', svg: 'image/svg+xml' }
+
+/** A media file as a data URI, so exported SVGs work anywhere. */
+function embedMedia(project: Project, src: string) {
+  try {
+    const ext = path.extname(src).slice(1).toLowerCase()
+    return `data:${MIME[ext] ?? 'application/octet-stream'};base64,${fs.readFileSync(project.resolve(src)).toString('base64')}`
+  } catch {
+    return src
+  }
 }
 
 export type Handlers = typeof handlers

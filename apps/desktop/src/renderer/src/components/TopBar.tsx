@@ -12,6 +12,7 @@ import {
   Lightbulb,
   LoaderCircle,
   LogOut,
+  Map as MapIcon,
   Network,
   PanelLeft,
   Search,
@@ -142,9 +143,13 @@ function ViewTabs() {
   const setView = useUI((s) => s.setView)
   const { data: nodes } = useNodes()
   const ideas = useMemo(() => nodes?.reduce((count, n) => count + (n.type === 'idea' ? 1 : 0), 0) ?? 0, [nodes])
+  // The map view shows up once a map has been opened.
+  const map = useUI((s) => s.map)
+  const mapTitle = map ? (nodes?.find((n) => n.id === map)?.title ?? null) : null
+  const views = mapTitle ? [VIEWS[0], { id: 'map' as const, label: mapTitle, icon: MapIcon }, ...VIEWS.slice(1)] : VIEWS
   return (
     <nav aria-label="Views" className="flex items-center gap-0.5">
-      {VIEWS.map(({ id, label, icon: Icon }) => {
+      {views.map(({ id, label, icon: Icon }) => {
         const on = view === id
         return (
           <button
@@ -158,7 +163,7 @@ function ViewTabs() {
             )}
           >
             <Icon size={14} aria-hidden className={on ? 'text-fg-muted' : undefined} />
-            {label}
+            <span className="max-w-40 truncate">{label}</span>
             {id === 'backlog' && ideas > 0 && (
               <span className="tabular -mr-0.5 ml-0.5 rounded-[4px] bg-active px-1 text-2xs leading-4 text-fg-muted">{ideas}</span>
             )}

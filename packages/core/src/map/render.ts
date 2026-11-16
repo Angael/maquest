@@ -191,7 +191,10 @@ export function renderMap(doc: MapDoc, opts: RenderOptions = {}): Scene {
 
   // Patterns for every textured fill in use.
   const fills: Fill[] = [doc.style.background, doc.style.floor]
-  for (const o of objects) if ((o.kind === 'area' || o.kind === 'path') && o.fill) fills.push(o.fill)
+  for (const o of objects) {
+    if ((o.kind === 'area' || o.kind === 'path') && o.fill) fills.push(o.fill)
+    if (o.kind === 'path' && o.stroke?.texture) fills.push({ texture: o.stroke.texture })
+  }
   const patterns = new Map<string, SvgEl>()
   for (const f of fills) {
     const id = textureId(f, prefix)
@@ -261,7 +264,7 @@ export function renderMap(doc: MapDoc, opts: RenderOptions = {}): Scene {
           ...(o.fill && (o.shape.type !== 'path' || o.shape.closed) ? paint(o.fill, prefix) : { fill: 'none' }),
           ...(s
             ? {
-                stroke: s.color,
+                stroke: s.texture ? `url(#${textureId({ texture: s.texture }, prefix)})` : s.color,
                 'stroke-width': s.width,
                 'stroke-linecap': 'round',
                 'stroke-linejoin': 'round',

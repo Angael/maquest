@@ -49,6 +49,8 @@ export const Stroke = z.object({
   width: z.number().positive().default(0.1),
   dash: z.array(z.number().nonnegative()).optional(),
   opacity: z.number().min(0).max(1).optional(),
+  /** Paint the stroke with a texture (built-in or media path) instead of the color, e.g. a dirt road brush. */
+  texture: z.string().optional(),
 })
 export type Stroke = z.infer<typeof Stroke>
 

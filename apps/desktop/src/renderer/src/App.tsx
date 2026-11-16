@@ -10,6 +10,7 @@ import { Inspector } from './components/Inspector'
 import { Backlog } from './components/Backlog'
 import { Guidelines } from './components/Guidelines'
 import { Types } from './components/Types'
+import { MapEditor } from './components/map/MapEditor'
 import { InspectorPanel } from './components/InspectorPanel'
 import { CommandPalette } from './components/CommandPalette'
 import { UpdateToast } from './components/UpdateToast'
@@ -62,9 +63,10 @@ function Main() {
             {view === 'backlog' && <Backlog />}
             {view === 'guidelines' && <Guidelines />}
             {view === 'types' && <Types />}
+            {view === 'map' && <MapEditor />}
             <LiveNotesPanel />
           </main>
-          {selection && view !== 'guidelines' && view !== 'types' && (
+          {selection && view !== 'guidelines' && view !== 'types' && view !== 'map' && (
             <InspectorPanel>
               <div className="flex min-h-0 w-full min-w-0 flex-col">
                 <InspectorTabs />

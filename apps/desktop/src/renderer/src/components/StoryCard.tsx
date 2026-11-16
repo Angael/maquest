@@ -1,6 +1,7 @@
 import { memo, useMemo, type CSSProperties } from 'react'
 import { Handle, Position, useConnection, type Node, type NodeProps } from '@xyflow/react'
-import { Maximize2, Pin, Search } from 'lucide-react'
+import { Map as MapIcon, Maximize2, Pin, Search } from 'lucide-react'
+import { MapThumb } from './map/MapThumb'
 import { openImage } from './Lightbox'
 import { useAction } from '../lib/queries'
 import { fieldLabel, isEmptyValue } from '@maquest/core/sheet'
@@ -29,6 +30,8 @@ export const StoryCard = memo(function StoryCard({ data, selected }: NodeProps<N
   const S = types.of(n.type)
   const cover = n.src ?? n.media[0]
   const isMedia = n.type === 'media'
+  const isMap = n.type === 'map'
+  const openMap = useUI((s) => s.openMap)
   const update = useAction(api.updateNode)
   const connecting = useConnection((c) => c.inProgress && c.fromNode.id !== n.id)
   const select = useUI((s) => s.select)
@@ -63,7 +66,7 @@ export const StoryCard = memo(function StoryCard({ data, selected }: NodeProps<N
   return (
     <div
       data-emphasis={data.emphasis}
-      className={cn('story-card group relative rounded-lg bg-surface', isMedia ? 'w-72' : 'w-64', selected && 'story-card--selected')}
+      className={cn('story-card group relative rounded-lg bg-surface', isMedia || isMap ? 'w-72' : 'w-64', selected && 'story-card--selected')}
       style={{ '--type-color': S.color } as CSSProperties}
     >
       {sides.map((p) => (
@@ -71,7 +74,22 @@ export const StoryCard = memo(function StoryCard({ data, selected }: NodeProps<N
       ))}
       {/* Easy-connect: while a line is dragged the whole card is the drop target; edges float to the facing borders. */}
       <Handle type="target" position={Position.Top} isConnectableStart={false} className={cn('card-drop', connecting && 'card-drop--active')} />
-      {cover &&
+      {isMap && (
+        <div className="relative" onDoubleClick={() => openMap(n.id)}>
+          <MapThumb id={n.id} className="max-h-48 rounded-t-lg" />
+          <button
+            type="button"
+            className={cn(reveal, 'absolute top-1.5 right-1.5 size-6 bg-app/80 text-fg-muted opacity-0 backdrop-blur-sm hover:bg-app/90')}
+            title="Open the map editor"
+            aria-label={`Open map ${n.title}`}
+            onClick={(event) => (event.stopPropagation(), openMap(n.id))}
+          >
+            <MapIcon size={12} aria-hidden />
+          </button>
+        </div>
+      )}
+      {!isMap &&
+        cover &&
         (isVideo(cover) ? (
           <video src={mediaUrl(cover)} className="pointer-events-none block max-h-40 w-full rounded-t-lg bg-app object-cover" muted loop autoPlay={isMedia} />
         ) : (
@@ -96,7 +114,7 @@ export const StoryCard = memo(function StoryCard({ data, selected }: NodeProps<N
             </button>
           </div>
         ))}
-      {isMedia && cover ? (
+      {(isMedia && cover) || isMap ? (
         <div className="card-band card-band--caption flex h-8 items-center gap-1.5 pr-1.5 pl-2.5">
           <S.icon size={12} aria-hidden className="shrink-0 text-(--type-color)" />
           <span className="min-w-0 flex-1 truncate text-xs text-fg">{n.title}</span>

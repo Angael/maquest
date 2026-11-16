@@ -36,6 +36,7 @@ export const useNodes = () => useQuery({ queryKey: ['nodes'], queryFn: () => api
 export const useGraph = () => useQuery({ queryKey: ['graph'], queryFn: () => api.graph() })
 export const useOutline = () => useQuery({ queryKey: ['outline'], queryFn: () => api.outline() })
 export const useGuidelines = () => useQuery({ queryKey: ['guidelines'], queryFn: () => api.guidelines() })
+export const useMap = (id: string | null) => useQuery({ queryKey: ['map', id], queryFn: () => api.readMap(id!), enabled: !!id })
 export const useConfig = () => useQuery({ queryKey: ['config'], queryFn: () => api.config() })
 
 /** Id of the board shown on the canvas, for imperative calls outside React. */
