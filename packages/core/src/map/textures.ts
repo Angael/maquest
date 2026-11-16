@@ -13,12 +13,31 @@ export const TEXTURE_COLORS: Record<BuiltinTexture, string> = {
   water: '#4a7fa8',
   lava: '#b8401c',
   snow: '#eef2f5',
+  brick: '#9a4f3a',
+  rock: '#6f6a62',
+  shingles: '#6b4a3a',
+  thatch: '#b89a5a',
 }
 
 export const isBuiltinTexture = (t: string): t is BuiltinTexture => (TEXTURES as readonly string[]).includes(t)
 
 /** Default tile size (cells) of each texture. */
-const TILE: Record<BuiltinTexture, number> = { grass: 2, dirt: 2, sand: 2, stone: 2, cobble: 1, wood: 2, tiles: 1, water: 3, lava: 3, snow: 2 }
+const TILE: Record<BuiltinTexture, number> = {
+  grass: 2,
+  dirt: 2,
+  sand: 2,
+  stone: 2,
+  cobble: 1,
+  wood: 2,
+  tiles: 1,
+  water: 3,
+  lava: 3,
+  snow: 2,
+  brick: 1,
+  rock: 3,
+  shingles: 1,
+  thatch: 2,
+}
 
 /** Small deterministic pseudo random sequence so textures look the same every render. */
 function rand(seed: number) {
@@ -93,6 +112,46 @@ function marks(t: BuiltinTexture): SvgEl[] {
       )
     case 'lava':
       return [...dots(10, 0.05, ['#ffbe3c', 0.35]), ...dots(14, 0.02, ['#280a00', 0.3])]
+    case 'brick':
+      return [
+        h('path', {
+          d: 'M0 0H1M0 .25H1M0 .5H1M0 .75H1M.5 0V.25M0 .25V.5M1 .25V.5M.5 .5V.75M0 .75V1M1 .75V1',
+          fill: 'none',
+          ...strokeOf(['#e8dccb', 0.45]),
+          'stroke-width': 0.03,
+        }),
+        ...dots(8, 0.02, dark),
+      ]
+    case 'rock':
+      return [
+        h('path', {
+          d: 'M0 .2L.3 .1L.55 .3L.9 .15L1 .2M.1 .55L.4 .45L.6 .62L.95 .5M0 .85L.25 .78L.5 .9L.8 .8L1 .85M.3 .1L.4 .45M.6 .62L.5 .9M.9 .15L.95 .5',
+          fill: 'none',
+          ...strokeOf(['#000000', 0.28]),
+          'stroke-width': 0.02,
+          'stroke-linejoin': 'round',
+        }),
+        ...dots(14, 0.012, light),
+      ]
+    case 'shingles':
+      return [0, 0.25, 0.5, 0.75].map((y, i) =>
+        h('path', {
+          d: Array.from({ length: 5 }, (_, k) => `M${num(k * 0.25 + (i % 2) * 0.125 - 0.125)} ${num(y)}q.125 .3 .25 0`).join(''),
+          fill: 'none',
+          ...strokeOf(dark),
+          'stroke-width': 0.02,
+        }),
+      )
+    case 'thatch':
+      return Array.from({ length: 40 }, (_, i) => {
+        const x = r()
+        const y = r()
+        return h('path', {
+          d: `M${num(x)} ${num(y)}l${num((r() - 0.5) * 0.04)} ${num(0.12 + r() * 0.08)}`,
+          ...strokeOf(i % 2 ? dark : light),
+          'stroke-width': 0.012,
+        })
+      })
   }
 }
 

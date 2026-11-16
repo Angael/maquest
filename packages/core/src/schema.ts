@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { MapDefaults } from './map/schema'
 
 /** Built-in node types. Projects can add their own entity types (see `ProjectConfig.types`). */
 export const NODE_TYPES = ['story', 'chapter', 'scene', 'note', 'character', 'location', 'faction', 'item', 'idea', 'media', 'map'] as const
@@ -732,6 +733,8 @@ export const ProjectConfig = z.object({
   checks: z.record(z.string(), z.unknown()).optional(),
   /** Project-defined declarative checks (see CustomCheck). */
   customChecks: z.array(z.unknown()).optional(),
+  /** Defaults for new maps (grid units, diagonal rule, style, fog); see MapDefaults. */
+  maps: MapDefaults.optional(),
   version: z.literal(1).default(1),
 })
 export type ProjectConfig = z.infer<typeof ProjectConfig>

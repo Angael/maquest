@@ -32,7 +32,7 @@ export const HEX = /^#[0-9a-f]{6}$/i
 const Color = z.string().regex(HEX, 'colors are #rrggbb')
 
 /** Built-in procedural textures; a media path (media/…) may be used as a texture too. */
-export const TEXTURES = ['grass', 'dirt', 'sand', 'stone', 'cobble', 'wood', 'tiles', 'water', 'lava', 'snow'] as const
+export const TEXTURES = ['grass', 'dirt', 'sand', 'stone', 'cobble', 'wood', 'tiles', 'water', 'lava', 'snow', 'brick', 'rock', 'shingles', 'thatch'] as const
 export type BuiltinTexture = (typeof TEXTURES)[number]
 
 /** A fill: a color, a texture (tinted by nothing) or both (texture over color). `scale` = cells per texture tile. */
@@ -73,8 +73,19 @@ const Base = {
 export const AreaObject = z.object({ ...Base, kind: z.literal('area'), shape: Shape, op: BoolOp.default('add'), fill: Fill.default({ color: '#6b8f4e' }) })
 /** Rooms merge (add) and cut (subtract) in order into one floor; its outline becomes walls. */
 export const RoomObject = z.object({ ...Base, kind: z.literal('room'), shape: Shape, op: BoolOp.default('add') })
-/** Free-standing wall line; blocks sight. */
-export const WallObject = z.object({ ...Base, kind: z.literal('wall'), shape: Shape, width: z.number().positive().optional(), color: Color.optional() })
+/**
+ * Free-standing wall line; blocks sight. `texture` is its material (wood, stone, brick, rock…), drawn along the line.
+ * A closed wall may have a `fill`: a solid structure seen from outside, such as a roof, a cliff or a boulder.
+ */
+export const WallObject = z.object({
+  ...Base,
+  kind: z.literal('wall'),
+  shape: Shape,
+  width: z.number().positive().optional(),
+  color: Color.optional(),
+  texture: z.string().optional(),
+  fill: Fill.optional(),
+})
 /** Decorative stroke / shape (roads, rivers, brush strokes); never blocks sight. */
 export const PathObject = z.object({ ...Base, kind: z.literal('path'), shape: Shape, stroke: Stroke.optional(), fill: Fill.optional() })
 export const DOOR_VARIANTS = ['door', 'double', 'window', 'secret'] as const
@@ -185,7 +196,10 @@ export type Fog = z.infer<typeof Fog>
 export const MapStyle = z.object({
   background: Fill.default({ color: '#d8cfb8' }),
   floor: Fill.default({ color: '#efe6d2' }),
-  wall: z.object({ color: Color.default('#2b241e'), width: z.number().positive().default(0.25) }).default({ color: '#2b241e', width: 0.25 }),
+  /** Walls of rooms (and default for wall objects): color, thickness and an optional material texture. */
+  wall: z
+    .object({ color: Color.default('#2b241e'), width: z.number().positive().default(0.25), texture: z.string().optional() })
+    .default({ color: '#2b241e', width: 0.25 }),
 })
 export type MapStyle = z.infer<typeof MapStyle>
 
@@ -201,7 +215,55 @@ export const MapDoc = z.object({
 export type MapDoc = z.infer<typeof MapDoc>
 export type MapDocInput = z.input<typeof MapDoc>
 
-export const emptyMap = (patch: { cols?: number; rows?: number } = {}): MapDoc => MapDoc.parse({ grid: patch })
+/**
+ * Project-wide defaults for new maps (`maquest.json` → `maps`): set once, e.g. the diagonal rule of the system you
+ * play, and every new map starts with them. Every field is optional.
+ */
+export const MapDefaults = z.object({
+  grid: z
+    .object({
+      cols: z.number().int().min(1).max(500).optional(),
+      rows: z.number().int().min(1).max(500).optional(),
+      size: z.number().int().min(8).max(400).optional(),
+      unit: z.object({ amount: z.number().positive(), name: z.string() }).optional(),
+      diagonal: DiagonalRule.optional(),
+      show: z.boolean().optional(),
+      color: Color.optional(),
+      opacity: z.number().min(0).max(1).optional(),
+    })
+    .optional(),
+  style: z
+    .object({
+      background: Fill.optional(),
+      floor: Fill.optional(),
+      wall: z.object({ color: Color.optional(), width: z.number().positive().optional(), texture: z.string().optional() }).optional(),
+    })
+    .optional(),
+  fog: z.object({ enabled: z.boolean().optional(), ambient: z.enum(AMBIENT).optional() }).optional(),
+})
+export type MapDefaults = z.infer<typeof MapDefaults>
+
+const clean = <T extends object>(o: T | undefined) => Object.fromEntries(Object.entries(o ?? {}).filter(([, v]) => v !== undefined)) as Partial<T>
+
+/** A new, empty map; project defaults first, then the explicit patch. */
+export function emptyMap(patch: { cols?: number; rows?: number } = {}, defaults: MapDefaults = {}): MapDoc {
+  const style = MapStyle.parse({})
+  return MapDoc.parse({
+    grid: { ...clean(defaults.grid), ...clean(patch) },
+    style: { ...style, ...clean(defaults.style), wall: { ...style.wall, ...clean(defaults.style?.wall) } },
+    fog: clean(defaults.fog),
+  })
+}
+
+/** The settings of a map that make sense as project defaults for new maps. */
+export function mapDefaultsOf(doc: MapDoc): MapDefaults {
+  const { cols, rows, size, unit, diagonal, show, color, opacity } = doc.grid
+  return {
+    grid: { cols, rows, size, unit, diagonal, show, color, opacity },
+    style: structuredClone(doc.style),
+    fog: { enabled: doc.fog.enabled, ambient: doc.fog.ambient },
+  }
+}
 
 /** Whether an object (or token) shows with the current layer visibility. */
 export function layerVisible(doc: Pick<MapDoc, 'layers'>, layers: readonly string[]) {

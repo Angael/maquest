@@ -20,6 +20,9 @@ import {
   wallGeometry,
   formatDistance,
   sightSegments,
+  intersection,
+  rectRegion,
+  visibility,
   type MapOp,
   type Pair,
 } from './map'
@@ -73,7 +76,8 @@ test('doors cut the walls and block sight only while closed', () => {
   assert.equal(geo.rooms.length, 1)
   const closed = sightSegments(geo).length
   const open = sightSegments(wallGeometry(edit(doc, [{ op: 'update', id: 'd', set: { open: true } }]))).length
-  assert.equal(closed, open + 1)
+  // The door line plus the four sides of the gap it cut.
+  assert.equal(closed, open + 5)
 })
 
 test('fog: a player inside a closed room sees only the room; explored grows', () => {
@@ -200,4 +204,76 @@ test('map nodes store their document next to the node and export to svg', () => 
   assert.equal(p.readMap('mill').objects.length, 2)
   p.deleteNode('mill')
   assert.equal(fs.existsSync(path.join(p.root, 'maps', 'mill.map.json')), false)
+})
+
+test('a closed door at an angle to its wall seals the gap it cuts', () => {
+  const doc = edit(emptyMap(), [
+    {
+      op: 'add',
+      object: {
+        kind: 'wall',
+        x: -1,
+        y: 5,
+        shape: {
+          type: 'path',
+          points: [
+            { x: 0, y: 0 },
+            { x: 40, y: 0 },
+          ],
+        },
+      },
+    },
+    { op: 'add', object: { kind: 'door', x: 5, y: 5, rotation: 14, width: 1 } },
+    { op: 'token', set: { name: 'A', x: 3.5, y: 2.5, player: true } },
+  ])
+  const below = intersection(sight(doc).visible, rectRegion(0, 5.3, 30, 15))
+  assert.equal(area(below), 0)
+  // Opening it lets sight through again.
+  const open = edit(doc, [{ op: 'update', id: 'door1', set: { open: true } }])
+  assert.ok(area(intersection(sight(open).visible, rectRegion(0, 5.3, 30, 15))) > 1)
+})
+
+test('vision never comes back empty at odd positions next to walls and doors', () => {
+  const doc = edit(emptyMap({ cols: 12, rows: 12 }), [
+    { op: 'add', object: { kind: 'room', x: 6, y: 6, shape: { type: 'rect', w: 6, h: 6 } } },
+    { op: 'add', object: { kind: 'room', x: 9, y: 6, shape: { type: 'ellipse', rx: 2, ry: 3 } } },
+    { op: 'add', object: { kind: 'door', x: 6, y: 3, rotation: 0, width: 1, open: true } },
+    {
+      op: 'add',
+      object: {
+        kind: 'wall',
+        x: 2,
+        y: 2,
+        shape: {
+          type: 'path',
+          points: [
+            { x: 0, y: 0 },
+            { x: 1.37, y: 3.11 },
+            { x: 0.2, y: 6 },
+          ],
+        },
+      },
+    },
+  ])
+  for (let x = 0.13; x < 12; x += 0.29)
+    for (let y = 0.11; y < 12; y += 0.31) {
+      const v = visibility({ x, y }, sightSegments(wallGeometry(doc)), 4)
+      assert.ok(area(v) > 0.05, `nothing visible from ${x}, ${y}`)
+    }
+})
+
+test('new maps start from the project map defaults', () => {
+  const project = tmp()
+  project.updateConfig({
+    maps: { grid: { diagonal: 'alternate', unit: { amount: 100, name: 'm' } }, style: { wall: { texture: 'stone' } }, fog: { enabled: true } },
+  })
+  const node = project.createNode({ type: 'map', title: 'Keep' })
+  const doc = project.readMap(node.id)
+  assert.equal(doc.grid.diagonal, 'alternate')
+  assert.deepEqual(doc.grid.unit, { amount: 100, name: 'm' })
+  assert.equal(doc.grid.cols, 30)
+  assert.equal(doc.style.wall.texture, 'stone')
+  assert.equal(doc.style.wall.width, 0.25)
+  assert.equal(doc.fog.enabled, true)
+  assert.match(mapSvg(doc), /<svg/)
 })

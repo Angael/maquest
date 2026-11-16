@@ -151,26 +151,35 @@ export function objectRegion(o: ShapedObject): Multi {
 
 export const EMPTY: Multi = []
 
-function safe(fn: () => Multi, fallback: Multi): Multi {
-  try {
-    return fn()
-  } catch {
-    return fallback
+const snap = (m: Multi, d: number): Multi => m.map((poly) => poly.map((ring) => ring.map(([x, y]) => [Math.round(x * d) / d, Math.round(y * d) / d] as Pair)))
+
+/**
+ * Runs a polygon-clipping operation. Its sweep line occasionally throws on nearly coincident edges; snapping the input
+ * to a coarser grid and trying again fixes those cases instead of dropping the result.
+ */
+function safe(fn: (...m: Multi[]) => Multi, input: Multi[], fallback: Multi): Multi {
+  for (const d of [0, 1e9, 1e6, 1e4]) {
+    try {
+      return fn(...(d ? input.map((m) => snap(m, d)) : input))
+    } catch {
+      // Try again on a coarser grid.
+    }
   }
+  return fallback
 }
 
 export const union = (a: Multi, ...b: Multi[]): Multi => {
   const all = [a, ...b].filter((m) => m.length)
-  if (!all.length) return []
-  return safe(() => pc.union(all[0], ...all.slice(1)), all[0])
+  if (all.length < 2) return all[0] ?? []
+  return safe((first, ...rest) => pc.union(first, ...rest), all, all[0])
 }
 export const difference = (a: Multi, ...b: Multi[]): Multi => {
   const cut = b.filter((m) => m.length)
   if (!a.length || !cut.length) return a
-  return safe(() => pc.difference(a, ...cut), a)
+  return safe((first, ...rest) => pc.difference(first, ...rest), [a, ...cut], a)
 }
-export const intersection = (a: Multi, b: Multi): Multi => (!a.length || !b.length ? [] : safe(() => pc.intersection(a, b), []))
-export const xor = (a: Multi, b: Multi): Multi => (!a.length ? b : !b.length ? a : safe(() => pc.xor(a, b), a))
+export const intersection = (a: Multi, b: Multi): Multi => (!a.length || !b.length ? [] : safe((x, y) => pc.intersection(x, y), [a, b], []))
+export const xor = (a: Multi, b: Multi): Multi => (!a.length ? b : !b.length ? a : safe((x, y) => pc.xor(x, y), [a, b], a))
 
 export const visibleObjects = (doc: MapDoc) => doc.objects.filter((o) => layerVisible(doc, o.layers))
 
@@ -379,6 +388,8 @@ export type WallGeometry = {
   /** Free-standing walls with door gaps. */
   walls: { object: Extract<MapObject, { kind: 'wall' }>; chains: Pair[][] }[]
   doors: Door[]
+  /** Footprint each door cuts out of walls (same order as `doors`). */
+  cuts: Pair[][]
 }
 
 export function wallGeometry(doc: MapDoc, objects = visibleObjects(doc), floor = roomRegion(doc, objects)): WallGeometry {
@@ -386,19 +397,24 @@ export function wallGeometry(doc: MapDoc, objects = visibleObjects(doc), floor =
   const width = doc.style.wall.width
   const cuts = doors.map((d) => doorCut(d, width))
   const rooms = cutChains(floor.flat().map(ringLine), cuts)
-  const walls = objects
-    .filter((o): o is Extract<MapObject, { kind: 'wall' }> => o.kind === 'wall')
-    .map((o) => ({
-      object: o,
-      chains: cutChains(
-        objectRings(o).map((r) => (isClosed(o.shape) ? ringLine(r) : r)),
-        doors.map((d) => doorCut(d, o.width ?? width)),
-      ),
-    }))
-  return { rooms, walls, doors }
+  const wallObjects = objects.filter((o): o is Extract<MapObject, { kind: 'wall' }> => o.kind === 'wall')
+  const walls = wallObjects.map((o) => ({
+    object: o,
+    chains: cutChains(
+      objectRings(o).map((r) => (isClosed(o.shape) ? ringLine(r) : r)),
+      doors.map((d) => doorCut(d, o.width ?? width)),
+    ),
+  }))
+  // The widest cut of each door: where a closed door has to seal the gap it made.
+  const widest = Math.max(width, ...wallObjects.map((o) => o.width ?? width))
+  return { rooms, walls, doors, cuts: doors.map((d) => doorCut(d, widest)) }
 }
 
-/** Everything that blocks sight: walls and closed doors (windows and open doors let it through). */
+/**
+ * Everything that blocks sight: walls and closed doors (windows and open doors let it through). A closed door seals
+ * the whole footprint it cut out of the wall, not only its own line: a door that sits at an angle to the wall (or on a
+ * curve) leaves the wall ends off its line, and sight used to slip through those slivers.
+ */
 export function sightSegments(geo: WallGeometry): Segment[] {
   const out: Segment[] = []
   const add = (chain: Pair[]) => {
@@ -406,7 +422,12 @@ export function sightSegments(geo: WallGeometry): Segment[] {
   }
   geo.rooms.forEach(add)
   for (const w of geo.walls) w.chains.forEach(add)
-  for (const d of geo.doors) if (!d.open && d.variant !== 'window') out.push(doorEnds(d))
+  geo.doors.forEach((d, i) => {
+    if (d.open || d.variant === 'window') return
+    out.push(doorEnds(d))
+    const cut = geo.cuts?.[i]
+    if (cut) add([...cut, cut[0]])
+  })
   return out
 }
 
@@ -458,52 +479,40 @@ export const rectRegion = (x: number, y: number, w: number, h: number): Multi =>
 ]
 
 /**
- * Visibility polygon from `o`: the area not hidden behind any segment, limited to `radius` (and the given bounds).
- * Classic angular sweep: rays to every segment end (and just past it), nearest hit per ray.
+ * Visibility polygon from `o`: the area not hidden behind any segment, limited to `radius`.
+ * Classic angular sweep: rays to every segment end (and just past it) plus even samples for the circle, nearest hit
+ * per ray capped at the radius. The ring is star-shaped around `o`, so it needs no boolean clipping (which used to
+ * fail on degenerate input and blank out whole positions).
  */
 export function visibility(o: Point, segments: readonly Segment[], radius: number): Multi {
   const R = radius
+  if (!(R > 0)) return []
   const near = segments.filter(([a, b]) => {
     const minx = Math.min(a[0], b[0])
     const maxx = Math.max(a[0], b[0])
     const miny = Math.min(a[1], b[1])
     const maxy = Math.max(a[1], b[1])
-    return maxx >= o.x - R && minx <= o.x + R && maxy >= o.y - R && miny <= o.y + R
+    return maxx >= o.x - R && minx <= o.x + R && maxy >= o.y - R && miny <= o.y + R && (a[0] !== b[0] || a[1] !== b[1])
   })
-  const box: Segment[] = [
-    [
-      [o.x - R - 1, o.y - R - 1],
-      [o.x + R + 1, o.y - R - 1],
-    ],
-    [
-      [o.x + R + 1, o.y - R - 1],
-      [o.x + R + 1, o.y + R + 1],
-    ],
-    [
-      [o.x + R + 1, o.y + R + 1],
-      [o.x - R - 1, o.y + R + 1],
-    ],
-    [
-      [o.x - R - 1, o.y + R + 1],
-      [o.x - R - 1, o.y - R - 1],
-    ],
-  ]
-  const all = [...near, ...box]
   const angles: number[] = []
-  for (const [a, b] of all)
+  for (const [a, b] of near)
     for (const p of [a, b]) {
-      const t = Math.atan2(p[1] - o.y, p[0] - o.x)
-      angles.push(t - 1e-5, t, t + 1e-5)
+      const dx = p[0] - o.x
+      const dy = p[1] - o.y
+      if (dx * dx + dy * dy > (R + 1e-6) * (R + 1e-6)) continue
+      const t = Math.atan2(dy, dx)
+      angles.push(t - 1e-6, t, t + 1e-6)
     }
-  // Even sampling too, so the circle clip stays round with few walls around.
-  for (let i = 0; i < 64; i++) angles.push(-Math.PI + (i / 64) * Math.PI * 2)
+  // Even sampling keeps the radius round.
+  const steps = Math.min(720, Math.max(96, Math.ceil(R * 24)))
+  for (let i = 0; i < steps; i++) angles.push(-Math.PI + (i / steps) * Math.PI * 2)
   angles.sort((a, b) => a - b)
   const ring: Ring = []
   for (const t of angles) {
     const dx = Math.cos(t)
     const dy = Math.sin(t)
-    let best = Infinity
-    for (const [a, b] of all) {
+    let best = R
+    for (const [a, b] of near) {
       const ex = b[0] - a[0]
       const ey = b[1] - a[1]
       const den = dx * ey - dy * ex
@@ -514,10 +523,14 @@ export function visibility(o: Point, segments: readonly Segment[], radius: numbe
       const u = (ax * dy - ay * dx) / den
       if (hit >= 0 && u >= -1e-9 && u <= 1 + 1e-9 && hit < best) best = hit
     }
-    if (best < Infinity) ring.push([o.x + dx * best, o.y + dy * best])
+    // A wall through the viewer itself would collapse the polygon; keep a sliver so it stays a valid ring.
+    best = Math.max(best, 1e-4)
+    const p: Pair = [o.x + dx * best, o.y + dy * best]
+    const last = ring.at(-1)
+    if (!last || Math.abs(last[0] - p[0]) > 1e-7 || Math.abs(last[1] - p[1]) > 1e-7) ring.push(p)
   }
   if (ring.length < 3) return []
-  return intersection([[closeRing(ring)]], circle(o, R))
+  return [[closeRing(ring)]]
 }
 
 export type Sight = {
