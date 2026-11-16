@@ -185,18 +185,33 @@ function wallStroke(d: string, color: string, width: number, texture: string | u
 
 /** How far (cells) players glimpse past the edge of what they see: enough to make out the wall and its material. */
 export const FOG_GLIMPSE = 0.6
+/** How far players glimpse into a solid structure they see the side of (a roof, a cliff), fading out. */
+export const SOLID_GLIMPSE = 1.6
+
+type Solid = { d: string; transform: string }
 
 /**
  * The fog of war: opaque where nobody has looked, dimmed where players have been, clear where they see now. The edges
  * are soft and reach a little past what is seen, so a wall bounding the view shows its material and the start of
  * what lies behind (a roof, a cliff), fading out before it gives the rest away.
  */
-function fogOverlay(cols: number, rows: number, explored: Multi, visible: Multi, player: boolean, prefix: string): SvgEl {
+function fogOverlay(cols: number, rows: number, explored: Multi, visible: Multi, player: boolean, prefix: string, solids: Solid[]): SvgEl {
   const id = `${prefix}fog`
   const g = FOG_GLIMPSE
-  const pad = g * 4
+  const pad = SOLID_GLIMPSE * 3
   const reveal = (m: Multi, shade: string) =>
     m.length ? h('path', { d: multiD(m), fill: shade, stroke: shade, 'stroke-width': num(g * 1.4), 'stroke-linejoin': 'round', 'fill-rule': 'nonzero' }) : null
+  // Into solids the glimpse reaches further and fades in two steps (then the blur smooths it).
+  const into = (m: Multi, near: string, far: string) =>
+    solids.length && m.length
+      ? h(
+          'g',
+          { 'clip-path': `url(#${id}-solids)` },
+          h('path', { d: multiD(m), fill: 'none', stroke: far, 'stroke-width': num(SOLID_GLIMPSE * 2), 'stroke-linejoin': 'round' }),
+          h('path', { d: multiD(m), fill: 'none', stroke: near, 'stroke-width': num(SOLID_GLIMPSE), 'stroke-linejoin': 'round' }),
+        )
+      : null
+  const exploredShade = player ? '#999999' : '#a6a6a6'
   return h(
     'g',
     { 'data-fog': 'hidden', 'pointer-events': 'none' },
@@ -208,6 +223,7 @@ function fogOverlay(cols: number, rows: number, explored: Multi, visible: Multi,
         { id: `${id}-soft`, filterUnits: 'userSpaceOnUse', x: -pad, y: -pad, width: cols + pad * 2, height: rows + pad * 2 },
         h('feGaussianBlur', { stdDeviation: num(g * 0.35) }),
       ),
+      solids.length ? h('clipPath', { id: `${id}-solids` }, ...solids.map((x) => h('path', { d: x.d, transform: x.transform, 'fill-rule': 'evenodd' }))) : null,
       h(
         'mask',
         { id: `${id}-mask`, maskUnits: 'userSpaceOnUse', x: -pad, y: -pad, width: cols + pad * 2, height: rows + pad * 2 },
@@ -216,8 +232,10 @@ function fogOverlay(cols: number, rows: number, explored: Multi, visible: Multi,
           { filter: `url(#${id}-soft)` },
           h('rect', { x: -pad, y: -pad, width: cols + pad * 2, height: rows + pad * 2, fill: '#ffffff' }),
           // Explored: remembered, so only partly fogged.
-          reveal(explored, player ? '#999999' : '#a6a6a6'),
+          reveal(explored, exploredShade),
+          into(explored, exploredShade, '#d0d0d0'),
           reveal(visible, '#000000'),
+          into(visible, '#000000', '#6a6a6a'),
         ),
       ),
     ),
@@ -440,7 +458,10 @@ export function renderMap(doc: MapDoc, opts: RenderOptions = {}): Scene {
   if (fogOn && sight) {
     const explored = doc.fog.explored as Multi
     const player = opts.fog === 'player'
-    overlays.push(fogOverlay(cols, rows, explored, sight.visible, player, prefix))
+    const solids = objects
+      .filter((o): o is Extract<MapObject, { kind: 'wall' }> => o.kind === 'wall' && !!o.fill && isClosedShape(o.shape))
+      .map((o) => ({ d: shapeD(o.shape), transform: transformOf(o) }))
+    overlays.push(fogOverlay(cols, rows, explored, sight.visible, player, prefix, solids))
   }
 
   // Players only see other tokens inside what their characters see; the GM sees all.

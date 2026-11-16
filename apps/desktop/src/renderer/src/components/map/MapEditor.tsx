@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { ArrowLeft, Download, Eye, Maximize, ShieldUser } from 'lucide-react'
-import type { MapDoc } from '@maquest/core/map'
+import { Download, Eye, LayoutGrid, Maximize, MonitorPlay, PanelRight, Settings2, ShieldUser } from 'lucide-react'
+import { emptyMap, mapDefaultsOf, type MapDoc } from '@maquest/core/map'
 import { api } from '../../lib/api'
-import { queryClient, useMap, useNode } from '../../lib/queries'
+import { queryClient, useConfig, useMap, useNode } from '../../lib/queries'
 import { useUI } from '../../lib/store'
-import { Button, IconButton, Menu, MenuItem, Segmented, cn, floating } from '../ui'
+import { Button, IconButton, Input, Menu, MenuItem, Popover, Segmented, Separator, Tooltip, cn, floating } from '../ui'
 import { MapViewport } from './MapViewport'
-import { MapPanel } from './MapPanel'
+import { MapSettingsForm, ScenePanel, SelectionPanel } from './MapPanel'
 import { ToolOptions, ToolRail, useToolKeys } from './MapToolbar'
 import { useMapUI } from './mapStore'
 import { duplicateIds, moveIds, removeIds, reorder } from './edit'
@@ -61,7 +61,9 @@ export function MapEditor() {
   useToolKeys(!!doc)
   useEditorKeys(doc, commit)
 
-  if (!id) return <Empty text="No map open. Open a map node from the canvas or the sidebar." />
+  const panel = useMapUI((s) => s.panel)
+
+  if (!id) return <Empty text="No map open. Pick one from the Maps list." />
   if (error) return <Empty text={(error as Error).message} />
   if (!doc) return null
 
@@ -70,31 +72,129 @@ export function MapEditor() {
       <div className="relative min-w-0 flex-1">
         <MapViewport doc={doc} commit={commit} mapId={id} />
         <div className="pointer-events-none absolute inset-x-3 top-3 flex items-start gap-2">
-          <div className={cn(floating, 'pointer-events-auto flex h-9 items-center gap-1 pr-2 pl-1')}>
-            <IconButton icon={ArrowLeft} label="Back to the canvas" onClick={() => useUI.getState().setView('canvas')} />
-            <span className="max-w-60 truncate font-serif text-sm font-medium text-fg">{node?.title ?? id}</span>
+          <div className={cn(floating, 'pointer-events-auto flex h-9 min-w-0 shrink items-center gap-1 pr-1 pl-1')}>
+            <IconButton icon={LayoutGrid} label="All maps" onClick={() => useUI.getState().setView('maps')} />
+            <MapTitle id={id} title={node?.title ?? id} />
           </div>
-          <div className="pointer-events-auto">
+          <div className="pointer-events-auto min-w-0 shrink">
             <ToolOptions />
           </div>
           <div className="flex-1" />
-          <ViewControls id={id} />
+          <ViewControls id={id} doc={doc} commit={commit} />
         </div>
         <div className="pointer-events-none absolute top-15 left-3 flex">
           <div className="pointer-events-auto">
             <ToolRail />
           </div>
         </div>
+        <div className="pointer-events-none absolute top-15 right-3 bottom-3 flex flex-col items-end">
+          <SelectionPanel doc={doc} commit={commit} />
+        </div>
       </div>
-      <aside aria-label="Map settings" className="flex w-76 shrink-0 flex-col border-l border-line bg-panel">
-        <MapPanel doc={doc} commit={commit} />
-      </aside>
+      {panel && (
+        <aside aria-label="Fog, tokens and layers" className="flex w-72 shrink-0 flex-col border-l border-line bg-panel">
+          <ScenePanel doc={doc} commit={commit} />
+        </aside>
+      )}
     </div>
   )
 }
 
-function ViewControls({ id }: { id: string }) {
+/** The map's name; click to rename. */
+function MapTitle({ id, title }: { id: string; title: string }) {
+  const [editing, setEditing] = useState(false)
+  if (editing)
+    return (
+      <Input
+        autoFocus
+        defaultValue={title}
+        aria-label="Map name"
+        className="h-7 w-52 font-serif text-sm"
+        onFocus={(e) => e.currentTarget.select()}
+        onBlur={(e) => {
+          setEditing(false)
+          const next = e.currentTarget.value.trim()
+          if (next && next !== title) void api.updateNode(id, { title: next }).then(() => queryClient.invalidateQueries({ queryKey: ['nodes'] }))
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur()
+          if (e.key === 'Escape') {
+            e.currentTarget.value = title
+            e.currentTarget.blur()
+          }
+        }}
+      />
+    )
+  return (
+    <Tooltip content="Rename">
+      <button
+        type="button"
+        onClick={() => setEditing(true)}
+        className="h-7 max-w-60 min-w-0 truncate rounded-md px-1.5 font-serif text-sm font-medium text-fg outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-accent/70"
+      >
+        {title}
+      </button>
+    </Tooltip>
+  )
+}
+
+/** Grid, units and look of this map; can become (or take) the project's defaults for new maps. */
+function MapSettings({ doc, commit }: { doc: MapDoc; commit: (d: MapDoc) => void }) {
+  const { data: config } = useConfig()
+  return (
+    <Popover
+      side="bottom"
+      align="end"
+      trigger={
+        <Button size="md" variant="ghost">
+          <Settings2 size={14} aria-hidden />
+          Map
+        </Button>
+      }
+    >
+      <div className="w-80" data-map-settings>
+        <div className="max-h-[70vh] overflow-y-auto p-3">
+          <MapSettingsForm value={doc} onChange={(v) => commit({ ...doc, ...v })} />
+        </div>
+        <div className="flex items-center gap-1 border-t border-line p-2">
+          <Button
+            size="sm"
+            variant="ghost"
+            title="New maps in this project start with this map's grid, distances and look"
+            onClick={() =>
+              void api.setMapDefaults(mapDefaultsOf(doc)).then(
+                () => {
+                  void queryClient.invalidateQueries({ queryKey: ['config'] })
+                  toast.success('New maps will start with these settings')
+                },
+                (e: Error) => toast.error(e.message),
+              )
+            }
+          >
+            Use for new maps
+          </Button>
+          {config?.maps && (
+            <Button
+              size="sm"
+              variant="ghost"
+              title="Take the project's defaults (the map keeps its size)"
+              onClick={() => {
+                const d = emptyMap({ cols: doc.grid.cols, rows: doc.grid.rows }, config.maps)
+                commit({ ...doc, grid: d.grid, style: d.style })
+              }}
+            >
+              Apply project defaults
+            </Button>
+          )}
+        </div>
+      </div>
+    </Popover>
+  )
+}
+
+function ViewControls({ id, doc, commit }: { id: string; doc: MapDoc; commit: (d: MapDoc) => void }) {
   const viewMode = useMapUI((s) => s.viewMode)
+  const panel = useMapUI((s) => s.panel)
   const set = useMapUI((s) => s.set)
   const exportSvg = async (opts: Parameters<typeof api.exportMapSvg>[1]) => {
     try {
@@ -105,7 +205,7 @@ function ViewControls({ id }: { id: string }) {
     }
   }
   return (
-    <div className={cn(floating, 'pointer-events-auto flex h-9 items-center gap-1 px-1')}>
+    <div className={cn(floating, 'pointer-events-auto flex h-9 shrink-0 items-center gap-1 px-1')}>
       <Segmented
         label="View as"
         value={viewMode}
@@ -115,20 +215,22 @@ function ViewControls({ id }: { id: string }) {
           { value: 'player', label: 'Players', icon: Eye, showLabel: true },
         ]}
       />
+      <IconButton icon={MonitorPlay} label="Open the players' window (only what they see)" onClick={() => void api.openPlayerView(id)} />
       <IconButton icon={Maximize} label="Fit map to screen" onClick={() => window.dispatchEvent(new Event('maquest:map-fit'))} />
-      <Menu
-        trigger={
-          <Button size="md" variant="ghost">
-            <Download size={14} aria-hidden />
-            Export
-          </Button>
-        }
-      >
+      <Separator vertical />
+      <MapSettings doc={doc} commit={commit} />
+      <Menu trigger={<IconButton icon={Download} label="Export as SVG" />}>
         <MenuItem onClick={() => void exportSvg({ tokens: false })}>SVG: map only</MenuItem>
         <MenuItem onClick={() => void exportSvg({ tokens: true })}>SVG: with tokens</MenuItem>
         <MenuItem onClick={() => void exportSvg({ tokens: true, fog: 'player', lighting: 'player' })}>SVG: as players see it</MenuItem>
         <MenuItem onClick={() => void exportSvg({ tokens: false, grid: false })}>SVG: no grid, no tokens</MenuItem>
       </Menu>
+      <IconButton
+        icon={PanelRight}
+        label={panel ? 'Hide fog, tokens and layers' : 'Show fog, tokens and layers'}
+        active={panel}
+        onClick={() => set({ panel: !panel })}
+      />
     </div>
   )
 }

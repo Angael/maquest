@@ -24,11 +24,12 @@ import {
   type Pair,
   type PathPoint,
   type Point,
+  type Token,
 } from '@maquest/core/map'
 import { api, mediaUrl } from '../../lib/api'
 import { toReact } from './svgReact'
 import { useMapUI } from './mapStore'
-import { addObject, addToken, moveIds, snapPoint, snapTo, withExplored } from './edit'
+import { addObject, addToken, moveIds, patchObject, removeIds, snapPoint, snapTo, snapToken, withExplored } from './edit'
 
 type View = { x: number; y: number; s: number }
 
@@ -43,6 +44,12 @@ type Gesture =
   | { type: 'pen'; index: number }
   | { type: 'ruler' }
   | { type: 'marquee'; start: Point; add: boolean }
+  | { type: 'erase'; ids: Set<string>; base: MapDoc; broad: boolean }
+  | { type: 'radius'; id: string; field: RadiusField; base: MapDoc }
+  | { type: 'doorEnd'; id: string; side: -1 | 1; base: MapDoc }
+
+/** What a ring handle on the map changes. */
+type RadiusField = 'size' | 'vision' | 'darkvision' | 'bright' | 'dim'
 
 type Pen = { kind: 'room' | 'area' | 'wall' | 'path'; points: PathPoint[] }
 type Ruler = { mode: 'line' | 'cells'; start: Point; end: Point; cells: Pair[] }
@@ -61,7 +68,10 @@ export function MapViewport({ doc, commit, mapId }: { doc: MapDoc; commit: (next
   const [drawing, setDrawing] = useState<{ a: Point; b: Point } | null>(null)
   const [stroke, setStroke] = useState<Point[] | null>(null)
   const [spacePan, setSpacePan] = useState(false)
+  const [eraseHover, setEraseHover] = useState<string | null>(null)
   const gesture = useRef<Gesture | null>(null)
+  /** The latest `cancel`, for the key handler. */
+  const cancelRef = useRef<() => boolean>(() => false)
   const ui = useMapUI(
     useShallow((s) => ({
       tool: s.tool,
@@ -97,8 +107,13 @@ export function MapViewport({ doc, commit, mapId }: { doc: MapDoc; commit: (next
   const fit = useCallback(() => {
     const r = host.current?.getBoundingClientRect()
     if (!r?.width) return
-    const s = Math.min((r.width - 80) / doc.grid.cols, (r.height - 80) / doc.grid.rows)
-    setView({ s, x: (r.width - doc.grid.cols * s) / 2, y: (r.height - doc.grid.rows * s) / 2 })
+    // Keep clear of the floating toolbars: the top bar and the tool rail on the left.
+    const top = 60
+    const left = 64
+    const w = r.width - left - 24
+    const h = r.height - top - 24
+    const s = Math.min(w / doc.grid.cols, h / doc.grid.rows)
+    setView({ s, x: left + (w - doc.grid.cols * s) / 2, y: top + (h - doc.grid.rows * s) / 2 })
   }, [doc.grid.cols, doc.grid.rows])
   useEffect(() => {
     fit()
@@ -175,17 +190,14 @@ export function MapViewport({ doc, commit, mapId }: { doc: MapDoc; commit: (next
       if (pen && e.key === 'Enter') {
         e.preventDefault()
         finishPen(false)
-      } else if (pen && e.key === 'Escape') {
+      } else if (e.key === 'Escape' && (pen || ruler || gesture.current)) {
         e.preventDefault()
         e.stopImmediatePropagation()
-        setPen(null)
+        cancelRef.current()
       } else if (pen && e.key === 'Backspace') {
         e.preventDefault()
         e.stopImmediatePropagation()
         setPen((p) => (p && p.points.length > 1 ? { ...p, points: p.points.slice(0, -1) } : null))
-      } else if (ruler && e.key === 'Escape') {
-        e.stopImmediatePropagation()
-        setRuler(null)
       }
     }
     const onUp = (e: KeyboardEvent) => e.key === ' ' && setSpacePan(false)
@@ -211,9 +223,32 @@ export function MapViewport({ doc, commit, mapId }: { doc: MapDoc; commit: (next
 
   const tool = spacePan ? 'pan' : ui.tool
   const selectedObject = ui.selected.length === 1 ? shown.objects.find((o) => o.id === ui.selected[0]) : undefined
+  const selectedToken = ui.selected.length === 1 ? shown.tokens.find((t) => t.id === ui.selected[0]) : undefined
+
+  /** Drops whatever is being drawn or dragged (right click, Esc): nothing is saved. */
+  const cancel = () => {
+    const had = !!(gesture.current || pen || ruler)
+    gesture.current = null
+    setPen(null)
+    setPreview(null)
+    setDrawing(null)
+    setStroke(null)
+    setMarquee(null)
+    setRuler(null)
+    return had
+  }
+
+  useEffect(() => {
+    cancelRef.current = cancel
+  })
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (e.button === 2) return
+    // A right click cancels the line, shape or drag in progress.
+    if (e.button === 2) {
+      cancel()
+      return
+    }
+    if (gesture.current) return
     host.current?.focus()
     const p = toMap(e)
     const target = e.target instanceof Element ? e.target : null
@@ -223,9 +258,13 @@ export function MapViewport({ doc, commit, mapId }: { doc: MapDoc; commit: (next
       return
     }
     const handle = target?.closest('[data-handle]')?.getAttribute('data-handle')
-    if (handle && selectedObject) {
+    const handleOwner = selectedObject ?? selectedToken
+    if (handle && handleOwner) {
       const [kind, n] = handle.split('-')
-      if (kind === 'rotate') gesture.current = { type: 'rotate', id: selectedObject.id, base: doc }
+      if (kind === 'radius') gesture.current = { type: 'radius', id: handleOwner.id, field: n as RadiusField, base: doc }
+      else if (kind === 'door') gesture.current = { type: 'doorEnd', id: handleOwner.id, side: n === 'a' ? -1 : 1, base: doc }
+      else if (!selectedObject) return
+      else if (kind === 'rotate') gesture.current = { type: 'rotate', id: selectedObject.id, base: doc }
       else if (kind === 'resize') gesture.current = { type: 'resize', id: selectedObject.id, corner: Number(n), base: doc }
       else gesture.current = { type: 'vertex', id: selectedObject.id, index: Number(n), part: kind as 'pt' | 'in' | 'out', base: doc }
       return
@@ -308,7 +347,31 @@ export function MapViewport({ doc, commit, mapId }: { doc: MapDoc; commit: (next
         gesture.current = { type: 'ruler' }
         setRuler({ mode: ui.ruler, start: p, end: p, cells: [cellOf(p)] })
         return
+      case 'eraser': {
+        const hit = hitAt(e.clientX, e.clientY, true)
+        const g: Gesture = { type: 'erase', ids: new Set(), base: doc, broad: !!hit && isBroad(doc, hit) }
+        gesture.current = g
+        if (hit) {
+          g.ids.add(hit)
+          setPreview(removeIds(doc, [...g.ids]))
+          setEraseHover(null)
+        }
+        return
+      }
     }
+  }
+
+  /** The topmost object or token under a screen point (pointer capture hides it from event targets). */
+  function hitAt(x: number, y: number, broad: boolean): string | null {
+    for (const el of document.elementsFromPoint(x, y)) {
+      if (!host.current?.contains(el)) continue
+      if (el.closest('[data-handle]')) continue
+      const id = el.closest('[data-token]')?.getAttribute('data-token') ?? el.closest('[data-id]')?.getAttribute('data-id')
+      if (!id) continue
+      if (!broad && isBroad(doc, id)) continue
+      return id
+    }
+    return null
   }
 
   function penDown(kind: Pen['kind'], p: Point) {
@@ -337,9 +400,48 @@ export function MapViewport({ doc, commit, mapId }: { doc: MapDoc; commit: (next
     const p = toMap(e)
     setCursor(p)
     const g = gesture.current
-    if (!g) return
+    if (!g) {
+      if (tool === 'eraser') setEraseHover(hitAt(e.clientX, e.clientY, true))
+      return
+    }
     const s = step(e)
     switch (g.type) {
+      case 'erase': {
+        const hit = hitAt(e.clientX, e.clientY, g.broad)
+        if (hit && !g.ids.has(hit)) {
+          g.ids.add(hit)
+          setPreview(removeIds(g.base, [...g.ids]))
+        }
+        return
+      }
+      case 'radius': {
+        const o = g.base.objects.find((x) => x.id === g.id)
+        const t = g.base.tokens.find((x) => x.id === g.id)
+        const c = o ?? t
+        if (!c) return
+        const dist = Math.hypot(p.x - c.x, p.y - c.y)
+        if (g.field === 'size') {
+          // The handle sits on the token's corner: half the footprint along the diagonal.
+          const raw = (dist / Math.SQRT2) * 2
+          const size = Math.max(0.25, s ? Math.max(0.5, Math.round(raw * 2) / 2) : Math.round(raw * 100) / 100)
+          setPreview(patchObject(g.base, g.id, { size }))
+          return
+        }
+        const v = Math.max(0, s ? Math.round(dist / Math.max(0.5, s)) * Math.max(0.5, s) : Math.round(dist * 100) / 100)
+        setPreview(patchObject(g.base, g.id, { [g.field]: g.field === 'darkvision' && !v ? undefined : v }))
+        return
+      }
+      case 'doorEnd': {
+        const o = g.base.objects.find((x) => x.id === g.id)
+        if (o?.kind !== 'door') return
+        const other = toWorld(o, { x: (-g.side * o.width) / 2, y: 0 })
+        const local = toLocal(o, p)
+        const along = s ? Math.round(local.x / (s / 2)) * (s / 2) : local.x
+        const end = toWorld(o, { x: along, y: 0 })
+        const width = Math.max(0.25, Math.abs(along + (g.side * o.width) / 2))
+        setPreview(patchObject(g.base, g.id, { width, x: (other.x + end.x) / 2, y: (other.y + end.y) / 2 }))
+        return
+      }
       case 'pan':
         setView({ ...g.view, x: g.view.x + e.clientX - g.start.x, y: g.view.y + e.clientY - g.start.y })
         return
@@ -432,9 +534,25 @@ export function MapViewport({ doc, commit, mapId }: { doc: MapDoc; commit: (next
       case 'move':
         if (g.moved && preview) commit(withExplored(preview))
         break
+      case 'erase':
+        if (g.ids.size) {
+          commit(removeIds(g.base, [...g.ids]))
+          select(st.selected.filter((id) => !g.ids.has(id)))
+        }
+        break
+      case 'radius': {
+        if (!preview) break
+        let next = preview
+        // A resized token re-snaps so its footprint covers whole cells.
+        const t = g.field === 'size' ? next.tokens.find((x) => x.id === g.id) : undefined
+        if (t && st.snap && !(e.ctrlKey || e.metaKey)) next = patchObject(next, t.id, snapToken(t, t.size))
+        commit(next.tokens.some((x) => x.id === g.id && x.player) ? withExplored(next) : next)
+        break
+      }
       case 'rotate':
       case 'resize':
       case 'vertex':
+      case 'doorEnd':
         if (preview) commit(preview)
         break
       case 'shape': {
@@ -524,7 +642,7 @@ export function MapViewport({ doc, commit, mapId }: { doc: MapDoc; commit: (next
     select(ids)
   }
 
-  const cursorStyle = tool === 'pan' ? 'grab' : tool === 'select' ? 'default' : 'crosshair'
+  const cursorStyle = tool === 'pan' ? 'grab' : tool === 'select' ? 'default' : tool === 'eraser' ? (eraseHover ? 'pointer' : 'cell') : 'crosshair'
 
   return (
     <div
@@ -536,8 +654,17 @@ export function MapViewport({ doc, commit, mapId }: { doc: MapDoc; commit: (next
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
-      onPointerLeave={() => setCursor(null)}
-      onDoubleClick={() => pen && finishPen(false)}
+      onPointerLeave={() => {
+        setCursor(null)
+        setEraseHover(null)
+      }}
+      onDoubleClick={(e) => {
+        if (pen) return finishPen(false)
+        // Double-clicking a door opens or closes it.
+        const id = tool === 'select' && e.target instanceof Element ? e.target.closest('[data-kind="door"]')?.getAttribute('data-id') : null
+        const d = id ? doc.objects.find((o) => o.id === id) : undefined
+        if (d?.kind === 'door') commit(withExplored(patchObject(doc, d.id, { open: !d.open })))
+      }}
       onDragOver={(e) => e.dataTransfer.types.includes('Files') && e.preventDefault()}
       onDrop={(e) => void onDrop(e)}
       onContextMenu={(e) => e.preventDefault()}
@@ -553,6 +680,8 @@ export function MapViewport({ doc, commit, mapId }: { doc: MapDoc; commit: (next
               px={px}
               selected={ui.selected}
               selectedObject={ui.viewMode === 'gm' ? selectedObject : undefined}
+              selectedToken={ui.viewMode === 'gm' && tool !== 'eraser' ? selectedToken : undefined}
+              eraseHover={tool === 'eraser' ? eraseHover : null}
               pen={pen}
               cursor={cursor}
               drawing={drawing && { ...drawing, ellipse: ui.shape === 'ellipse', subtract: ui.op === 'subtract' }}
@@ -568,6 +697,12 @@ export function MapViewport({ doc, commit, mapId }: { doc: MapDoc; commit: (next
   )
 }
 
+/** Rooms and areas cover the map; the eraser only takes them when the stroke starts on one. */
+function isBroad(d: MapDoc, id: string) {
+  const kind = d.objects.find((o) => o.id === id)?.kind
+  return kind === 'room' || kind === 'area'
+}
+
 function replace(doc: MapDoc, o: MapObject): MapDoc {
   return { ...doc, objects: doc.objects.map((x) => (x.id === o.id ? o : x)) }
 }
@@ -576,6 +711,8 @@ function replace(doc: MapDoc, o: MapObject): MapDoc {
 function resized(o: MapObject, w: number, h: number, center: Point): MapObject {
   const at = { x: center.x, y: center.y }
   if (o.kind === 'image') return { ...o, ...at, w, h }
+  // Labels keep their anchor; the box height is the text size.
+  if (o.kind === 'label') return { ...o, size: Math.max(0.1, Math.round(h * 100) / 100) }
   if (!isShaped(o)) return o
   const s = o.shape
   if (s.type === 'rect') return { ...o, ...at, shape: { ...s, w, h } } as MapObject
@@ -598,6 +735,8 @@ type OverlayProps = {
   px: (n: number) => number
   selected: string[]
   selectedObject?: MapObject
+  selectedToken?: Token
+  eraseHover: string | null
   pen: Pen | null
   cursor: Point | null
   drawing: { a: Point; b: Point; ellipse: boolean; subtract: boolean } | null
@@ -607,7 +746,7 @@ type OverlayProps = {
   doorGhost: { x: number; y: number; rotation: number } | null
 }
 
-function Overlays({ doc, px, selected, selectedObject, pen, cursor, drawing, stroke, marquee, ruler, doorGhost }: OverlayProps) {
+function Overlays({ doc, px, selected, selectedObject, selectedToken, eraseHover, pen, cursor, drawing, stroke, marquee, ruler, doorGhost }: OverlayProps) {
   const thin = { vectorEffect: 'non-scaling-stroke' as const, strokeWidth: 1.5 }
   const boxes = selected.flatMap((id) => {
     const o = doc.objects.find((x) => x.id === id)
@@ -639,7 +778,7 @@ function Overlays({ doc, px, selected, selectedObject, pen, cursor, drawing, str
   if (o && !o.locked) {
     const b = localBox(o)
     const rotY = b.y - px(22)
-    const resizable = o.kind === 'image' || (isShaped(o) && o.shape.type !== 'path') || (isShaped(o) && o.shape.type === 'path' && o.kind !== 'wall')
+    const resizable = o.kind === 'image' || o.kind === 'label' || (isShaped(o) && o.kind !== 'wall') || (isShaped(o) && o.shape.type !== 'path')
     const path = isShaped(o) && o.shape.type === 'path' ? o.shape : null
     handles = (
       <g transform={transformOf(o)}>
@@ -704,14 +843,85 @@ function Overlays({ doc, px, selected, selectedObject, pen, cursor, drawing, str
               />
             </g>
           ))}
-        {o.kind === 'light' && (
-          <>
-            <circle r={o.dim} fill="none" stroke="#ffd27a" strokeDasharray="6 4" {...thin} pointerEvents="none" />
-            <circle r={o.bright} fill="none" stroke="#ffd27a" {...thin} pointerEvents="none" />
-          </>
-        )}
+        {o.kind === 'door' &&
+          ([-1, 1] as const).map((side) => (
+            <circle
+              key={side}
+              data-handle={`door-${side < 0 ? 'a' : 'b'}`}
+              cx={(side * o.width) / 2}
+              cy={0}
+              r={handle}
+              fill="white"
+              stroke={ACCENT}
+              {...thin}
+              style={{ cursor: 'ew-resize' }}
+            />
+          ))}
       </g>
     )
+    if (o.kind === 'light')
+      handles = (
+        <g>
+          <RadiusHandle at={o} r={o.dim} angle={45} field="dim" label={`Dim ${formatDistance(o.dim, doc.grid)}`} color="#ffd27a" dashed px={px} />
+          <RadiusHandle at={o} r={o.bright} angle={-45} field="bright" label={`Bright ${formatDistance(o.bright, doc.grid)}`} color="#ffd27a" px={px} />
+        </g>
+      )
+  }
+  const t = selectedToken
+  if (t) {
+    const half = t.size / 2
+    const visionR = t.vision ?? half + px(70)
+    const darkR = t.darkvision ?? 0
+    handles = (
+      <g>
+        {t.vision !== undefined && <circle cx={t.x} cy={t.y} r={t.vision} fill={ACCENT} fillOpacity={0.04} pointerEvents="none" />}
+        <RadiusHandle
+          at={t}
+          r={visionR}
+          angle={160}
+          field="vision"
+          ring={t.vision !== undefined}
+          label={t.vision === undefined ? 'Vision: unlimited (drag to limit)' : `Vision ${formatDistance(t.vision, doc.grid)}`}
+          color={ACCENT}
+          px={px}
+        />
+        <RadiusHandle
+          at={t}
+          r={Math.max(darkR, half + (darkR ? 0 : px(34)))}
+          angle={-90}
+          field="darkvision"
+          ring={darkR > 0}
+          label={darkR ? `Darkvision ${formatDistance(darkR, doc.grid)}` : 'Darkvision: none (drag)'}
+          color="#a78bfa"
+          dashed
+          px={px}
+        />
+        <rect x={t.x - half} y={t.y - half} width={t.size} height={t.size} fill="none" stroke={ACCENT} strokeDasharray="4 3" {...thin} pointerEvents="none" />
+        <rect
+          data-handle="radius-size"
+          x={t.x + half - handle}
+          y={t.y + half - handle}
+          width={handle * 2}
+          height={handle * 2}
+          fill="white"
+          stroke={ACCENT}
+          {...thin}
+          style={{ cursor: 'nwse-resize' }}
+        >
+          <title>{`Size: ${t.size} cells`}</title>
+        </rect>
+      </g>
+    )
+  }
+  let eraseMark: ReactNode = null
+  if (eraseHover) {
+    const eo = doc.objects.find((x) => x.id === eraseHover)
+    const et = doc.tokens.find((x) => x.id === eraseHover)
+    const red = { fill: '#dc2626', fillOpacity: 0.12, stroke: '#dc2626', ...thin, pointerEvents: 'none' as const }
+    if (eo) {
+      const b = localBox(eo)
+      eraseMark = <rect transform={transformOf(eo)} x={b.x - px(3)} y={b.y - px(3)} width={b.w + px(6)} height={b.h + px(6)} {...red} />
+    } else if (et) eraseMark = <circle cx={et.x} cy={et.y} r={et.size * 0.42 + px(4)} {...red} />
   }
 
   let penPreview: ReactNode = null
@@ -730,6 +940,7 @@ function Overlays({ doc, px, selected, selectedObject, pen, cursor, drawing, str
   return (
     <g>
       {boxes}
+      {eraseMark}
       {handles}
       {penPreview}
       {drawing &&
@@ -776,6 +987,59 @@ function Overlays({ doc, px, selected, selectedObject, pen, cursor, drawing, str
         </g>
       )}
       {ruler && <RulerOverlay ruler={ruler} doc={doc} px={px} />}
+    </g>
+  )
+}
+
+/** A ring around a point with a handle on it; dragging the handle sets the ring's radius (see the `radius` gesture). */
+function RadiusHandle({
+  at,
+  r,
+  angle,
+  field,
+  label,
+  color,
+  dashed,
+  ring = true,
+  px,
+}: {
+  at: Point
+  r: number
+  angle: number
+  field: string
+  label: string
+  color: string
+  dashed?: boolean
+  ring?: boolean
+  px: (n: number) => number
+}) {
+  const a = (angle * Math.PI) / 180
+  const hx = at.x + Math.cos(a) * r
+  const hy = at.y + Math.sin(a) * r
+  const thin = { vectorEffect: 'non-scaling-stroke' as const, strokeWidth: 1.5 }
+  return (
+    <g>
+      {ring && r > 0 && (
+        <circle cx={at.x} cy={at.y} r={r} fill="none" stroke={color} strokeDasharray={dashed ? '6 4' : undefined} {...thin} pointerEvents="none" />
+      )}
+      {!ring && <line x1={at.x} y1={at.y} x2={hx} y2={hy} stroke={color} strokeDasharray="3 3" {...thin} pointerEvents="none" />}
+      <circle data-handle={`radius-${field}`} cx={hx} cy={hy} r={px(6)} fill={color} stroke="white" {...thin} style={{ cursor: 'grab' }}>
+        <title>{label}</title>
+      </circle>
+      <text
+        x={hx + px(10)}
+        y={hy}
+        dominantBaseline="central"
+        fontSize={px(11)}
+        fill="white"
+        stroke="#1c1917"
+        strokeWidth={px(3)}
+        paintOrder="stroke"
+        fontFamily="Inter, sans-serif"
+        pointerEvents="none"
+      >
+        {label}
+      </text>
     </g>
   )
 }

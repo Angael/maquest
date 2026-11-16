@@ -19,6 +19,7 @@ import {
   Type,
   UserRound,
   BrickWall,
+  Eraser,
   type LucideIcon,
 } from 'lucide-react'
 import { TEXTURES } from '@maquest/core/map'
@@ -41,6 +42,7 @@ export const TOOLS: { id: MapTool; label: string; icon: LucideIcon; key: string 
   { id: 'light', label: 'Light', icon: Lightbulb, key: 'L' },
   { id: 'token', label: 'Token', icon: UserRound, key: 'K' },
   { id: 'ruler', label: 'Ruler', icon: Ruler, key: 'M' },
+  { id: 'eraser', label: 'Eraser: click or drag over things to delete them', icon: Eraser, key: 'E' },
 ]
 
 /** Single-letter tool shortcuts while the map view has focus (not while typing). */
@@ -102,17 +104,20 @@ export function TextureSelect({
   onChange,
   label,
   className,
+  none = 'Plain color',
 }: {
   value?: string
   onChange: (v: string | undefined) => void
   label: string
   className?: string
+  /** Name of the no-texture choice. */
+  none?: string
 }) {
   const { data: media = [] } = useQuery({ queryKey: ['media'], queryFn: () => api.listMedia() })
   const images = media.filter((m) => !isVideo(m))
   return (
     <Select aria-label={label} value={value ?? ''} onChange={(e) => onChange(e.target.value || undefined)} className={cn('w-28', className)}>
-      <option value="">Plain color</option>
+      <option value="">{none}</option>
       <optgroup label="Textures">
         {TEXTURES.map((t) => (
           <option key={t} value={t}>
@@ -211,6 +216,13 @@ export function ToolOptions() {
     case 'image':
       body = <ImagePicker />
       break
+    case 'eraser':
+      body = (
+        <span className="px-1 text-xs whitespace-nowrap text-fg-subtle">
+          Click or drag over walls, doors, paths, tokens… Start on a room or area to erase those too.
+        </span>
+      )
+      break
     case 'ruler':
       body = (
         <Segmented
@@ -226,7 +238,7 @@ export function ToolOptions() {
       break
   }
   if (!body) return null
-  return <div className={cn(floating, 'flex h-9 items-center gap-2 px-2')}>{body}</div>
+  return <div className={cn(floating, 'flex h-9 min-w-0 items-center gap-2 overflow-hidden px-2')}>{body}</div>
 }
 
 function ImagePicker() {

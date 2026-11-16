@@ -285,7 +285,7 @@ export function Segmented<T extends string | number>({
   className?: string
 }) {
   return (
-    <div role="group" aria-label={label} className={cn('flex rounded-md bg-app/60 p-0.5 shadow-[inset_0_0_0_1px_var(--color-line)]', className)}>
+    <div role="group" aria-label={label} className={cn('flex shrink-0 rounded-md bg-app/60 p-0.5 shadow-[inset_0_0_0_1px_var(--color-line)]', className)}>
       {options.map(({ value: option, label: name, icon: Icon, showLabel }) => {
         const on = value === option
         const inner = (
@@ -296,7 +296,7 @@ export function Segmented<T extends string | number>({
             aria-pressed={on}
             onClick={() => onChange(option)}
             className={cn(
-              'flex h-6 min-w-8 flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2 text-xs font-medium outline-none transition-colors duration-100 focus-visible:ring-2 focus-visible:ring-accent/70',
+              'flex h-6 min-w-8 flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2 text-xs font-medium whitespace-nowrap outline-none transition-colors duration-100 focus-visible:ring-2 focus-visible:ring-accent/70',
               on ? 'bg-raised text-fg shadow-[0_1px_2px_oklch(0_0_0/0.4),inset_0_0_0_1px_var(--color-line)]' : 'text-fg-subtle hover:text-fg',
             )}
           >

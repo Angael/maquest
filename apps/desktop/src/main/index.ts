@@ -1,9 +1,10 @@
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { app, BrowserWindow, ipcMain, net, protocol, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, net, protocol } from 'electron'
 import { Project } from '@maquest/core'
 import { handlers, mediaPath } from './handlers'
 import { setupUpdates } from './updater'
+import { closePlayerWindows, externalLinks, loadRenderer } from './windows'
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'maquest-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } }])
 
@@ -25,18 +26,15 @@ function createWindow() {
       sandbox: false,
     },
   })
-  // Links from notes open in the system browser, never in an app window.
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^(https?|mailto):/i.test(url)) void shell.openExternal(url)
-    return { action: 'deny' }
-  })
+  externalLinks(win)
   const sendMaximized = () => win.webContents.send('window:maximized', win.isMaximized())
   win.on('maximize', sendMaximized)
   win.on('unmaximize', sendMaximized)
   win.on('enter-full-screen', sendMaximized)
   win.on('leave-full-screen', sendMaximized)
-  if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL)
-  else void win.loadFile(path.join(import.meta.dirname, '../renderer/index.html'))
+  loadRenderer(win)
+  // Player windows show the project of this window; they go when it does.
+  win.on('closed', closePlayerWindows)
 }
 
 app.whenReady().then(() => {
