@@ -953,7 +953,7 @@ server.registerTool(
     description: `Battle maps / floor plans of map nodes (create one with write type=map). The document is maps/<id>.map.json; the app shows edits live.
 Coordinates and lengths are grid cells: (0,0) is the top-left corner, cell (c,r) spans c..c+1, cell centers are at .5. x/y is an object's center (rect, ellipse, image, door, label, light) or the origin its path points are relative to. rotation in degrees, clockwise.
 Object kinds (${OBJECT_KINDS.join(', ')}):
-- room { shape, op: add|subtract }: all visible rooms merge/cut in order into one floor whose outline becomes walls.
+- room { shape, op: add|subtract|separate, light?: light|dim|dark, name? }: all visible rooms merge/cut in order into one floor whose outline becomes walls; separate keeps its own walls inside other rooms (room in a room); light overrides the map's ambient inside (lit tavern at night, dark cellar); name shows in its middle for the GM.
 - area { shape, op, fill }: painted terrain under rooms; subtract erases paint below it.
 - wall { shape, width?, color?, texture? (material: wood, stone, brick, rock…), fill? (closed walls only: a solid top seen from outside, e.g. a roof with texture shingles or thatch, a cliff with rock) }: free-standing wall, blocks sight. path { shape, stroke {color,width,dash?}, fill? }: roads, rivers, decoration.
 - door { width (default 1), variant door|double|window|secret, open }: put it on a wall, rotation along the wall (0 = horizontal wall, 90 = vertical).

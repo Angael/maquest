@@ -1,11 +1,11 @@
 import {
   areaRegions,
   difference,
-  rectRegion,
   roomRegion,
   sight as computeSight,
   visibleObjects,
   wallGeometry,
+  worldBox,
   type Multi,
   type Pair,
   type Sight,
@@ -33,6 +33,10 @@ export type RenderOptions = {
   sight?: Sight
   /** Unique prefix for ids (patterns, clips) when several maps share a page. */
   idPrefix?: string
+  /** Room names in their middle (default: in edit mode). */
+  roomNames?: boolean
+  /** Clip everything to the map's rectangle (default true; the editor shows what lies outside). */
+  clip?: boolean
   /** Pixel size of the root svg; default grid.size per cell. */
   width?: number | string
   height?: number | string
@@ -256,7 +260,7 @@ export function renderMap(doc: MapDoc, opts: RenderOptions = {}): Scene {
   const floor = roomRegion(doc, objects)
   const geometry = wallGeometry(doc, objects, floor)
   const fogOn = doc.fog.enabled && (opts.fog ?? 'none') !== 'none'
-  const lightOn = doc.fog.ambient !== 'light' && (opts.lighting ?? 'none') !== 'none'
+  const lightOn = (opts.lighting ?? 'none') !== 'none' && (doc.fog.ambient !== 'light' || objects.some((o) => o.kind === 'room' && !!o.light))
   const sight = opts.sight ?? (fogOn || lightOn ? computeSight(doc, objects, geometry) : undefined)
 
   // Patterns for every textured fill in use.
@@ -421,6 +425,36 @@ export function renderMap(doc: MapDoc, opts: RenderOptions = {}): Scene {
       ),
     )
 
+  if (opts.roomNames ?? edit)
+    for (const o of objects) {
+      if (o.kind !== 'room' || o.op === 'subtract' || !o.name) continue
+      const b = worldBox(o)
+      const size = Math.max(0.3, Math.min(0.7, b.w / Math.max(4, o.name.length * 0.7), b.h / 3))
+      labels.push(
+        h(
+          'text',
+          {
+            'data-room-name': o.id,
+            x: num(b.x + b.w / 2),
+            y: num(b.y + b.h / 2),
+            'font-size': num(size),
+            'font-family': 'Literata, Georgia, serif',
+            'font-style': 'italic',
+            'text-anchor': 'middle',
+            'dominant-baseline': 'central',
+            fill: '#3b3027',
+            'fill-opacity': 0.75,
+            stroke: '#ffffff',
+            'stroke-opacity': 0.5,
+            'stroke-width': num(size * 0.12),
+            'paint-order': 'stroke',
+            'pointer-events': 'none',
+          },
+          o.name,
+        ),
+      )
+    }
+
   const lights = edit
     ? objects
         .filter((o): o is Extract<MapObject, { kind: 'light' }> => o.kind === 'light')
@@ -434,26 +468,16 @@ export function renderMap(doc: MapDoc, opts: RenderOptions = {}): Scene {
         )
     : []
 
-  const mapRect = rectRegion(0, 0, cols, rows)
   const overlays: SvgEl[] = []
-  if (lightOn && sight) {
-    const strength = (doc.fog.ambient === 'dark' ? 0.8 : 0.45) * (opts.lighting === 'gm' ? 0.55 : 1)
-    overlays.push(
-      h('path', {
-        d: multiD(difference(mapRect, sight.dim)),
-        fill: '#05070d',
-        'fill-opacity': num(strength),
-        'fill-rule': 'evenodd',
-        'pointer-events': 'none',
-      }),
-      h('path', {
-        d: multiD(difference(sight.dim, sight.bright)),
-        fill: '#05070d',
-        'fill-opacity': num(strength * 0.4),
-        'fill-rule': 'evenodd',
-        'pointer-events': 'none',
-      }),
-    )
+  if (lightOn && sight?.shaded) {
+    // Darkness, unlit ambient dimness, then the dim edge of lights; the GM sees it all a little lighter.
+    const k = opts.lighting === 'gm' ? 0.55 : 1
+    const shade = (region: Multi, opacity: number) =>
+      region.length &&
+      overlays.push(h('path', { d: multiD(region), fill: '#05070d', 'fill-opacity': num(opacity * k), 'fill-rule': 'evenodd', 'pointer-events': 'none' }))
+    shade(sight.dark, 0.8)
+    shade(sight.dusk, 0.45)
+    shade(difference(sight.dim, sight.bright, sight.dark, sight.dusk), 0.25)
   }
   if (fogOn && sight) {
     const explored = doc.fog.explored as Multi
@@ -491,7 +515,7 @@ export function renderMap(doc: MapDoc, opts: RenderOptions = {}): Scene {
     ),
     h(
       'g',
-      { 'clip-path': `url(#${clip})` },
+      opts.clip === false ? {} : { 'clip-path': `url(#${clip})` },
       h('rect', { width: cols, height: rows, ...paint(doc.style.background, prefix), 'data-background': '1' }),
       h('g', { 'data-band': 'terrain' }, ...terrain),
       h('g', { 'data-band': 'rooms' }, ...rooms),
