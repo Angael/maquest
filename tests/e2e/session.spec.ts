@@ -114,7 +114,7 @@ test('middle click opens nodes as inspector tabs', async ({ desktop }) => {
   await tabs.getByRole('tab', { name: 'Hall' }).click()
   await expect(page.getByRole('textbox', { name: 'Title' })).toHaveValue('Hall')
   await page.getByRole('button', { name: 'Close Hall' }).click()
-  await expect(tabs.getByRole('tab')).toHaveText(['Cellar'])
+  await expect(tabs).toBeHidden()
   await expect(page.getByRole('textbox', { name: 'Title' })).toHaveValue('Cellar')
 })
 
