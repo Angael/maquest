@@ -12,6 +12,7 @@ import { ClockDial } from './ClockDial'
 import { api, isVideo, mediaUrl } from '../lib/api'
 import { STATUS_STYLE, useTypes } from '../lib/styles'
 import { cn } from './ui'
+import { nodeLinkProps } from '../lib/nodeLink'
 
 /** A reference edge (involves, located-at, …) drawn as a chip on its source card. */
 export type CardRef = { edge: string; type: EdgeType; id: string; title: string; nodeType: NodeType }
@@ -182,6 +183,7 @@ export const StoryCard = memo(function StoryCard({ data, selected }: NodeProps<N
                       type="button"
                       title={`${r.type} → ${r.title}`}
                       className="nodrag inline-flex h-5 max-w-full items-center gap-1 rounded-full bg-app/50 px-1.5 text-[10px] text-fg-muted shadow-[inset_0_0_0_1px_var(--color-line)] outline-none hover:bg-hover hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/70"
+                      {...nodeLinkProps(r.id)}
                       onClick={(event) => {
                         event.stopPropagation()
                         select({ kind: 'node', id: r.id })

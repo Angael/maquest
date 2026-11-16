@@ -4,22 +4,21 @@ import { ArrowDown, ArrowLeftRight, Spline, Trash2 } from 'lucide-react'
 import { EDGE_DESCRIPTIONS, EDGE_LABEL_MAX, EDGE_TYPES, type EdgeType, type StoryNode } from '@maquest/core/schema'
 import { api } from '../../lib/api'
 import { useAction, useGraph, useNodes } from '../../lib/queries'
-import { useUI } from '../../lib/store'
 import { BEFORE_DELETE, useDeleteSelection } from '../../lib/deletion'
 import { EDGE_STYLE, useTypes } from '../../lib/styles'
 import { IconButton, MenuItem, MenuSeparator } from '../ui'
 import { InspectorHeader } from './Header'
 import { GhostSelect, PropertyRow, ghost } from './fields'
+import { nodeLinkProps } from '../../lib/nodeLink'
 
 function Endpoint({ node, id, role }: { node?: StoryNode; id: string; role: 'From' | 'To' }) {
   const types = useTypes()
-  const select = useUI((s) => s.select)
   const S = node && types.of(node.type)
   return (
     <button
       type="button"
       aria-label={`${role}: ${node?.title ?? id}`}
-      onClick={() => select({ kind: 'node', id })}
+      {...nodeLinkProps(id)}
       className="-mx-1.5 flex w-[calc(100%+12px)] min-w-0 items-center gap-2 rounded-md px-1.5 py-1 text-left outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-accent/70"
     >
       {S ? <S.icon size={16} aria-hidden className="shrink-0" style={{ color: S.color }} /> : <span className="size-4" />}

@@ -7,6 +7,7 @@ import { useUI } from '../lib/store'
 import { useTypes } from '../lib/styles'
 import { rankItems } from '../lib/search'
 import { Kbd } from './ui'
+import { openNodeTab, preventMiddleDown } from '../lib/nodeLink'
 
 const close = () => useUI.getState().setPaletteOpen(false)
 
@@ -98,7 +99,18 @@ function Palette() {
               {entities.map((n) => {
                 const S = types.of(n.type)
                 return (
-                  <Command.Item key={n.id} value={`node:${n.id}`} onSelect={() => goNode(n.id)} className={itemClass}>
+                  <Command.Item
+                    key={n.id}
+                    value={`node:${n.id}`}
+                    onSelect={() => goNode(n.id)}
+                    onMouseDown={preventMiddleDown}
+                    onAuxClick={(e) => {
+                      if (e.button !== 1) return
+                      close()
+                      openNodeTab(n.id)
+                    }}
+                    className={itemClass}
+                  >
                     <S.icon size={14} style={{ color: S.color }} className="shrink-0" aria-hidden />
                     <span className="max-w-[60%] shrink-0 truncate">{n.title}</span>
                     {n.summary && <span className="min-w-0 flex-1 truncate text-xs text-fg-faint">{n.summary}</span>}

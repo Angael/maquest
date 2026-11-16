@@ -8,6 +8,7 @@ import { useUI } from '../lib/store'
 import { useTypes, type TypeStyle } from '../lib/styles'
 import { Button, IconButton, Kbd, Menu, MenuItem, MenuLabel, cn } from './ui'
 import { PageHeader } from './views/ViewLayout'
+import { nodeLinkProps } from '../lib/nodeLink'
 
 const PROMOTE: NodeType[] = ['note', 'scene', 'chapter', 'story']
 const TITLE_MAX = 80
@@ -199,7 +200,7 @@ const IdeaCard = memo(function IdeaCard({
           <button
             type="button"
             aria-pressed={selected}
-            onClick={() => select({ kind: 'node', id: idea.id })}
+            {...nodeLinkProps(idea.id)}
             className="block w-full text-left text-base leading-6 font-medium text-fg outline-none after:absolute after:inset-0 after:rounded-lg focus-visible:after:ring-2 focus-visible:after:ring-accent/70"
           >
             <span className="line-clamp-2 text-pretty break-words">{idea.title || 'Untitled idea'}</span>

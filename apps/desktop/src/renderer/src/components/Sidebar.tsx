@@ -7,6 +7,7 @@ import { useAction, useNodes, useOutline } from '../lib/queries'
 import { useUI } from '../lib/store'
 import { useTypes, type TypeStyle } from '../lib/styles'
 import { IconButton, cn } from './ui'
+import { openNodeTab, preventMiddleDown } from '../lib/nodeLink'
 
 /** Row being dragged in the sidebar, so siblings of the same type can show where it would land. */
 let draggedRow: { id: string; type: NodeType } | null = null
@@ -102,6 +103,12 @@ const Row = memo(function Row({
       onClick={(event) => {
         event.currentTarget.focus()
         actions.focus(id)
+      }}
+      onMouseDown={preventMiddleDown}
+      onAuxClick={(event) => {
+        if (event.button !== 1) return
+        event.preventDefault()
+        openNodeTab(id)
       }}
       onKeyDown={(event) => {
         if (event.target !== event.currentTarget) return
