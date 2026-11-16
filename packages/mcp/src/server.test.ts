@@ -189,9 +189,13 @@ test('checks: overview summarizes, checks: true lists issues, writes report the 
 
 test('agents draw a map with layers and export it to svg', async (t) => {
   const { p, call } = await connect(t)
+  const defaults = await call('project', { action: 'update', maps: { grid: { unit: { amount: 100, name: 'm' }, diagonal: 'euclid' } } })
+  assert.equal(defaults.isError, false, defaults.text)
   const created = await call('write', { nodes: [{ type: 'map', title: 'Town square' }] })
   assert.equal(created.isError, false, created.text)
   const id = p.listNodes({ type: 'map' })[0].id
+  assert.equal(p.readMap(id).grid.diagonal, 'euclid')
+  assert.equal(p.readMap(id).grid.unit.name, 'm')
   const edit = await call('map', {
     action: 'edit',
     id,

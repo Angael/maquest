@@ -1,5 +1,29 @@
-import { useState, type ReactNode } from 'react'
-import { ArrowDownToLine, ArrowUpToLine, Combine, Copy, Eye, EyeOff, Layers, Link2, Plus, Trash2, Pencil, RotateCcw } from 'lucide-react'
+import type { ReactNode } from 'react'
+import {
+  ArrowDownToLine,
+  ArrowUpToLine,
+  BrickWall,
+  Combine,
+  Copy,
+  DoorOpen,
+  Eye,
+  EyeOff,
+  Image as ImageIcon,
+  Layers,
+  Lightbulb,
+  Link2,
+  PaintBucket,
+  Pencil,
+  PenTool,
+  Plus,
+  RotateCcw,
+  SquareDashed,
+  Trash2,
+  Type,
+  UserRound,
+  X,
+  type LucideIcon,
+} from 'lucide-react'
 import {
   DOOR_VARIANTS,
   Layer,
@@ -8,129 +32,56 @@ import {
   isShaped,
   joinObjects,
   showLayer,
-  type Fill,
   type MapDoc,
   type MapObject,
+  type MapObjectKind,
   type Token,
 } from '@maquest/core/map'
 import { useNodes } from '../../lib/queries'
-import { Button, IconButton, Input, Label, Segmented, Select, cn } from '../ui'
+import { Button, IconButton, Input, Label, Segmented, Select, cn, floating } from '../ui'
 import { useMapUI } from './mapStore'
 import { ColorInput, TextureSelect } from './MapToolbar'
 import { duplicateIds, patchObject, removeIds, reorder } from './edit'
+import { FillRow, NumField, Row, Section, TextField, Toggle } from './fields'
 
 type Props = { doc: MapDoc; commit: (next: MapDoc) => void }
 
-type NumProps = {
-  label: string
-  value: number
-  onChange: (v: number) => void
-  step?: number
-  min?: number
-  suffix?: string
-  className?: string
+const KIND: Record<MapObjectKind | 'token', { label: string; icon: LucideIcon }> = {
+  room: { label: 'Room', icon: SquareDashed },
+  area: { label: 'Painted area', icon: PaintBucket },
+  wall: { label: 'Wall', icon: BrickWall },
+  path: { label: 'Path', icon: PenTool },
+  door: { label: 'Door', icon: DoorOpen },
+  image: { label: 'Image', icon: ImageIcon },
+  label: { label: 'Label', icon: Type },
+  light: { label: 'Light', icon: Lightbulb },
+  token: { label: 'Token', icon: UserRound },
 }
 
-/** Number input that commits on Enter / blur (so typing "1." does not jump); a new value from outside resets it. */
-export const NumField = (p: NumProps) => <NumInput key={p.value} {...p} />
-
-function NumInput({ label, value, onChange, step = 0.5, min, suffix, className }: NumProps) {
-  const [text, setText] = useState(String(round(value)))
-  const done = () => {
-    const n = Number(text)
-    if (text.trim() !== '' && Number.isFinite(n) && (min === undefined || n >= min)) {
-      if (n !== value) onChange(n)
-    } else setText(String(round(value)))
-  }
+/** Radii are stored in cells but read in the map's unit (a 60 ft darkvision, not 12 cells). */
+function UnitField({ doc, label, cells, onChange, min = 0 }: { doc: MapDoc; label: string; cells: number; onChange: (cells: number) => void; min?: number }) {
+  const { amount, name } = doc.grid.unit
   return (
-    <label className={cn('flex min-w-0 items-center gap-1.5', className)}>
-      <span className="w-12 shrink-0 text-xs text-fg-subtle">{label}</span>
-      <Input
-        type="number"
-        inputMode="decimal"
-        step={step}
-        min={min}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onBlur={done}
-        onKeyDown={(e) => e.key === 'Enter' && (e.currentTarget as HTMLInputElement).blur()}
-        className="tabular h-6 min-w-0 px-1.5 text-xs"
-      />
-      {suffix && <span className="shrink-0 text-xs text-fg-faint">{suffix}</span>}
-    </label>
+    <NumField
+      label={label}
+      labelClass="w-16"
+      value={Math.round(cells * amount * 100) / 100}
+      step={amount}
+      min={min}
+      suffix={name}
+      onChange={(v) => onChange(Math.round((v / amount) * 1000) / 1000)}
+    />
   )
 }
 
-type TextProps = { label: string; value: string; onChange: (v: string) => void; field?: string }
-const TextField = (p: TextProps) => <TextInput key={p.value} {...p} />
+// ---------- selection ----------
 
-function TextInput({ label, value, onChange, field }: TextProps) {
-  const [text, setText] = useState(value)
-  return (
-    <label className="flex min-w-0 items-center gap-1.5">
-      <span className="w-12 shrink-0 text-xs text-fg-subtle">{label}</span>
-      <Input
-        data-map-field={field}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onBlur={() => text !== value && onChange(text)}
-        onKeyDown={(e) => e.key === 'Enter' && (e.currentTarget as HTMLInputElement).blur()}
-        className="h-6 min-w-0 px-1.5 text-xs"
-      />
-    </label>
-  )
-}
-
-function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <label className="flex h-6 cursor-pointer items-center gap-2 text-xs text-fg-muted">
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="accent-accent" />
-      {label}
-    </label>
-  )
-}
-
-const round = (n: number) => Math.round(n * 100) / 100
-
-function Section({ title, children, action }: { title: string; children: ReactNode; action?: ReactNode }) {
-  return (
-    <section className="border-b border-line px-3 py-3">
-      <div className="mb-2 flex h-6 items-center justify-between">
-        <h3 className="text-xs font-medium text-fg-subtle">{title}</h3>
-        {action}
-      </div>
-      <div className="space-y-1.5">{children}</div>
-    </section>
-  )
-}
-
-function FillRow({ label, fill, onChange }: { label: string; fill: Fill; onChange: (f: Fill) => void }) {
-  return (
-    <div className="flex items-center gap-1.5">
-      <span className="w-12 shrink-0 text-xs text-fg-subtle">{label}</span>
-      <ColorInput label={`${label} color`} value={fill.color ?? '#888888'} onChange={(color) => onChange({ ...fill, color })} />
-      <TextureSelect label={`${label} texture`} value={fill.texture} onChange={(texture) => onChange({ ...fill, texture })} className="min-w-0 flex-1" />
-    </div>
-  )
-}
-
-export function MapPanel({ doc, commit }: Props) {
+/** The inspector of what is selected, floating over the map; empty selection, no panel. */
+export function SelectionPanel({ doc, commit }: Props) {
   const selected = useMapUI((s) => s.selected)
-  const items = selected.flatMap((id) => [...doc.objects.filter((o) => o.id === id), ...doc.tokens.filter((t) => t.id === id)])
-  return (
-    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-      {items.length > 0 && <SelectionSection doc={doc} commit={commit} items={items} />}
-      <LayersSection doc={doc} commit={commit} />
-      <FogSection doc={doc} commit={commit} />
-      <GridSection doc={doc} commit={commit} />
-      <StyleSection doc={doc} commit={commit} />
-      <TokensSection doc={doc} />
-    </div>
-  )
-}
-
-function SelectionSection({ doc, commit, items }: Props & { items: (MapObject | Token)[] }) {
   const select = useMapUI((s) => s.select)
+  const items = selected.flatMap((id) => [...doc.objects.filter((o) => o.id === id), ...doc.tokens.filter((t) => t.id === id)])
+  if (!items.length) return null
   const ids = items.map((i) => i.id)
   const one = items.length === 1 ? items[0] : null
   const patch = (p: Record<string, unknown>) => one && commit(patchObject(doc, one.id, p))
@@ -142,126 +93,111 @@ function SelectionSection({ doc, commit, items }: Props & { items: (MapObject | 
     fn(next)
     commit(next)
   }
-  const title = one ? ('kind' in one ? (one.name ?? `${one.kind[0].toUpperCase()}${one.kind.slice(1)}`) : one.name) : `${items.length} selected`
+  const kind = one ? ('kind' in one ? one.kind : 'token') : null
+  const Icon = kind ? KIND[kind].icon : Layers
+  const title = one ? ('kind' in one ? (one.name ?? KIND[one.kind].label) : one.name) : `${items.length} selected`
+  const onlyObjects = items.every((i) => 'kind' in i)
   return (
-    <Section
-      title={title}
-      action={
-        <div className="flex items-center">
-          <IconButton size="sm" icon={ArrowUpToLine} label="Bring to front" shortcut="]" onClick={() => commit(reorder(doc, ids, 'front'))} />
-          <IconButton size="sm" icon={ArrowDownToLine} label="Send to back" shortcut="[" onClick={() => commit(reorder(doc, ids, 'back'))} />
-          <IconButton
-            size="sm"
-            icon={Copy}
-            label="Duplicate"
-            shortcut="Ctrl+D"
-            onClick={() => {
-              const r = duplicateIds(doc, ids)
-              commit(r.doc)
-              select(r.ids)
-            }}
-          />
-          <IconButton
-            size="sm"
-            icon={Trash2}
-            label="Delete"
-            shortcut="Del"
-            onClick={() => {
-              commit(removeIds(doc, ids))
-              select([])
-            }}
-          />
-        </div>
-      }
-    >
-      {one && 'kind' in one && <ObjectFields o={one} patch={patch} />}
-      {one && !('kind' in one) && <TokenFields t={one} patch={patch} />}
-      {one && doc.layers.length > 0 && (
-        <div className="pt-1">
-          <Label className="mb-1">On layers</Label>
-          <div className="flex flex-wrap gap-x-3">
-            {doc.layers.map((l) => (
-              <Toggle
-                key={l.id}
-                label={l.name}
-                checked={one.layers.includes(l.id)}
-                onChange={(on) => patch({ layers: on ? [...one.layers, l.id] : one.layers.filter((x) => x !== l.id) })}
-              />
-            ))}
-          </div>
-          {!one.layers.length && <p className="text-2xs text-fg-faint">On no layer: always shown.</p>}
-        </div>
-      )}
-      {closed.length >= 2 && closed.length === items.length && (
-        <div className="pt-1">
-          <Label className="mb-1">Combine into one shape</Label>
-          <div className="grid grid-cols-4 gap-1">
-            {(['union', 'subtract', 'intersect', 'exclude'] as const).map((mode) => (
-              <Button
-                key={mode}
-                size="sm"
-                variant="subtle"
-                title={mode === 'subtract' ? 'Cut the later shapes out of the first selected' : undefined}
-                onClick={() => {
-                  run((d) => bakeObjects(d, ids, mode))
-                  select([ids[0]])
-                }}
-              >
-                {mode[0].toUpperCase() + mode.slice(1)}
-              </Button>
-            ))}
-          </div>
-        </div>
-      )}
-      {open.length >= 1 && open.length <= 2 && open.length === items.length && (
-        <Button
+    <section aria-label="Selection" data-map-selection className={cn(floating, 'pointer-events-auto flex max-h-full w-72 flex-col overflow-hidden')}>
+      <header className="flex h-10 shrink-0 items-center gap-2 border-b border-line pr-1 pl-3">
+        <Icon size={14} aria-hidden className="shrink-0 text-accent-text" />
+        <h2 className="min-w-0 flex-1 truncate text-sm font-medium text-fg">{title}</h2>
+        {onlyObjects && (
+          <>
+            <IconButton size="sm" icon={ArrowUpToLine} label="Bring to front" shortcut="]" onClick={() => commit(reorder(doc, ids, 'front'))} />
+            <IconButton size="sm" icon={ArrowDownToLine} label="Send to back" shortcut="[" onClick={() => commit(reorder(doc, ids, 'back'))} />
+          </>
+        )}
+        <IconButton
           size="sm"
-          variant="subtle"
-          className="w-full"
+          icon={Copy}
+          label="Duplicate"
+          shortcut="Ctrl+D"
           onClick={() => {
-            run((d) => joinObjects(d, ids))
-            select([ids[0]])
+            const r = duplicateIds(doc, ids)
+            commit(r.doc)
+            select(r.ids)
           }}
-        >
-          {open.length === 2 ? <Link2 size={14} aria-hidden /> : <Combine size={14} aria-hidden />}
-          {open.length === 2 ? 'Join the two lines' : 'Close the line'}
-        </Button>
-      )}
-    </Section>
+        />
+        <IconButton
+          size="sm"
+          icon={Trash2}
+          label="Delete"
+          shortcut="Del"
+          onClick={() => {
+            commit(removeIds(doc, ids))
+            select([])
+          }}
+        />
+        <IconButton size="sm" icon={X} label="Deselect" shortcut="Esc" onClick={() => select([])} />
+      </header>
+      <div className="min-h-0 space-y-1.5 overflow-y-auto overscroll-contain px-3 py-3">
+        {one && 'kind' in one && <ObjectFields doc={doc} o={one} patch={patch} />}
+        {one && !('kind' in one) && <TokenFields doc={doc} t={one} patch={patch} />}
+        {one && doc.layers.length > 0 && (
+          <div className="pt-1.5">
+            <Label className="mb-1">On layers</Label>
+            <div className="flex flex-wrap gap-x-3">
+              {doc.layers.map((l) => (
+                <Toggle
+                  key={l.id}
+                  label={l.name}
+                  checked={one.layers.includes(l.id)}
+                  onChange={(on) => patch({ layers: on ? [...one.layers, l.id] : one.layers.filter((x) => x !== l.id) })}
+                />
+              ))}
+            </div>
+            {!one.layers.length && <p className="text-2xs text-fg-faint">On no layer: always shown.</p>}
+          </div>
+        )}
+        {closed.length >= 2 && closed.length === items.length && (
+          <div className="pt-1">
+            <Label className="mb-1">Combine into one shape</Label>
+            <div className="grid grid-cols-2 gap-1">
+              {(['union', 'subtract', 'intersect', 'exclude'] as const).map((mode) => (
+                <Button
+                  key={mode}
+                  size="sm"
+                  variant="subtle"
+                  title={mode === 'subtract' ? 'Cut the later shapes out of the first selected' : undefined}
+                  onClick={() => {
+                    run((d) => bakeObjects(d, ids, mode))
+                    select([ids[0]])
+                  }}
+                >
+                  {mode[0].toUpperCase() + mode.slice(1)}
+                </Button>
+              ))}
+            </div>
+          </div>
+        )}
+        {open.length >= 1 && open.length <= 2 && open.length === items.length && (
+          <Button
+            size="sm"
+            variant="subtle"
+            className="w-full"
+            onClick={() => {
+              run((d) => joinObjects(d, ids))
+              select([ids[0]])
+            }}
+          >
+            {open.length === 2 ? <Link2 size={14} aria-hidden /> : <Combine size={14} aria-hidden />}
+            {open.length === 2 ? 'Join the two lines' : 'Close the line'}
+          </Button>
+        )}
+        {!one && <p className="text-2xs leading-4 text-fg-faint">Drag any of them to move all. Arrow keys nudge.</p>}
+      </div>
+    </section>
   )
 }
 
-function ObjectFields({ o, patch }: { o: MapObject; patch: (p: Record<string, unknown>) => void }) {
-  const xy = (
-    <div className="grid grid-cols-2 gap-1.5">
-      <NumField label="X" value={o.x} onChange={(x) => patch({ x })} />
-      <NumField label="Y" value={o.y} onChange={(y) => patch({ y })} />
-      {o.kind !== 'light' && <NumField label="Rotate" value={o.rotation} step={15} suffix="°" onChange={(rotation) => patch({ rotation })} />}
-    </div>
-  )
+const Grid2 = ({ children }: { children: ReactNode }) => <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">{children}</div>
+
+function ObjectFields({ doc, o, patch }: { doc: MapDoc; o: MapObject; patch: (p: Record<string, unknown>) => void }) {
   const shape = isShaped(o) ? o.shape : null
   return (
     <>
-      <TextField label="Name" value={o.name ?? ''} onChange={(name) => patch({ name: name || undefined })} />
-      {xy}
-      {shape?.type === 'rect' && (
-        <div className="grid grid-cols-2 gap-1.5">
-          <NumField label="Width" value={shape.w} min={0.1} onChange={(w) => patch({ shape: { ...shape, w } })} />
-          <NumField label="Height" value={shape.h} min={0.1} onChange={(h) => patch({ shape: { ...shape, h } })} />
-          <NumField label="Corners" value={shape.radius ?? 0} min={0} step={0.25} onChange={(radius) => patch({ shape: { ...shape, radius } })} />
-        </div>
-      )}
-      {shape?.type === 'ellipse' && (
-        <div className="grid grid-cols-2 gap-1.5">
-          <NumField label="Rx" value={shape.rx} min={0.1} onChange={(rx) => patch({ shape: { ...shape, rx } })} />
-          <NumField label="Ry" value={shape.ry} min={0.1} onChange={(ry) => patch({ shape: { ...shape, ry } })} />
-        </div>
-      )}
-      {shape?.type === 'path' && (
-        <p className="text-2xs text-fg-faint">
-          {shape.points.length} points. Drag the white squares to move points and the dots to bend curves (Alt breaks the pair).
-        </p>
-      )}
+      <TextField label="Name" value={o.name ?? ''} placeholder={KIND[o.kind].label} onChange={(name) => patch({ name: name || undefined })} />
       {(o.kind === 'room' || o.kind === 'area') && (
         <Segmented
           label="Combine"
@@ -276,8 +212,7 @@ function ObjectFields({ o, patch }: { o: MapObject; patch: (p: Record<string, un
       {o.kind === 'area' && o.op === 'add' && <FillRow label="Paint" fill={o.fill} onChange={(fill) => patch({ fill })} />}
       {o.kind === 'path' && (
         <>
-          <div className="flex items-center gap-1.5">
-            <span className="w-12 shrink-0 text-xs text-fg-subtle">Stroke</span>
+          <Row label="Stroke">
             <ColorInput label="Stroke color" value={o.stroke?.color ?? '#3b3027'} onChange={(color) => patch({ stroke: { ...o.stroke, color } })} />
             <TextureSelect
               label="Stroke texture"
@@ -285,99 +220,130 @@ function ObjectFields({ o, patch }: { o: MapObject; patch: (p: Record<string, un
               onChange={(texture) => patch({ stroke: { ...o.stroke, texture } })}
               className="min-w-0 flex-1"
             />
-          </div>
-          <NumField label="Width" value={o.stroke?.width ?? 0.1} min={0.01} step={0.05} onChange={(width) => patch({ stroke: { ...o.stroke, width } })} />
+          </Row>
+          <NumField
+            label="Width"
+            value={o.stroke?.width ?? 0.1}
+            min={0.01}
+            step={0.05}
+            suffix="cells"
+            onChange={(width) => patch({ stroke: { ...o.stroke, width } })}
+          />
           {shape?.type === 'path' && shape.closed && <FillRow label="Fill" fill={o.fill ?? {}} onChange={(fill) => patch({ fill })} />}
         </>
       )}
       {o.kind === 'wall' && (
-        <div className="grid grid-cols-2 gap-1.5">
-          <NumField label="Width" value={o.width ?? 0.25} min={0.02} step={0.05} onChange={(width) => patch({ width })} />
-          <div className="flex items-center gap-1.5">
-            <span className="w-12 shrink-0 text-xs text-fg-subtle">Color</span>
-            <ColorInput label="Wall color" value={o.color ?? '#2b241e'} onChange={(color) => patch({ color })} />
-          </div>
-        </div>
+        <>
+          <Row label="Material">
+            <ColorInput label="Wall color" value={o.color ?? doc.style.wall.color} onChange={(color) => patch({ color })} />
+            <TextureSelect label="Wall material" none="Map default" value={o.texture} onChange={(texture) => patch({ texture })} className="min-w-0 flex-1" />
+          </Row>
+          <NumField label="Width" value={o.width ?? doc.style.wall.width} min={0.02} step={0.05} suffix="cells" onChange={(width) => patch({ width })} />
+          {shape && (shape.type !== 'path' || shape.closed) && (
+            <>
+              <Toggle
+                label="Solid inside (roof, rock, pillar)"
+                checked={!!o.fill}
+                onChange={(on) => patch({ fill: on ? { texture: 'shingles' } : undefined })}
+              />
+              {o.fill && <FillRow label="Top" fill={o.fill} onChange={(fill) => patch({ fill })} />}
+            </>
+          )}
+        </>
       )}
       {o.kind === 'door' && (
         <>
-          <div className="grid grid-cols-2 gap-1.5">
-            <NumField label="Width" value={o.width} min={0.25} step={0.5} onChange={(width) => patch({ width })} />
-            <Select aria-label="Door kind" value={o.variant} onChange={(e) => patch({ variant: e.target.value })}>
+          <Row label="Kind">
+            <Select aria-label="Door kind" value={o.variant} onChange={(e) => patch({ variant: e.target.value })} className="min-w-0 flex-1">
               {DOOR_VARIANTS.map((v) => (
                 <option key={v} value={v}>
                   {v[0].toUpperCase() + v.slice(1)}
                 </option>
               ))}
             </Select>
-          </div>
+          </Row>
           <Toggle label="Open" checked={o.open} onChange={(open) => patch({ open })} />
         </>
       )}
-      {o.kind === 'image' && (
-        <div className="grid grid-cols-2 gap-1.5">
-          <NumField label="Width" value={o.w} min={0.1} onChange={(w) => patch({ w })} />
-          <NumField label="Height" value={o.h} min={0.1} onChange={(h) => patch({ h })} />
-          <NumField label="Opacity" value={o.opacity ?? 1} min={0} step={0.1} onChange={(opacity) => patch({ opacity: Math.min(1, opacity) })} />
-        </div>
-      )}
+      {o.kind === 'image' && <NumField label="Opacity" value={o.opacity ?? 1} min={0} max={1} step={0.1} onChange={(opacity) => patch({ opacity })} />}
       {o.kind === 'label' && (
         <>
           <TextField label="Text" field="text" value={o.text} onChange={(text) => patch({ text })} />
-          <div className="grid grid-cols-2 gap-1.5">
-            <NumField label="Size" value={o.size} min={0.1} step={0.1} onChange={(size) => patch({ size })} />
-            <div className="flex items-center gap-1.5">
-              <span className="w-12 shrink-0 text-xs text-fg-subtle">Color</span>
-              <ColorInput label="Text color" value={o.color} onChange={(color) => patch({ color })} />
-            </div>
-          </div>
+          <Row label="Color">
+            <ColorInput label="Text color" value={o.color} onChange={(color) => patch({ color })} />
+          </Row>
         </>
       )}
       {o.kind === 'light' && (
-        <div className="grid grid-cols-2 gap-1.5">
-          <NumField label="Bright" value={o.bright} min={0} step={1} suffix="cells" onChange={(bright) => patch({ bright })} />
-          <NumField label="Dim" value={o.dim} min={0} step={1} suffix="cells" onChange={(dim) => patch({ dim })} />
-          <div className="flex items-center gap-1.5">
-            <span className="w-12 shrink-0 text-xs text-fg-subtle">Color</span>
+        <>
+          <UnitField doc={doc} label="Bright" cells={o.bright} onChange={(bright) => patch({ bright })} />
+          <UnitField doc={doc} label="Dim" cells={o.dim} onChange={(dim) => patch({ dim })} />
+          <Row label="Color" labelClass="w-16">
             <ColorInput label="Light color" value={o.color} onChange={(color) => patch({ color })} />
-          </div>
-        </div>
+          </Row>
+        </>
       )}
-      <Toggle label="Locked" checked={!!o.locked} onChange={(locked) => patch({ locked: locked || undefined })} />
+      <details className="group pt-1">
+        <summary className="flex h-6 cursor-pointer list-none items-center text-xs text-fg-subtle select-none hover:text-fg-muted">Position and size</summary>
+        <div className="space-y-1.5 pt-1">
+          <Grid2>
+            <NumField label="X" labelClass="w-5" value={o.x} onChange={(x) => patch({ x })} />
+            <NumField label="Y" labelClass="w-5" value={o.y} onChange={(y) => patch({ y })} />
+          </Grid2>
+          {o.kind !== 'light' && <NumField label="Rotate" value={o.rotation} step={15} suffix="°" onChange={(rotation) => patch({ rotation })} />}
+          {shape?.type === 'rect' && (
+            <Grid2>
+              <NumField label="W" labelClass="w-5" value={shape.w} min={0.1} onChange={(w) => patch({ shape: { ...shape, w } })} />
+              <NumField label="H" labelClass="w-5" value={shape.h} min={0.1} onChange={(h) => patch({ shape: { ...shape, h } })} />
+              <NumField label="Corners" value={shape.radius ?? 0} min={0} step={0.25} onChange={(radius) => patch({ shape: { ...shape, radius } })} />
+            </Grid2>
+          )}
+          {shape?.type === 'ellipse' && (
+            <Grid2>
+              <NumField label="Rx" labelClass="w-5" value={shape.rx} min={0.1} onChange={(rx) => patch({ shape: { ...shape, rx } })} />
+              <NumField label="Ry" labelClass="w-5" value={shape.ry} min={0.1} onChange={(ry) => patch({ shape: { ...shape, ry } })} />
+            </Grid2>
+          )}
+          {o.kind === 'door' && <NumField label="Width" value={o.width} min={0.25} step={0.5} suffix="cells" onChange={(width) => patch({ width })} />}
+          {o.kind === 'image' && (
+            <Grid2>
+              <NumField label="W" labelClass="w-5" value={o.w} min={0.1} onChange={(w) => patch({ w })} />
+              <NumField label="H" labelClass="w-5" value={o.h} min={0.1} onChange={(h) => patch({ h })} />
+            </Grid2>
+          )}
+          {o.kind === 'label' && <NumField label="Size" value={o.size} min={0.1} step={0.1} suffix="cells" onChange={(size) => patch({ size })} />}
+          <Toggle label="Locked" checked={!!o.locked} onChange={(locked) => patch({ locked: locked || undefined })} />
+        </div>
+      </details>
+      <p className="text-2xs leading-4 text-fg-faint">{HINT[o.kind]}</p>
     </>
   )
 }
 
-function TokenFields({ t, patch }: { t: Token; patch: (p: Record<string, unknown>) => void }) {
+const HINT: Record<MapObjectKind, string> = {
+  room: 'Drag the corners to resize, the top dot to rotate.',
+  area: 'Drag the corners to resize, the top dot to rotate.',
+  wall: 'Drag the white squares to move points and the dots to bend curves (Alt breaks the pair).',
+  path: 'Drag the white squares to move points and the dots to bend curves (Alt breaks the pair).',
+  door: 'Drag its ends to make it wider. Double-click opens and closes it.',
+  image: 'Drag the corners to resize, the top dot to rotate.',
+  label: 'Drag the corners to change the text size.',
+  light: 'Drag the handles on its rings to change how far it shines.',
+}
+
+function TokenFields({ doc, t, patch }: { doc: MapDoc; t: Token; patch: (p: Record<string, unknown>) => void }) {
   const { data: nodes = [] } = useNodes()
   const characters = nodes.filter((n) => n.type === 'character')
   return (
     <>
-      <TextField label="Name" value={t.name} onChange={(name) => patch({ name })} />
-      <div className="grid grid-cols-2 gap-1.5">
-        <NumField label="Size" value={t.size} min={0.25} step={1} suffix="cells" onChange={(size) => patch({ size })} />
-        <div className="flex items-center gap-1.5">
-          <span className="w-12 shrink-0 text-xs text-fg-subtle">Color</span>
-          <ColorInput label="Token color" value={t.color} onChange={(color) => patch({ color })} />
+      <Row label="Name" labelClass="w-16">
+        <ColorInput label="Token color" value={t.color} onChange={(color) => patch({ color })} />
+        <div className="min-w-0 flex-1">
+          <TextField label="Token name" labelClass="sr-only" value={t.name} onChange={(name) => patch({ name })} />
         </div>
-        <NumField label="Vision" value={t.vision ?? 0} min={0} step={1} suffix="cells" onChange={(vision) => patch({ vision: vision || undefined })} />
-        <NumField
-          label="Darkvis."
-          value={t.darkvision ?? 0}
-          min={0}
-          step={1}
-          suffix="cells"
-          onChange={(darkvision) => patch({ darkvision: darkvision || undefined })}
-        />
-      </div>
-      <p className="text-2xs text-fg-faint">Vision 0 = unlimited in light.</p>
-      <div className="flex gap-3">
-        <Toggle label="Player (reveals fog)" checked={t.player} onChange={(player) => patch({ player })} />
-        <Toggle label="Hidden" checked={!!t.hidden} onChange={(hidden) => patch({ hidden: hidden || undefined })} />
-      </div>
+      </Row>
       {characters.length > 0 && (
-        <label className="flex items-center gap-1.5">
-          <span className="w-12 shrink-0 text-xs text-fg-subtle">Node</span>
+        <Row label="Character" labelClass="w-16">
           <Select
             aria-label="Linked character"
             value={t.node ?? ''}
@@ -394,9 +360,39 @@ function TokenFields({ t, patch }: { t: Token; patch: (p: Record<string, unknown
               </option>
             ))}
           </Select>
-        </label>
+        </Row>
       )}
+      <div className="flex gap-3">
+        <Toggle label="Player (reveals fog)" checked={t.player} onChange={(player) => patch({ player })} />
+        <Toggle label="Hidden" checked={!!t.hidden} onChange={(hidden) => patch({ hidden: hidden || undefined })} />
+      </div>
+      <Segmented
+        label="Vision"
+        value={t.vision === undefined ? 'all' : 'limited'}
+        onChange={(v) => patch({ vision: v === 'all' ? undefined : 12 })}
+        options={[
+          { value: 'all', label: 'Unlimited sight', showLabel: true },
+          { value: 'limited', label: 'Limited sight', showLabel: true },
+        ]}
+      />
+      {t.vision !== undefined && <UnitField doc={doc} label="Vision" cells={t.vision} onChange={(vision) => patch({ vision })} />}
+      <UnitField doc={doc} label="Darkvision" cells={t.darkvision ?? 0} onChange={(darkvision) => patch({ darkvision: darkvision || undefined })} />
+      <NumField label="Size" labelClass="w-16" value={t.size} min={0.25} step={0.5} suffix="cells" onChange={(size) => patch({ size })} />
+      <p className="text-2xs leading-4 text-fg-faint">Drag the handles on the map: the corner square resizes, the ring handles set vision and darkvision.</p>
     </>
+  )
+}
+
+// ---------- scene panel: layers, tokens, fog ----------
+
+/** The right panel: what is on the map and how players see it. Map-wide settings live in the Map settings popover. */
+export function ScenePanel({ doc, commit }: Props) {
+  return (
+    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+      <FogSection doc={doc} commit={commit} />
+      <TokensSection doc={doc} commit={commit} />
+      <LayersSection doc={doc} commit={commit} />
+    </div>
   )
 }
 
@@ -423,7 +419,7 @@ function LayersSection({ doc, commit }: Props) {
     >
       {doc.layers.length === 0 && (
         <p className="text-xs leading-5 text-fg-subtle">
-          Layers show or hide sets of objects. Give two layers the same group to swap between them, e.g. a town before and after a battle.
+          Show or hide sets of objects. Layers with the same group swap, e.g. a town before and after a battle.
         </p>
       )}
       {doc.layers.map((l) => (
@@ -503,7 +499,14 @@ function FogSection({ doc, commit }: Props) {
   return (
     <Section
       title="Vision and fog of war"
-      action={fog.explored.length > 0 ? <IconButton size="sm" icon={RotateCcw} label="Reset explored areas" onClick={() => setFog({ explored: [] })} /> : null}
+      action={
+        fog.explored.length > 0 ? (
+          <Button size="sm" variant="ghost" onClick={() => setFog({ explored: [] })} title="Players forget what they have explored">
+            <RotateCcw size={12} aria-hidden />
+            Reset explored
+          </Button>
+        ) : null
+      }
     >
       <Toggle label="Fog of war: players reveal what their tokens see" checked={fog.enabled} onChange={(enabled) => setFog({ enabled })} />
       <Segmented
@@ -516,100 +519,145 @@ function FogSection({ doc, commit }: Props) {
           { value: 'dark', label: 'Dark', showLabel: true },
         ]}
       />
-      <p className="text-2xs leading-4 text-fg-faint">
-        In the dark, players see only lit areas and what darkvision reaches. Walls and closed doors block sight.
-      </p>
     </Section>
   )
 }
 
-function GridSection({ doc, commit }: Props) {
-  const g = doc.grid
-  const setGrid = (p: Partial<MapDoc['grid']>) => commit({ ...doc, grid: { ...g, ...p } })
+function TokensSection({ doc, commit }: Props) {
+  const selected = useMapUI((s) => s.selected)
+  const select = useMapUI((s) => s.select)
+  const setTool = useMapUI((s) => s.setTool)
   return (
-    <Section title="Grid and units">
-      <div className="grid grid-cols-2 gap-1.5">
-        <NumField label="Columns" value={g.cols} min={1} step={1} onChange={(cols) => setGrid({ cols: Math.round(Math.min(500, cols)) })} />
-        <NumField label="Rows" value={g.rows} min={1} step={1} onChange={(rows) => setGrid({ rows: Math.round(Math.min(500, rows)) })} />
-        <NumField label="1 cell =" value={g.unit.amount} min={0.01} step={1} onChange={(amount) => setGrid({ unit: { ...g.unit, amount } })} />
-        <TextField label="Unit" value={g.unit.name} onChange={(name) => setGrid({ unit: { ...g.unit, name } })} />
-      </div>
-      <label className="flex items-center gap-1.5">
-        <span className="w-12 shrink-0 text-xs text-fg-subtle">Diagonal</span>
-        <Select
-          aria-label="Diagonal rule"
-          value={g.diagonal}
-          onChange={(e) => setGrid({ diagonal: e.target.value as MapDoc['grid']['diagonal'] })}
-          className="min-w-0 flex-1"
+    <Section title="Tokens" action={<IconButton size="sm" icon={Plus} label="Place a token" shortcut="K" onClick={() => setTool('token')} />}>
+      {doc.tokens.length === 0 && <p className="text-xs leading-5 text-fg-subtle">Place tokens with the token tool, then drag them around.</p>}
+      {doc.tokens.map((t) => (
+        <div
+          key={t.id}
+          className={cn('group flex h-7 items-center gap-1 rounded-md pr-0.5 hover:bg-hover', selected.includes(t.id) && 'bg-accent-soft hover:bg-accent-soft')}
         >
-          <option value="equal">1 cell (D&D 2024)</option>
-          <option value="alternate">1, 2, 1, 2… (5-10-5)</option>
-          <option value="euclid">Exact (√2)</option>
-        </Select>
-      </label>
-      <div className="flex items-center gap-3">
-        <Toggle label="Show grid" checked={g.show} onChange={(show) => setGrid({ show })} />
-        <ColorInput label="Grid color" value={g.color} onChange={(color) => setGrid({ color })} />
-        <input
-          type="range"
-          aria-label="Grid opacity"
-          min={0.05}
-          max={1}
-          step={0.05}
-          value={g.opacity}
-          onChange={(e) => setGrid({ opacity: Number(e.target.value) })}
-          className="min-w-0 flex-1 accent-accent"
+          <button
+            type="button"
+            onClick={(e) => select(e.shiftKey ? [...new Set([...selected, t.id])] : [t.id])}
+            className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-md pl-2 text-left text-xs text-fg-muted outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+          >
+            <span aria-hidden className="size-3 shrink-0 rounded-full" style={{ background: t.color }} />
+            <span className={cn('min-w-0 flex-1 truncate', t.hidden && 'text-fg-faint')}>{t.name}</span>
+            {t.player && <span className="text-2xs text-fg-faint">player</span>}
+          </button>
+          <IconButton
+            size="sm"
+            icon={t.hidden ? EyeOff : Eye}
+            label={t.hidden ? `Show ${t.name} to players` : `Hide ${t.name} from players`}
+            className={cn('opacity-0 group-hover:opacity-100 focus-visible:opacity-100', t.hidden && 'opacity-100')}
+            onClick={() => commit(patchObject(doc, t.id, { hidden: t.hidden ? undefined : true }))}
+          />
+        </div>
+      ))}
+    </Section>
+  )
+}
+
+// ---------- map settings (also the project defaults for new maps) ----------
+
+type SettingsValue = Pick<MapDoc, 'grid' | 'style'>
+
+/** Grid, units and style of a map, or of the project defaults for new maps. */
+export function MapSettingsForm({ value, onChange }: { value: SettingsValue; onChange: (next: SettingsValue) => void }) {
+  const g = value.grid
+  const st = value.style
+  const setGrid = (p: Partial<MapDoc['grid']>) => onChange({ ...value, grid: { ...g, ...p } })
+  const setStyle = (p: Partial<MapDoc['style']>) => onChange({ ...value, style: { ...st, ...p } })
+  const lc = 'w-20'
+  return (
+    <div className="space-y-4">
+      <div className="space-y-1.5">
+        <Label className="mb-1">Size</Label>
+        <Grid2>
+          <NumField label="Columns" labelClass="w-14" value={g.cols} min={1} max={500} step={1} onChange={(cols) => setGrid({ cols: Math.round(cols) })} />
+          <NumField label="Rows" labelClass="w-10" value={g.rows} min={1} max={500} step={1} onChange={(rows) => setGrid({ rows: Math.round(rows) })} />
+        </Grid2>
+      </div>
+      <div className="space-y-1.5">
+        <Label className="mb-1">Distances</Label>
+        <Row label="1 cell is" labelClass={lc}>
+          <div className="w-16 shrink-0">
+            <NumField
+              label="Cell length"
+              labelClass="sr-only"
+              value={g.unit.amount}
+              min={0.01}
+              step={1}
+              onChange={(amount) => setGrid({ unit: { ...g.unit, amount } })}
+            />
+          </div>
+          <div className="min-w-0 flex-1">
+            <TextField label="Unit" labelClass="sr-only" value={g.unit.name} onChange={(name) => setGrid({ unit: { ...g.unit, name } })} />
+          </div>
+        </Row>
+        <Row label="Diagonals" labelClass={lc}>
+          <Select
+            aria-label="Diagonal rule"
+            value={g.diagonal}
+            onChange={(e) => setGrid({ diagonal: e.target.value as MapDoc['grid']['diagonal'] })}
+            className="min-w-0 flex-1"
+          >
+            <option value="equal">1 cell (D&D 2024)</option>
+            <option value="alternate">1, 2, 1, 2… (5-10-5)</option>
+            <option value="euclid">Exact (√2)</option>
+          </Select>
+        </Row>
+      </div>
+      <div className="space-y-1.5">
+        <Label className="mb-1">Grid</Label>
+        <div className="flex items-center gap-3">
+          <Toggle label="Show grid" checked={g.show} onChange={(show) => setGrid({ show })} />
+          <ColorInput label="Grid color" value={g.color} onChange={(color) => setGrid({ color })} />
+          <input
+            type="range"
+            aria-label="Grid opacity"
+            min={0.05}
+            max={1}
+            step={0.05}
+            value={g.opacity}
+            onChange={(e) => setGrid({ opacity: Number(e.target.value) })}
+            className="min-w-0 flex-1 accent-accent"
+          />
+        </div>
+        <NumField
+          label="Export"
+          labelClass={lc}
+          value={g.size}
+          min={8}
+          max={400}
+          step={10}
+          suffix="px per cell"
+          onChange={(size) => setGrid({ size: Math.round(size) })}
         />
       </div>
-      <NumField label="Export" value={g.size} min={8} step={10} suffix="px / cell" onChange={(size) => setGrid({ size: Math.round(Math.min(400, size)) })} />
-    </Section>
-  )
-}
-
-function StyleSection({ doc, commit }: Props) {
-  const st = doc.style
-  const setStyle = (p: Partial<MapDoc['style']>) => commit({ ...doc, style: { ...st, ...p } })
-  return (
-    <Section title="Style">
-      <FillRow label="Ground" fill={st.background} onChange={(background) => setStyle({ background })} />
-      <FillRow label="Floor" fill={st.floor} onChange={(floor) => setStyle({ floor })} />
-      <div className="flex items-center gap-1.5">
-        <span className="w-12 shrink-0 text-xs text-fg-subtle">Walls</span>
-        <ColorInput label="Wall color" value={st.wall.color} onChange={(color) => setStyle({ wall: { ...st.wall, color } })} />
+      <div className="space-y-1.5">
+        <Label className="mb-1">Look</Label>
+        <FillRow label="Ground" labelClass={lc} fill={st.background} onChange={(background) => setStyle({ background })} />
+        <FillRow label="Floors" labelClass={lc} fill={st.floor} onChange={(floor) => setStyle({ floor })} />
+        <Row label="Walls" labelClass={lc}>
+          <ColorInput label="Wall color" value={st.wall.color} onChange={(color) => setStyle({ wall: { ...st.wall, color } })} />
+          <TextureSelect
+            label="Wall material"
+            none="No material"
+            value={st.wall.texture}
+            onChange={(texture) => setStyle({ wall: { ...st.wall, texture } })}
+            className="min-w-0 flex-1"
+          />
+        </Row>
         <NumField
-          label="Width"
+          label="Wall width"
+          labelClass={lc}
           value={st.wall.width}
           min={0.02}
           step={0.05}
+          suffix="cells"
           onChange={(width) => setStyle({ wall: { ...st.wall, width } })}
-          className="flex-1"
         />
       </div>
-    </Section>
-  )
-}
-
-function TokensSection({ doc }: { doc: MapDoc }) {
-  const selected = useMapUI((s) => s.selected)
-  const select = useMapUI((s) => s.select)
-  if (!doc.tokens.length) return null
-  return (
-    <Section title="Tokens">
-      {doc.tokens.map((t) => (
-        <button
-          key={t.id}
-          type="button"
-          onClick={() => select([t.id])}
-          className={cn(
-            'flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-xs text-fg-muted hover:bg-hover',
-            selected.includes(t.id) && 'bg-accent-soft text-fg',
-          )}
-        >
-          <span aria-hidden className="size-3 shrink-0 rounded-full" style={{ background: t.color }} />
-          <span className="min-w-0 flex-1 truncate">{t.name}</span>
-          {t.player && <span className="text-2xs text-fg-faint">player</span>}
-        </button>
-      ))}
-    </Section>
+    </div>
   )
 }

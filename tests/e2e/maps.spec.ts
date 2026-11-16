@@ -93,3 +93,73 @@ test('layers in one group swap, like a town before and after a battle', async ({
   await expect(page.locator('[data-map-viewport] [data-id="calm"]')).toHaveCount(0)
   await expect.poll(() => project.readMap(mapId).layers.map((l) => l.visible)).toEqual([false, true])
 })
+
+test('the Maps view lists maps, creates one and opens maps in their own tabs', async ({ desktop: { page, project } }) => {
+  await page.getByRole('button', { name: 'Maps', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Open Old Mill' })).toBeVisible()
+  // The sidebar lists maps too.
+  await expect(page.getByRole('region', { name: 'Maps' }).getByRole('button', { name: 'Old Mill' })).toBeVisible()
+  await page.getByRole('region', { name: 'Maps' }).getByRole('button', { name: 'Old Mill' }).click({ button: 'middle' })
+  await expect(page.getByRole('button', { name: 'Close Old Mill' })).toBeVisible()
+  await expect(page.locator('[data-map-list]').getByRole('button', { name: 'New map', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Close Old Mill' }).click()
+  await page.locator('[data-map-list]').getByRole('button', { name: 'New map', exact: true }).click()
+  await expect(page.getByRole('img', { name: 'Map' })).toBeVisible()
+  await expect.poll(() => project.listNodes({ type: 'map' }).length).toBe(2)
+  const created = project.listNodes({ type: 'map' }).find((n) => n.id !== mapId)!
+  await expect(page.getByRole('button', { name: `Close ${created.title}` })).toBeVisible()
+  // A second map opens in another tab; closing the shown one shows its neighbour.
+  await page.getByRole('navigation', { name: 'Views' }).getByRole('button', { name: 'Maps', exact: true }).click()
+  await page.getByRole('button', { name: 'Open Old Mill' }).click()
+  await expect(page.locator('[data-map-viewport] [data-id="hall"]')).toBeAttached()
+  await page.getByRole('button', { name: 'Close Old Mill' }).click()
+  await expect(page.locator('[data-map-viewport] [data-id="hall"]')).toHaveCount(0)
+  await page.getByRole('button', { name: `Close ${created.title}` }).click()
+  await expect(page.locator('[data-map-list]').getByRole('button', { name: 'New map', exact: true })).toBeVisible()
+})
+
+test('right click cancels a line, the eraser deletes, handles and fields resize tokens', async ({ desktop: { page, project } }) => {
+  await page.getByRole('button', { name: 'Open map Old Mill' }).click()
+  await expect(page.locator('[data-map-viewport] [data-id="hall"]')).toBeAttached()
+
+  // Wall tool: two points, then a right click drops the line.
+  await page.keyboard.press('w')
+  for (const [x, y] of [
+    [2, 2],
+    [5, 2],
+  ]) {
+    const p = await at(page, x, y)
+    await page.mouse.click(p.x, p.y)
+  }
+  const right = await at(page, 8, 2)
+  await page.mouse.click(right.x, right.y, { button: 'right' })
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(200)
+  expect(project.readMap(mapId).objects.some((o) => o.kind === 'wall')).toBe(false)
+
+  // Eraser: a stroke that starts on a room may erase it.
+  await page.keyboard.press('e')
+  const room = await at(page, 6, 6)
+  await page.mouse.click(room.x, room.y)
+  await expect.poll(() => project.readMap(mapId).objects.some((o) => o.id === 'hall')).toBe(false)
+
+  // Token: the corner handle resizes it, the size field steps from its value.
+  await page.keyboard.press('v')
+  const token = await at(page, 4.5, 5.5)
+  await page.mouse.click(token.x, token.y)
+  const handle = page.locator('[data-handle="radius-size"]')
+  await expect(handle).toBeVisible()
+  const box = (await handle.boundingBox())!
+  const to = await at(page, 5.5, 6.5)
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(to.x, to.y, { steps: 5 })
+  await page.mouse.up()
+  await expect.poll(() => project.readMap(mapId).tokens[0].size).toBe(2)
+  const size = page.locator('[data-map-selection]').getByRole('textbox', { name: 'Size' })
+  await expect(size).toHaveValue('2')
+  await size.focus()
+  await page.keyboard.press('ArrowUp')
+  await expect.poll(() => project.readMap(mapId).tokens[0].size).toBe(2.5)
+  await expect(size).toBeFocused()
+})

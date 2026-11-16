@@ -7,6 +7,7 @@ import { Prec } from '@codemirror/state'
 import { keymap } from '@codemirror/view'
 import { languages } from '@codemirror/language-data'
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
+import remarkBreaks from 'remark-breaks'
 import remarkGfm from 'remark-gfm'
 import { importFiles } from '../lib/actions'
 import { isVideo, mediaUrl } from '../lib/api'
@@ -77,7 +78,8 @@ const editorTheme = EditorView.theme(
 
 const basicSetup = { lineNumbers: false, foldGutter: false, highlightActiveLine: false, highlightActiveLineGutter: false, syntaxHighlighting: false }
 
-export function MarkdownPreview({ source }: { source: string }) {
+/** `breaks` keeps single newlines as line breaks, for short texts written line by line (sheet records). */
+export function MarkdownPreview({ source, breaks }: { source: string; breaks?: boolean }) {
   const { data: nodes = [] } = useNodes()
   const select = useUI((s) => s.select)
   // [[node-id]] wiki links -> clickable links to nodes
@@ -92,7 +94,7 @@ export function MarkdownPreview({ source }: { source: string }) {
   return (
     <div className="prose-md">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={breaks ? [remarkGfm, remarkBreaks] : [remarkGfm]}
         urlTransform={(url) => (url.startsWith('media/') ? mediaUrl(url) : defaultUrlTransform(url))}
         components={{
           img: ({ src, alt }) =>

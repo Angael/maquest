@@ -4,7 +4,8 @@ import type { EdgeType, NodeType } from '@maquest/core/schema'
 import { entityOf } from '@maquest/core/schema'
 import type { LayoutMode } from '@maquest/core/layout'
 
-export type View = 'canvas' | 'backlog' | 'guidelines' | 'types' | 'map'
+/** `maps` lists the project's maps; `map` is the editor of the open map tab (`map`). */
+export type View = 'canvas' | 'backlog' | 'guidelines' | 'types' | 'maps' | 'map'
 export type Selection = { kind: 'node'; id: string } | { kind: 'edge'; id: string } | null
 
 type UI = {
@@ -22,10 +23,14 @@ type UI = {
   guideline: string | null
   /** Type the Types view shows. */
   typeFocus: string
-  /** Map node open in the Map view. */
+  /** Map node shown in the map editor (one of `maps`). */
   map: string | null
-  /** Opens a map node in the map editor. */
-  openMap: (id: string) => void
+  /** Maps open as tabs in the title bar, in tab order. */
+  maps: string[]
+  /** Opens a map in its own tab and shows it; `background` only adds the tab (middle click). */
+  openMap: (id: string, background?: boolean) => void
+  /** Closes a map tab; closing the shown one shows its neighbour, or the map list when none is left. */
+  closeMap: (id: string) => void
   /** 'focus' shows edge names only for hovered / selected / focused lines. */
   edgeLabels: 'focus' | 'always'
   /** Draw involves/located-at/member-of/owns as lines instead of chips on the card. */
@@ -97,14 +102,28 @@ export const useUI = create<UI>()(
       guideline: null,
       typeFocus: 'character',
       map: null,
-      openMap: (map) =>
-        set((s) => ({
-          map,
-          view: 'map',
-          ...(s.view === 'map' ? {} : { viewSelections: { ...s.viewSelections, [s.view]: { selection: s.selection, selectedNodeIds: s.selectedNodeIds } } }),
-          selection: null,
-          selectedNodeIds: [],
-        })),
+      maps: [],
+      openMap: (map, background) =>
+        set((s) => {
+          const maps = s.maps.includes(map) ? s.maps : [...s.maps, map]
+          if (background) return { maps }
+          return {
+            map,
+            maps,
+            view: 'map',
+            ...(s.view === 'map' ? {} : { viewSelections: { ...s.viewSelections, [s.view]: { selection: s.selection, selectedNodeIds: s.selectedNodeIds } } }),
+            selection: null,
+            selectedNodeIds: [],
+          }
+        }),
+      closeMap: (id) =>
+        set((s) => {
+          const i = s.maps.indexOf(id)
+          const maps = s.maps.filter((m) => m !== id)
+          if (s.map !== id) return { maps }
+          const next = maps[Math.min(i, maps.length - 1)] ?? null
+          return { maps, map: next, ...(s.view === 'map' && !next ? { view: 'maps' as const } : {}) }
+        }),
       edgeLabels: 'focus',
       referenceLines: false,
       layoutMode: 'smart',

@@ -23,7 +23,8 @@ import {
   type Position,
   type QuickFix,
 } from '@maquest/core'
-import { mapSvg, type MapDoc, type MapOp, type RenderOptions } from '@maquest/core/map'
+import { mapSvg, type MapDefaults, type MapDoc, type MapOp, type RenderOptions } from '@maquest/core/map'
+import { closePlayerWindows, openPlayerWindow } from './windows'
 import { ProjectHistory } from './history'
 import { isGitRepo, syncFromRemote } from './gitSync'
 
@@ -71,6 +72,7 @@ function watch(root: string) {
 }
 
 function openProject(root: string) {
+  if (current && current.root !== path.resolve(root)) closePlayerWindows()
   current = new Project(root)
   history = new ProjectHistory()
   writeAgentFiles(current.root, mcpLaunch())
@@ -90,6 +92,7 @@ export const handlers = {
   current: () => (current ? { root: current.root, config: current.config() } : null),
   open: (root: string) => openProject(root),
   close: () => {
+    closePlayerWindows()
     void watcher?.close()
     current = null
     history = new ProjectHistory()
@@ -202,6 +205,7 @@ export const handlers = {
           template: false,
         })
         copies.set(n.id, copy.id)
+        if (n.type === 'map') project.writeMap(copy.id, project.readMap(n.id))
         const at = layout[cards.get(n.id)!]
         const group = project.board(board).groups.find((g) => g.nodes.includes(cards.get(n.id)!))
         if (at) project.setLayout({ [copy.id]: { x: at.x + offset.x, y: at.y + offset.y } }, board, group ? { assign: { [copy.id]: group.id } } : {})
@@ -293,6 +297,24 @@ export const handlers = {
   /** Saves a whole map document from the editor; one undo step. */
   saveMap: (id: string, doc: MapDoc) => history.record(p(), () => p().writeMap(id, doc)),
   editMap: (id: string, ops: MapOp[]) => history.record(p(), () => p().editMap(id, ops).doc),
+  /** A new map node (project map defaults applied); it is not placed on any board. */
+  createMap: (title: string) => history.record(p(), () => p().createNode({ type: 'map', title })),
+  /** Copies a map node and its document under a new title; what players explored is kept. */
+  duplicateMap: (id: string, title: string) =>
+    history.record(p(), () => {
+      const project = p()
+      const n = project.requireNode(id)
+      const copy = project.createNode({ type: 'map', title, body: n.body, summary: n.summary, tags: n.tags, template: false })
+      project.writeMap(copy.id, project.readMap(id))
+      return copy
+    }),
+  /** Defaults for new maps in this project (maquest.json → maps). */
+  setMapDefaults: (maps: MapDefaults | undefined) => p().updateConfig({ maps }),
+  /** Opens (or focuses) a window that shows the map as the players see it, e.g. on a second screen. */
+  openPlayerView: (id: string) => {
+    p().requireNode(id)
+    openPlayerWindow(id)
+  },
   /** Asks where to save and writes the map as a standalone SVG (images embedded). Returns the path or null. */
   exportMapSvg: async (id: string, opts: Pick<RenderOptions, 'grid' | 'tokens' | 'fog' | 'lighting'> = {}) => {
     const project = p()

@@ -4,7 +4,6 @@ import {
   rectRegion,
   roomRegion,
   sight as computeSight,
-  union,
   visibleObjects,
   wallGeometry,
   type Multi,
@@ -173,6 +172,77 @@ function token(t: Token, prefix: string, href: (src: string) => string): SvgEl {
   )
 }
 
+const isClosedShape = (shape: Shape) => shape.type !== 'path' || shape.closed
+
+/** A wall line: its color at full width, with the material texture inside so the wall still reads as an edge. */
+function wallStroke(d: string, color: string, width: number, texture: string | undefined, prefix: string, attrs: Record<string, string>): SvgEl[] {
+  const line = { d, fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' } as const
+  const base = h('path', { ...attrs, ...line, stroke: color, 'stroke-width': num(width), ...(attrs['data-id'] ? {} : { 'pointer-events': 'none' }) })
+  if (!texture) return [base]
+  const tex = textureId({ texture }, prefix)
+  return [base, h('path', { ...line, stroke: `url(#${tex})`, 'stroke-width': num(width * 0.7), 'pointer-events': 'none' })]
+}
+
+/** How far (cells) players glimpse past the edge of what they see: enough to make out the wall and its material. */
+export const FOG_GLIMPSE = 0.6
+/** How far players glimpse into a solid structure they see the side of (a roof, a cliff), fading out. */
+export const SOLID_GLIMPSE = 1.6
+
+type Solid = { d: string; transform: string }
+
+/**
+ * The fog of war: opaque where nobody has looked, dimmed where players have been, clear where they see now. The edges
+ * are soft and reach a little past what is seen, so a wall bounding the view shows its material and the start of
+ * what lies behind (a roof, a cliff), fading out before it gives the rest away.
+ */
+function fogOverlay(cols: number, rows: number, explored: Multi, visible: Multi, player: boolean, prefix: string, solids: Solid[]): SvgEl {
+  const id = `${prefix}fog`
+  const g = FOG_GLIMPSE
+  const pad = SOLID_GLIMPSE * 3
+  const reveal = (m: Multi, shade: string) =>
+    m.length ? h('path', { d: multiD(m), fill: shade, stroke: shade, 'stroke-width': num(g * 1.4), 'stroke-linejoin': 'round', 'fill-rule': 'nonzero' }) : null
+  // Into solids the glimpse reaches further and fades in two steps (then the blur smooths it).
+  const into = (m: Multi, near: string, far: string) =>
+    solids.length && m.length
+      ? h(
+          'g',
+          { 'clip-path': `url(#${id}-solids)` },
+          h('path', { d: multiD(m), fill: 'none', stroke: far, 'stroke-width': num(SOLID_GLIMPSE * 2), 'stroke-linejoin': 'round' }),
+          h('path', { d: multiD(m), fill: 'none', stroke: near, 'stroke-width': num(SOLID_GLIMPSE), 'stroke-linejoin': 'round' }),
+        )
+      : null
+  const exploredShade = player ? '#999999' : '#a6a6a6'
+  return h(
+    'g',
+    { 'data-fog': 'hidden', 'pointer-events': 'none' },
+    h(
+      'defs',
+      {},
+      h(
+        'filter',
+        { id: `${id}-soft`, filterUnits: 'userSpaceOnUse', x: -pad, y: -pad, width: cols + pad * 2, height: rows + pad * 2 },
+        h('feGaussianBlur', { stdDeviation: num(g * 0.35) }),
+      ),
+      solids.length ? h('clipPath', { id: `${id}-solids` }, ...solids.map((x) => h('path', { d: x.d, transform: x.transform, 'fill-rule': 'evenodd' }))) : null,
+      h(
+        'mask',
+        { id: `${id}-mask`, maskUnits: 'userSpaceOnUse', x: -pad, y: -pad, width: cols + pad * 2, height: rows + pad * 2 },
+        h(
+          'g',
+          { filter: `url(#${id}-soft)` },
+          h('rect', { x: -pad, y: -pad, width: cols + pad * 2, height: rows + pad * 2, fill: '#ffffff' }),
+          // Explored: remembered, so only partly fogged.
+          reveal(explored, exploredShade),
+          into(explored, exploredShade, '#d0d0d0'),
+          reveal(visible, '#000000'),
+          into(visible, '#000000', '#6a6a6a'),
+        ),
+      ),
+    ),
+    h('rect', { width: cols, height: rows, fill: '#0c0b0a', 'fill-opacity': player ? 1 : 0.55, mask: `url(#${id}-mask)` }),
+  )
+}
+
 export type Scene = { svg: SvgEl; geometry: WallGeometry; sight?: Sight }
 
 /** Renders a map to an SVG element tree (shared by the editor, canvas thumbnails and SVG export). */
@@ -191,9 +261,11 @@ export function renderMap(doc: MapDoc, opts: RenderOptions = {}): Scene {
 
   // Patterns for every textured fill in use.
   const fills: Fill[] = [doc.style.background, doc.style.floor]
+  if (doc.style.wall.texture) fills.push({ texture: doc.style.wall.texture })
   for (const o of objects) {
-    if ((o.kind === 'area' || o.kind === 'path') && o.fill) fills.push(o.fill)
+    if ((o.kind === 'area' || o.kind === 'path' || o.kind === 'wall') && o.fill) fills.push(o.fill)
     if (o.kind === 'path' && o.stroke?.texture) fills.push({ texture: o.stroke.texture })
+    if (o.kind === 'wall' && o.texture) fills.push({ texture: o.texture })
   }
   const patterns = new Map<string, SvgEl>()
   for (const f of fills) {
@@ -306,29 +378,18 @@ export function renderMap(doc: MapDoc, opts: RenderOptions = {}): Scene {
 
   const wall = doc.style.wall
   const walls: SvgEl[] = []
-  if (geometry.rooms.length)
-    walls.push(
-      h('path', {
-        d: chainD(geometry.rooms),
-        fill: 'none',
-        stroke: wall.color,
-        'stroke-width': wall.width,
-        'stroke-linecap': 'round',
-        'stroke-linejoin': 'round',
-        'pointer-events': 'none',
-      }),
-    )
+  // Solid structures (closed walls with a fill: roofs, cliffs, boulders) sit under every wall line.
+  for (const o of objects)
+    if (o.kind === 'wall' && o.fill && isClosedShape(o.shape))
+      walls.push(
+        h('path', { 'data-id': o.id, 'data-kind': 'wall', d: shapeD(o.shape), transform: transformOf(o), 'fill-rule': 'evenodd', ...paint(o.fill, prefix) }),
+      )
+  if (geometry.rooms.length) walls.push(...wallStroke(chainD(geometry.rooms), wall.color, wall.width, wall.texture, prefix, {}))
   for (const w of geometry.walls)
     walls.push(
-      h('path', {
+      ...wallStroke(chainD(w.chains), w.object.color ?? wall.color, w.object.width ?? wall.width, w.object.texture ?? wall.texture, prefix, {
         'data-id': w.object.id,
         'data-kind': 'wall',
-        d: chainD(w.chains),
-        fill: 'none',
-        stroke: w.object.color ?? wall.color,
-        'stroke-width': w.object.width ?? wall.width,
-        'stroke-linecap': 'round',
-        'stroke-linejoin': 'round',
       }),
     )
   // An invisible wide stroke so thin walls are easy to click while editing.
@@ -397,24 +458,10 @@ export function renderMap(doc: MapDoc, opts: RenderOptions = {}): Scene {
   if (fogOn && sight) {
     const explored = doc.fog.explored as Multi
     const player = opts.fog === 'player'
-    overlays.push(
-      h('path', {
-        'data-fog': 'hidden',
-        d: multiD(difference(mapRect, union(explored, sight.visible))),
-        fill: '#0c0b0a',
-        'fill-opacity': player ? 1 : 0.55,
-        'fill-rule': 'evenodd',
-        'pointer-events': 'none',
-      }),
-      h('path', {
-        'data-fog': 'explored',
-        d: multiD(difference(explored, sight.visible)),
-        fill: '#0c0b0a',
-        'fill-opacity': player ? 0.6 : 0.3,
-        'fill-rule': 'evenodd',
-        'pointer-events': 'none',
-      }),
-    )
+    const solids = objects
+      .filter((o): o is Extract<MapObject, { kind: 'wall' }> => o.kind === 'wall' && !!o.fill && isClosedShape(o.shape))
+      .map((o) => ({ d: shapeD(o.shape), transform: transformOf(o) }))
+    overlays.push(fogOverlay(cols, rows, explored, sight.visible, player, prefix, solids))
   }
 
   // Players only see other tokens inside what their characters see; the GM sees all.

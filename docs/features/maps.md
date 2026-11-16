@@ -93,6 +93,22 @@ Phase 1 is implemented on branch `feat/map-maker`. All requirements above have a
 | SVG export (menu: map only / with tokens / as players see it / no grid)                                                  | done  | `handlers.ts` `exportMapSvg`                                                                 |
 | Tests                                                                                                                    | done  | `packages/core/src/map.test.ts`, `packages/mcp/src/server.test.ts`, `tests/e2e/maps.spec.ts` |
 
+### Phase 2 (polish, branch `feat/map-polish`)
+
+| Area                                                                                                                                                                                                  | Where                                                                   |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Maps view (list: new, open, rename, duplicate, delete, open as player) and one title-bar tab per open map                                                                                             | `MapList.tsx`, `TopBar.tsx`, `store.ts` (`maps`, `openMap`, `closeMap`) |
+| Maps section in the sidebar (click opens, middle click opens a background tab)                                                                                                                        | `Sidebar.tsx`                                                           |
+| Player window: a separate window with only the players' view, live                                                                                                                                    | `main/windows.ts`, `PlayerView.tsx`, `?player=<id>`                     |
+| Project defaults for new maps (`maquest.json` → `maps`), editable in the Maps view, "Use for new maps" from a map; MCP `project` `maps`                                                               | core `MapDefaults`, `emptyMap`                                          |
+| Panels split: floating selection inspector, scene panel (fog, tokens, layers, toggleable), Map settings popover (size, distances, grid, look)                                                         | `MapPanel.tsx`, `MapEditor.tsx`                                         |
+| Number fields step from their value (↑/↓, Shift ×10, Alt ÷10), drag the label to scrub; radii shown in map units                                                                                      | `fields.tsx`                                                            |
+| Eraser tool (E), right click / Esc cancels any drawing or drag                                                                                                                                        | `MapViewport.tsx`                                                       |
+| Canvas handles: token size and vision/darkvision rings, light bright/dim rings, door ends, label size; double-click toggles doors                                                                     | `MapViewport.tsx`                                                       |
+| Wall materials (`texture`), solid closed walls (`fill`: roofs, rock); textures brick, rock, shingles, thatch                                                                                          | core `schema.ts`, `render.ts`, `textures.ts`                            |
+| Soft fog edge that lets players glimpse walls and 1.6 cells into solid structures they see the side of                                                                                                | core `render.ts` `fogOverlay`                                           |
+| Vision: no boolean clipping in the visibility polygon (fixed blank sight at some positions), snapped retries for booleans, closed doors seal their whole cut (fixed light leaks next to angled doors) | core `geometry.ts`                                                      |
+
 ### Known gaps (next candidates)
 
 - No in-editor clipboard (copy/paste between maps); duplicate (Ctrl+D) only.
@@ -100,7 +116,6 @@ Phase 1 is implemented on branch `feat/map-maker`. All requirements above have a
 - Hex grids.
 - Fog: no manual GM reveal/hide brush; explored fog is stored as polygons and can grow on very long sessions.
 - Image objects do not block sight; no "wall from image" tracing.
-- Player-facing second window.
 - Per-structure floor/wall styles (today one floor and wall style per map; walls can override color/width).
 - Undo for map edits uses the app-wide history (each commit is a step; token drags count too).
 
@@ -117,3 +132,5 @@ Phase 1 is implemented on branch `feat/map-maker`. All requirements above have a
 - 2026-11-16 — Feature started; requirements and design written down.
 - 2026-11-16 — Phase 1 implemented: core model + geometry + renderer, MCP `map` tool, editor view with all tools,
   layers, grid/ruler, fog of war, SVG export, canvas thumbnails, unit + MCP + e2e tests.
+- 2026-11-16 — Phase 2: Maps view and map tabs, player window, project map defaults, panel split, eraser, canvas
+  handles, wall materials and solid structures, soft fog glimpse, vision robustness and door leak fixes.

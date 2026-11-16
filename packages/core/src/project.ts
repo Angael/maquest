@@ -719,7 +719,7 @@ export class Project {
           : (tpl?.body ?? '')),
     }
     this.writeNode(node)
-    if (input.type === 'map' && !fs.existsSync(this.mapPath(id))) this.writeMap(id, emptyMap())
+    if (input.type === 'map' && !fs.existsSync(this.mapPath(id))) this.writeMap(id, emptyMap({}, this.config().maps))
     return this.requireNode(id)
   }
 

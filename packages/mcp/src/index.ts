@@ -59,7 +59,7 @@ import {
   type FieldDef,
   type TypeInfo,
 } from '@maquest/core'
-import { MapOp, OBJECT_KINDS, TEXTURES, mapSummary, mapSvg } from '@maquest/core/map'
+import { MapDefaults, MapOp, OBJECT_KINDS, TEXTURES, mapSummary, mapSvg } from '@maquest/core/map'
 
 function arg(name: string) {
   const i = process.argv.indexOf(`--${name}`)
@@ -955,7 +955,7 @@ Coordinates and lengths are grid cells: (0,0) is the top-left corner, cell (c,r)
 Object kinds (${OBJECT_KINDS.join(', ')}):
 - room { shape, op: add|subtract }: all visible rooms merge/cut in order into one floor whose outline becomes walls.
 - area { shape, op, fill }: painted terrain under rooms; subtract erases paint below it.
-- wall { shape, width?, color? }: free-standing wall, blocks sight. path { shape, stroke {color,width,dash?}, fill? }: roads, rivers, decoration.
+- wall { shape, width?, color?, texture? (material: wood, stone, brick, rock…), fill? (closed walls only: a solid top seen from outside, e.g. a roof with texture shingles or thatch, a cliff with rock) }: free-standing wall, blocks sight. path { shape, stroke {color,width,dash?}, fill? }: roads, rivers, decoration.
 - door { width (default 1), variant door|double|window|secret, open }: put it on a wall, rotation along the wall (0 = horizontal wall, 90 = vertical).
 - image { src: media path, w, h, opacity? }, label { text, size, color }, light { bright, dim, color } (radii in cells).
 Shapes: { type: rect, w, h, radius? } | { type: ellipse, rx, ry } | { type: path, points: [{ x, y, in?, out? }], closed } (in/out = bezier handles relative to the point).
@@ -971,7 +971,7 @@ Actions: read (summary; full=true lists every object), edit (ops in order, all o
         .array(MapOp)
         .optional()
         .describe(
-          'edit: add {object}, update {id, set}, remove {ids}, order {id, to front|back|forward|backward}, layer {id?, name?, visible?, group?, objects?, removeObjects?}, show {layer}, token {id?, set}, grid {set: cols, rows, size (px per cell in exports), unit {amount, name}, diagonal equal|alternate|euclid, show}, style {set: background, floor, wall {color, width}}, fog {enabled?, ambient light|dim|dark?, reset?}, bake {ids, mode union|subtract|intersect|exclude} (merge shapes into the first), join {ids} (two open paths into one, or close one)',
+          'edit: add {object}, update {id, set}, remove {ids}, order {id, to front|back|forward|backward}, layer {id?, name?, visible?, group?, objects?, removeObjects?}, show {layer}, token {id?, set}, grid {set: cols, rows, size (px per cell in exports), unit {amount, name}, diagonal equal|alternate|euclid, show}, style {set: background, floor, wall {color, width, texture}}, fog {enabled?, ambient light|dim|dark?, reset?}, bake {ids, mode union|subtract|intersect|exclude} (merge shapes into the first), join {ids} (two open paths into one, or close one)',
         ),
       path: z.string().optional().describe('export: output file (absolute or project-relative; default media/<id>.svg)'),
       fog: z.boolean().optional().describe('export: draw the fog of war as players see it'),
@@ -1032,6 +1032,11 @@ Example: {"character": {"fields": [{"key": "hp", "label": "HP", "widget": "meter
         .describe(
           `Configure Maquest check rules: { "<rule>": "error"|"warn"|"info"|"off" | [level, { options }] } (null resets). Rules: ${RULES.map((r) => `${r.id}${r.options?.length ? ` (${r.options.map((o) => o.key).join(', ')})` : ''}`).join(', ')}. Scope options: types, excludeTypes, excludeTags.`,
         ),
+      maps: MapDefaults.nullable()
+        .optional()
+        .describe(
+          'Defaults for new maps (null clears): { grid?: { cols, rows, size, unit {amount, name}, diagonal equal|alternate|euclid, show, color, opacity }, style?: { background, floor, wall {color, width, texture} }, fog?: { enabled, ambient } }. Set the system\'s units and diagonal rule once, e.g. { grid: { unit: { amount: 5, name: "ft" }, diagonal: "equal" } }.',
+        ),
       customChecks: z
         .array(z.unknown())
         .optional()
@@ -1040,7 +1045,7 @@ Example: {"character": {"fields": [{"key": "hp", "label": "HP", "widget": "meter
         ),
     },
   },
-  safe(({ action, name, kind, description, types, checks, customChecks }) => {
+  safe(({ action, name, kind, description, types, checks, customChecks, maps }) => {
     if (action === 'init') {
       const root = path.resolve(startDir)
       const p = Project.init(root, {
@@ -1058,9 +1063,13 @@ Example: {"character": {"fields": [{"key": "hp", "label": "HP", "widget": "meter
     const p = project()
     const all = types ? p.setTypes(types) : undefined
     if (checks || customChecks) p.setChecks(checks ?? {}, customChecks)
-    const c = name || kind || description !== undefined ? p.updateConfig({ name, kind, ...(description !== undefined && { description }) }) : p.config()
+    const c =
+      name || kind || description !== undefined || maps !== undefined
+        ? p.updateConfig({ name, kind, ...(description !== undefined && { description }), ...(maps !== undefined && { maps: maps ?? undefined }) })
+        : p.config()
     return [
       `project: ${c.name} (${c.kind})`,
+      maps !== undefined && `map defaults: ${c.maps ? JSON.stringify(c.maps) : 'none'}`,
       all && `types: ${all.map((t) => `${t.id}${t.fields.length ? ` (${t.fields.length} fields)` : ''}`).join(', ')}`,
       (checks || customChecks) && detectedLine(p.check().counts),
     ]
