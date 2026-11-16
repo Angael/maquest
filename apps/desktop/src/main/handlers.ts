@@ -24,7 +24,6 @@ import {
   type QuickFix,
 } from '@maquest/core'
 import { mapSvg, type MapDefaults, type MapDoc, type MapOp, type RenderOptions } from '@maquest/core/map'
-import { closePlayerWindows, openPlayerWindow } from './windows'
 import { ProjectHistory } from './history'
 import { isGitRepo, syncFromRemote } from './gitSync'
 
@@ -72,7 +71,6 @@ function watch(root: string) {
 }
 
 function openProject(root: string) {
-  if (current && current.root !== path.resolve(root)) closePlayerWindows()
   current = new Project(root)
   history = new ProjectHistory()
   writeAgentFiles(current.root, mcpLaunch())
@@ -92,7 +90,6 @@ export const handlers = {
   current: () => (current ? { root: current.root, config: current.config() } : null),
   open: (root: string) => openProject(root),
   close: () => {
-    closePlayerWindows()
     void watcher?.close()
     current = null
     history = new ProjectHistory()
@@ -310,11 +307,6 @@ export const handlers = {
     }),
   /** Defaults for new maps in this project (maquest.json → maps). */
   setMapDefaults: (maps: MapDefaults | undefined) => p().updateConfig({ maps }),
-  /** Opens (or focuses) a window that shows the map as the players see it, e.g. on a second screen. */
-  openPlayerView: (id: string) => {
-    p().requireNode(id)
-    openPlayerWindow(id)
-  },
   /** Asks where to save and writes the map as a standalone SVG (images embedded). Returns the path or null. */
   exportMapSvg: async (id: string, opts: Pick<RenderOptions, 'grid' | 'tokens' | 'fog' | 'lighting'> = {}) => {
     const project = p()

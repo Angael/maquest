@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Download, Eye, LayoutGrid, Maximize, MonitorPlay, PanelRight, Settings2, ShieldUser } from 'lucide-react'
+import { Download, Eye, Layers, LayoutGrid, Maximize, Settings2, ShieldUser } from 'lucide-react'
 import { emptyMap, mapDefaultsOf, type MapDoc } from '@maquest/core/map'
 import { api } from '../../lib/api'
 import { queryClient, useConfig, useMap, useNode } from '../../lib/queries'
 import { useUI } from '../../lib/store'
 import { Button, IconButton, Input, Menu, MenuItem, Popover, Segmented, Separator, Tooltip, cn, floating } from '../ui'
 import { MapViewport } from './MapViewport'
-import { MapSettingsForm, ScenePanel, SelectionPanel } from './MapPanel'
-import { ToolOptions, ToolRail, useToolKeys } from './MapToolbar'
-import { useMapUI } from './mapStore'
+import { LayersSection, MapSettingsForm, SelectionPanel } from './MapPanel'
+import { SceneDock, TokenDock, ToolRail, useToolKeys } from './MapToolbar'
+import { moveSnap, useMapUI } from './mapStore'
 import { duplicateIds, moveIds, removeIds, reorder } from './edit'
 
 /** The map editor view: the map, its tools and a side panel (selection, layers, fog, grid, style). */
@@ -61,41 +61,43 @@ export function MapEditor() {
   useToolKeys(!!doc)
   useEditorKeys(doc, commit)
 
-  const panel = useMapUI((s) => s.panel)
+  const viewMode = useMapUI((s) => s.viewMode)
 
   if (!id) return <Empty text="No map open. Pick one from the Maps list." />
   if (error) return <Empty text={(error as Error).message} />
   if (!doc) return null
 
   return (
-    <div className="absolute inset-0 flex">
-      <div className="relative min-w-0 flex-1">
-        <MapViewport doc={doc} commit={commit} mapId={id} />
-        <div className="pointer-events-none absolute inset-x-3 top-3 flex items-start gap-2">
-          <div className={cn(floating, 'pointer-events-auto flex h-9 min-w-0 shrink items-center gap-1 pr-1 pl-1')}>
-            <IconButton icon={LayoutGrid} label="All maps" onClick={() => useUI.getState().setView('maps')} />
-            <MapTitle id={id} title={node?.title ?? id} />
-          </div>
-          <div className="pointer-events-auto min-w-0 shrink">
-            <ToolOptions />
-          </div>
-          <div className="flex-1" />
-          <ViewControls id={id} doc={doc} commit={commit} />
+    <div className="absolute inset-0">
+      <MapViewport doc={doc} commit={commit} mapId={id} />
+      <div className="pointer-events-none absolute inset-x-3 top-3 flex items-start gap-2">
+        <div className={cn(floating, 'pointer-events-auto flex h-9 min-w-0 shrink items-center gap-1 pr-1 pl-1')}>
+          <IconButton icon={LayoutGrid} label="All maps" onClick={() => useUI.getState().setView('maps')} />
+          <MapTitle id={id} title={node?.title ?? id} />
         </div>
-        <div className="pointer-events-none absolute top-15 left-3 flex">
-          <div className="pointer-events-auto">
-            <ToolRail />
-          </div>
-        </div>
-        <div className="pointer-events-none absolute top-15 right-3 bottom-3 flex flex-col items-end">
-          <SelectionPanel doc={doc} commit={commit} />
+        <div className="flex-1" />
+        <ViewControls id={id} doc={doc} commit={commit} />
+      </div>
+      <div className="pointer-events-none absolute top-15 bottom-16 left-3 flex flex-col">
+        <div className="pointer-events-auto">
+          <ToolRail />
         </div>
       </div>
-      {panel && (
-        <aside aria-label="Fog, tokens and layers" className="flex w-72 shrink-0 flex-col border-l border-line bg-panel">
-          <ScenePanel doc={doc} commit={commit} />
-        </aside>
+      {viewMode === 'gm' && (
+        <div className="pointer-events-none absolute top-15 right-3 bottom-16 flex flex-col items-end">
+          <SelectionPanel doc={doc} commit={commit} />
+        </div>
       )}
+      <div className="pointer-events-none absolute inset-x-3 bottom-3 flex items-end justify-between gap-2">
+        <div className="pointer-events-auto shrink-0">
+          <SceneDock doc={doc} commit={commit} />
+        </div>
+        <div className="pointer-events-auto flex min-w-0 justify-center">
+          <TokenDock doc={doc} commit={commit} />
+        </div>
+        {/* Balances the scene dock so the token dock stays centered. */}
+        <div className="w-[7.5rem] shrink" />
+      </div>
     </div>
   )
 }
@@ -194,7 +196,6 @@ function MapSettings({ doc, commit }: { doc: MapDoc; commit: (d: MapDoc) => void
 
 function ViewControls({ id, doc, commit }: { id: string; doc: MapDoc; commit: (d: MapDoc) => void }) {
   const viewMode = useMapUI((s) => s.viewMode)
-  const panel = useMapUI((s) => s.panel)
   const set = useMapUI((s) => s.set)
   const exportSvg = async (opts: Parameters<typeof api.exportMapSvg>[1]) => {
     try {
@@ -209,28 +210,39 @@ function ViewControls({ id, doc, commit }: { id: string; doc: MapDoc; commit: (d
       <Segmented
         label="View as"
         value={viewMode}
-        onChange={(v) => set({ viewMode: v })}
+        onChange={(v) => set({ viewMode: v, ...(v === 'player' ? { selected: [], tool: 'select' } : {}) })}
         options={[
           { value: 'gm', label: 'GM', icon: ShieldUser, showLabel: true },
           { value: 'player', label: 'Players', icon: Eye, showLabel: true },
         ]}
       />
-      <IconButton icon={MonitorPlay} label="Open the players' window (only what they see)" onClick={() => void api.openPlayerView(id)} />
       <IconButton icon={Maximize} label="Fit map to screen" onClick={() => window.dispatchEvent(new Event('maquest:map-fit'))} />
-      <Separator vertical />
-      <MapSettings doc={doc} commit={commit} />
-      <Menu trigger={<IconButton icon={Download} label="Export as SVG" />}>
-        <MenuItem onClick={() => void exportSvg({ tokens: false })}>SVG: map only</MenuItem>
-        <MenuItem onClick={() => void exportSvg({ tokens: true })}>SVG: with tokens</MenuItem>
-        <MenuItem onClick={() => void exportSvg({ tokens: true, fog: 'player', lighting: 'player' })}>SVG: as players see it</MenuItem>
-        <MenuItem onClick={() => void exportSvg({ tokens: false, grid: false })}>SVG: no grid, no tokens</MenuItem>
-      </Menu>
-      <IconButton
-        icon={PanelRight}
-        label={panel ? 'Hide fog, tokens and layers' : 'Show fog, tokens and layers'}
-        active={panel}
-        onClick={() => set({ panel: !panel })}
-      />
+      {viewMode === 'gm' && (
+        <>
+          <Separator vertical />
+          <Popover
+            side="bottom"
+            align="end"
+            trigger={
+              <Button size="md" variant="ghost">
+                <Layers size={14} aria-hidden />
+                Layers{doc.layers.length ? <span className="tabular text-fg-subtle">{doc.layers.length}</span> : null}
+              </Button>
+            }
+          >
+            <div className="max-h-[70vh] w-80 overflow-y-auto" data-map-layers>
+              <LayersSection doc={doc} commit={commit} />
+            </div>
+          </Popover>
+          <MapSettings doc={doc} commit={commit} />
+          <Menu trigger={<IconButton icon={Download} label="Export as SVG" />}>
+            <MenuItem onClick={() => void exportSvg({ tokens: false })}>SVG: map only</MenuItem>
+            <MenuItem onClick={() => void exportSvg({ tokens: true })}>SVG: with tokens</MenuItem>
+            <MenuItem onClick={() => void exportSvg({ tokens: true, fog: 'player', lighting: 'player' })}>SVG: as players see it</MenuItem>
+            <MenuItem onClick={() => void exportSvg({ tokens: false, grid: false })}>SVG: no grid, no tokens</MenuItem>
+          </Menu>
+        </>
+      )}
     </div>
   )
 }
@@ -246,7 +258,7 @@ function useEditorKeys(doc: MapDoc | null, commit: (d: MapDoc) => void) {
       const d = doc
       if (!d || useUI.getState().view !== 'map') return
       if (e.target instanceof Element && e.target.closest('input, textarea, select, [contenteditable], [role="menu"], [role="dialog"]')) return
-      const { selected, select, snap, set, tool } = useMapUI.getState()
+      const { selected, select, set, tool } = useMapUI.getState()
       const mod = e.ctrlKey || e.metaKey
       const key = e.key.toLowerCase()
       if (mod && (key === 'z' || key === 'y')) {
@@ -266,7 +278,7 @@ function useEditorKeys(doc: MapDoc | null, commit: (d: MapDoc) => void) {
         select([])
       } else if (e.key.startsWith('Arrow') && selected.length && !mod) {
         e.preventDefault()
-        const by = e.shiftKey ? 0.1 : snap || 0.5
+        const by = e.shiftKey ? 0.1 : moveSnap(d, selected) || 0.5
         const dx = e.key === 'ArrowLeft' ? -by : e.key === 'ArrowRight' ? by : 0
         const dy = e.key === 'ArrowUp' ? -by : e.key === 'ArrowDown' ? by : 0
         commit(moveIds(d, selected, dx, dy, false))

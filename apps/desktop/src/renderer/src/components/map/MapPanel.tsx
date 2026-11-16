@@ -16,7 +16,6 @@ import {
   Pencil,
   PenTool,
   Plus,
-  RotateCcw,
   SquareDashed,
   Trash2,
   Type,
@@ -198,14 +197,47 @@ function ObjectFields({ doc, o, patch }: { doc: MapDoc; o: MapObject; patch: (p:
   return (
     <>
       <TextField label="Name" value={o.name ?? ''} placeholder={KIND[o.kind].label} onChange={(name) => patch({ name: name || undefined })} />
-      {(o.kind === 'room' || o.kind === 'area') && (
+      {o.kind === 'room' && (
+        <>
+          <Row label="Walls">
+            <Segmented
+              label="How the room joins the others"
+              className="min-w-0 flex-1"
+              value={o.op}
+              onChange={(op) => patch({ op })}
+              options={[
+                { value: 'add', label: 'Merge', showLabel: true },
+                { value: 'subtract', label: 'Cut out', showLabel: true },
+                { value: 'separate', label: 'Own walls', showLabel: true },
+              ]}
+            />
+          </Row>
+          {o.op !== 'subtract' && (
+            <Row label="Light">
+              <Segmented
+                label="Light inside the room"
+                className="min-w-0 flex-1"
+                value={o.light ?? 'auto'}
+                onChange={(v) => patch({ light: v === 'auto' ? undefined : v })}
+                options={[
+                  { value: 'auto', label: 'Auto', showLabel: true },
+                  { value: 'light', label: 'Lit', showLabel: true },
+                  { value: 'dim', label: 'Dim', showLabel: true },
+                  { value: 'dark', label: 'Dark', showLabel: true },
+                ]}
+              />
+            </Row>
+          )}
+        </>
+      )}
+      {o.kind === 'area' && (
         <Segmented
           label="Combine"
           value={o.op}
           onChange={(op) => patch({ op })}
           options={[
-            { value: 'add', label: 'Add', showLabel: true },
-            { value: 'subtract', label: o.kind === 'room' ? 'Cut out' : 'Erase', showLabel: true },
+            { value: 'add', label: 'Paint', showLabel: true },
+            { value: 'subtract', label: 'Erase paint', showLabel: true },
           ]}
         />
       )}
@@ -383,20 +415,10 @@ function TokenFields({ doc, t, patch }: { doc: MapDoc; t: Token; patch: (p: Reco
   )
 }
 
-// ---------- scene panel: layers, tokens, fog ----------
+// ---------- layers ----------
 
-/** The right panel: what is on the map and how players see it. Map-wide settings live in the Map settings popover. */
-export function ScenePanel({ doc, commit }: Props) {
-  return (
-    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-      <FogSection doc={doc} commit={commit} />
-      <TokensSection doc={doc} commit={commit} />
-      <LayersSection doc={doc} commit={commit} />
-    </div>
-  )
-}
-
-function LayersSection({ doc, commit }: Props) {
+/** Layers: show or hide sets of objects; layers of a group swap. */
+export function LayersSection({ doc, commit }: Props) {
   const active = useMapUI((s) => s.activeLayer)
   const set = useMapUI((s) => s.set)
   const update = (id: string, p: Partial<Layer>) => commit({ ...doc, layers: doc.layers.map((l) => (l.id === id ? { ...l, ...p } : l)) })
@@ -489,70 +511,6 @@ function LayersSection({ doc, commit }: Props) {
           </div>
         ) : null
       })}
-    </Section>
-  )
-}
-
-function FogSection({ doc, commit }: Props) {
-  const fog = doc.fog
-  const setFog = (p: Partial<MapDoc['fog']>) => commit({ ...doc, fog: { ...fog, ...p } })
-  return (
-    <Section
-      title="Vision and fog of war"
-      action={
-        fog.explored.length > 0 ? (
-          <Button size="sm" variant="ghost" onClick={() => setFog({ explored: [] })} title="Players forget what they have explored">
-            <RotateCcw size={12} aria-hidden />
-            Reset explored
-          </Button>
-        ) : null
-      }
-    >
-      <Toggle label="Fog of war: players reveal what their tokens see" checked={fog.enabled} onChange={(enabled) => setFog({ enabled })} />
-      <Segmented
-        label="Light"
-        value={fog.ambient}
-        onChange={(ambient) => setFog({ ambient })}
-        options={[
-          { value: 'light', label: 'Daylight', showLabel: true },
-          { value: 'dim', label: 'Dim', showLabel: true },
-          { value: 'dark', label: 'Dark', showLabel: true },
-        ]}
-      />
-    </Section>
-  )
-}
-
-function TokensSection({ doc, commit }: Props) {
-  const selected = useMapUI((s) => s.selected)
-  const select = useMapUI((s) => s.select)
-  const setTool = useMapUI((s) => s.setTool)
-  return (
-    <Section title="Tokens" action={<IconButton size="sm" icon={Plus} label="Place a token" shortcut="K" onClick={() => setTool('token')} />}>
-      {doc.tokens.length === 0 && <p className="text-xs leading-5 text-fg-subtle">Place tokens with the token tool, then drag them around.</p>}
-      {doc.tokens.map((t) => (
-        <div
-          key={t.id}
-          className={cn('group flex h-7 items-center gap-1 rounded-md pr-0.5 hover:bg-hover', selected.includes(t.id) && 'bg-accent-soft hover:bg-accent-soft')}
-        >
-          <button
-            type="button"
-            onClick={(e) => select(e.shiftKey ? [...new Set([...selected, t.id])] : [t.id])}
-            className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-md pl-2 text-left text-xs text-fg-muted outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
-          >
-            <span aria-hidden className="size-3 shrink-0 rounded-full" style={{ background: t.color }} />
-            <span className={cn('min-w-0 flex-1 truncate', t.hidden && 'text-fg-faint')}>{t.name}</span>
-            {t.player && <span className="text-2xs text-fg-faint">player</span>}
-          </button>
-          <IconButton
-            size="sm"
-            icon={t.hidden ? EyeOff : Eye}
-            label={t.hidden ? `Show ${t.name} to players` : `Hide ${t.name} from players`}
-            className={cn('opacity-0 group-hover:opacity-100 focus-visible:opacity-100', t.hidden && 'opacity-100')}
-            onClick={() => commit(patchObject(doc, t.id, { hidden: t.hidden ? undefined : true }))}
-          />
-        </div>
-      ))}
     </Section>
   )
 }

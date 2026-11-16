@@ -4,7 +4,7 @@ import { app, BrowserWindow, ipcMain, net, protocol } from 'electron'
 import { Project } from '@maquest/core'
 import { handlers, mediaPath } from './handlers'
 import { setupUpdates } from './updater'
-import { closePlayerWindows, externalLinks, loadRenderer } from './windows'
+import { externalLinks, loadRenderer } from './windows'
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'maquest-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } }])
 
@@ -33,8 +33,6 @@ function createWindow() {
   win.on('enter-full-screen', sendMaximized)
   win.on('leave-full-screen', sendMaximized)
   loadRenderer(win)
-  // Player windows show the project of this window; they go when it does.
-  win.on('closed', closePlayerWindows)
 }
 
 app.whenReady().then(() => {

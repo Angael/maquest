@@ -59,7 +59,7 @@ test('a map node opens in the editor, draws rooms, measures and follows agent ed
   // Select tool: dragging a player token with fog on reveals what it saw.
   await page.keyboard.press('Escape')
   await page.keyboard.press('v')
-  await page.getByRole('checkbox', { name: /Fog of war/ }).check()
+  await page.getByRole('button', { name: /Fog of war off/ }).click()
   await expect.poll(() => project.readMap(mapId).fog.enabled).toBe(true)
   await drag(page, [4.5, 5.5], [7.5, 5.5])
   await expect.poll(() => project.readMap(mapId).tokens[0].x).toBe(7.5)
@@ -88,6 +88,7 @@ test('layers in one group swap, like a town before and after a battle', async ({
   await page.getByRole('button', { name: 'Open map Old Mill' }).click()
   await expect(page.locator('[data-map-viewport] [data-id="calm"]')).toBeAttached()
   await expect(page.locator('[data-map-viewport] [data-id="ruin"]')).toHaveCount(0)
+  await page.getByRole('button', { name: /^Layers/ }).click()
   await page.getByRole('group', { name: 'Swap battle' }).getByRole('button', { name: 'After' }).click()
   await expect(page.locator('[data-map-viewport] [data-id="ruin"]')).toBeAttached()
   await expect(page.locator('[data-map-viewport] [data-id="calm"]')).toHaveCount(0)
@@ -162,4 +163,63 @@ test('right click cancels a line, the eraser deletes, handles and fields resize 
   await page.keyboard.press('ArrowUp')
   await expect.poll(() => project.readMap(mapId).tokens[0].size).toBe(2.5)
   await expect(size).toBeFocused()
+})
+
+test('rooms with their own walls and light, token kinds, Play, and grabbing things outside the map', async ({ desktop: { page, project } }) => {
+  project.editMap(mapId, [{ op: 'add', object: { kind: 'room', id: 'lost', x: 17, y: 12.6, shape: { type: 'rect', w: 2, h: 1 } } }])
+  await page.getByRole('button', { name: 'Open map Old Mill' }).click()
+  await expect(page.locator('[data-map-viewport] [data-id="hall"]')).toBeAttached()
+
+  // Room options open beside the tool: a separate, lit room inside the hall.
+  await page.keyboard.press('r')
+  const options = page.locator('[data-map-tool-options]')
+  await options.getByRole('button', { name: 'Own walls' }).click()
+  await options.getByRole('button', { name: 'Lit' }).click()
+  await drag(page, [3, 4], [6, 7])
+  await expect.poll(() => project.readMap(mapId).objects.find((o) => o.id === 'room1')).toMatchObject({ op: 'separate', light: 'light' })
+
+  // Token buttons place a player character, an enemy and an NPC.
+  for (const [key, x] of [
+    ['k', 1.5],
+    ['x', 2.5],
+    ['n', 3.5],
+  ] as const) {
+    await page.keyboard.press(key)
+    const p = await at(page, x, 10.5)
+    await page.mouse.click(p.x, p.y)
+  }
+  await expect
+    .poll(() => project.readMap(mapId).tokens.map((t) => [t.name, t.player]))
+    .toEqual([
+      ['Aria', true],
+      ['Player 1', true],
+      ['Enemy 1', false],
+      ['NPC 1', false],
+    ])
+  await expect(page.locator('[data-map-tokens]').getByRole('button', { name: 'Enemy 1', exact: true })).toBeVisible()
+
+  // A right press while dragging the brush drops the stroke.
+  await page.keyboard.press('b')
+  const a = await at(page, 2, 10)
+  const b = await at(page, 8, 11)
+  await page.mouse.move(a.x, a.y)
+  await page.mouse.down()
+  await page.mouse.move(b.x, b.y, { steps: 5 })
+  await page.mouse.down({ button: 'right' })
+  await page.mouse.up({ button: 'right' })
+  await page.mouse.up()
+  await page.waitForTimeout(200)
+  expect(project.readMap(mapId).objects.some((o) => o.kind === 'path')).toBe(false)
+
+  // Something outside the map can still be selected and dragged back in.
+  await page.keyboard.press('v')
+  await drag(page, [17, 12.6], [17, 9.6])
+  await expect.poll(() => project.readMap(mapId).objects.find((o) => o.id === 'lost')?.y).toBe(9.6)
+
+  // Play opens the map as the players see it: no building tools.
+  await page.getByRole('navigation', { name: 'Views' }).getByRole('button', { name: 'Maps', exact: true }).click()
+  await page.getByRole('button', { name: /^Play/ }).click()
+  await expect(page.getByRole('img', { name: 'Map' })).toBeVisible()
+  await expect(page.getByRole('group', { name: 'View as' }).getByRole('button', { name: 'Players' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('toolbar', { name: 'Build' })).toHaveCount(0)
 })

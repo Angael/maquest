@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { Copy, Map as MapIcon, MonitorPlay, MoreHorizontal, Pencil, Plus, Settings2, Trash2 } from 'lucide-react'
+import { Copy, Map as MapIcon, MoreHorizontal, Pencil, Play, Plus, Settings2, Trash2 } from 'lucide-react'
 import { emptyMap, mapDefaultsOf } from '@maquest/core/map'
 import type { StoryNode } from '@maquest/core/schema'
 import { api } from '../../lib/api'
@@ -9,6 +9,7 @@ import { useUI } from '../../lib/store'
 import { Button, IconButton, Input, Menu, MenuItem, MenuSeparator, Popover } from '../ui'
 import { MapThumb } from './MapThumb'
 import { MapSettingsForm } from './MapPanel'
+import { useMapUI } from './mapStore'
 
 const refresh = () => queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] !== 'app' })
 
@@ -73,6 +74,11 @@ function MapCard({ node }: { node: StoryNode }) {
   const { data: doc } = useMap(node.id)
   const [renaming, setRenaming] = useState(false)
   const open = (background = false) => useUI.getState().openMap(node.id, background)
+  /** Opening to edit starts as the GM; Play starts as the players. */
+  const edit = (background = false) => {
+    if (!background) useMapUI.getState().set({ viewMode: 'gm' })
+    open(background)
+  }
 
   const rename = async (title: string) => {
     setRenaming(false)
@@ -105,8 +111,8 @@ function MapCard({ node }: { node: StoryNode }) {
         type="button"
         aria-label={`Open ${node.title}`}
         className="block outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset"
-        onClick={() => open()}
-        onAuxClick={(e) => e.button === 1 && open(true)}
+        onClick={() => edit()}
+        onAuxClick={(e) => e.button === 1 && edit(true)}
         onMouseDown={(e) => e.button === 1 && e.preventDefault()}
       >
         <div className="flex aspect-[3/2] items-center justify-center overflow-hidden bg-app">
@@ -143,13 +149,16 @@ function MapCard({ node }: { node: StoryNode }) {
           )}
         </div>
         <IconButton
-          icon={MonitorPlay}
-          label="Open as player: a window with only what the players see"
-          onClick={() => void api.openPlayerView(node.id).catch(failed)}
+          icon={Play}
+          label="Play: open as the players see it (fog covers what they have not seen)"
+          onClick={() => {
+            useMapUI.getState().set({ viewMode: 'player', tool: 'select', selected: [] })
+            open()
+          }}
         />
         <Menu align="end" trigger={<IconButton icon={MoreHorizontal} label={`More actions for ${node.title}`} />}>
-          <MenuItem icon={MapIcon} onClick={() => open()}>
-            Open
+          <MenuItem icon={MapIcon} onClick={() => edit()}>
+            Edit
           </MenuItem>
           <MenuItem icon={Pencil} onClick={() => setRenaming(true)}>
             Rename

@@ -97,9 +97,8 @@ Phase 1 is implemented on branch `feat/map-maker`. All requirements above have a
 
 | Area                                                                                                                                                                                                  | Where                                                                   |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| Maps view (list: new, open, rename, duplicate, delete, open as player) and one title-bar tab per open map                                                                                             | `MapList.tsx`, `TopBar.tsx`, `store.ts` (`maps`, `openMap`, `closeMap`) |
+| Maps view (list: new, edit, play, rename, duplicate, delete) and one title-bar tab per open map                                                                                                       | `MapList.tsx`, `TopBar.tsx`, `store.ts` (`maps`, `openMap`, `closeMap`) |
 | Maps section in the sidebar (click opens, middle click opens a background tab)                                                                                                                        | `Sidebar.tsx`                                                           |
-| Player window: a separate window with only the players' view, live                                                                                                                                    | `main/windows.ts`, `PlayerView.tsx`, `?player=<id>`                     |
 | Project defaults for new maps (`maquest.json` → `maps`), editable in the Maps view, "Use for new maps" from a map; MCP `project` `maps`                                                               | core `MapDefaults`, `emptyMap`                                          |
 | Panels split: floating selection inspector, scene panel (fog, tokens, layers, toggleable), Map settings popover (size, distances, grid, look)                                                         | `MapPanel.tsx`, `MapEditor.tsx`                                         |
 | Number fields step from their value (↑/↓, Shift ×10, Alt ÷10), drag the label to scrub; radii shown in map units                                                                                      | `fields.tsx`                                                            |
@@ -108,6 +107,23 @@ Phase 1 is implemented on branch `feat/map-maker`. All requirements above have a
 | Wall materials (`texture`), solid closed walls (`fill`: roofs, rock); textures brick, rock, shingles, thatch                                                                                          | core `schema.ts`, `render.ts`, `textures.ts`                            |
 | Soft fog edge that lets players glimpse walls and 1.6 cells into solid structures they see the side of                                                                                                | core `render.ts` `fogOverlay`                                           |
 | Vision: no boolean clipping in the visibility polygon (fixed blank sight at some positions), snapped retries for booleans, closed doors seal their whole cut (fixed light leaks next to angled doors) | core `geometry.ts`                                                      |
+
+### Phase 3 (toolbar, branch `feat/map-toolbar`)
+
+- Left rail in separate groups: pointer (select, pan, eraser), build (room, wall, door, light), paint (area, brush,
+  path, image, label), measure (ruler). Build and paint hide while viewing as the players.
+- Tool options open beside the active tool (a flyout), not along the top.
+- Token dock (bottom): place a player character (K), enemy (X) or NPC (N), each with its own color and vision preset
+  (`TOKEN_PRESETS` in `edit.ts`), and pick tokens. Light dock (bottom left): daylight / dim / dark, fog on/off, reset
+  explored. Layers moved into a popover; the right panel is gone.
+- Rooms: `op` `separate` keeps the room's own walls inside other rooms; `light` overrides the ambient light inside
+  (core `lightZones`: zones by ambient and rooms, then lights; `Sight.dark`/`dusk` drive the shading); named rooms
+  show their name in the middle for the GM.
+- Snapping per tool (`snaps` in `mapStore.ts`): rooms, walls, doors and tokens snap to cells, lights to half cells;
+  paint, paths, labels and images are free. Ctrl flips it. Moving snaps like the finest thing being moved.
+- The GM sees (dimmed) and can grab things outside the map; a selection can be dragged by its box.
+- A right press while dragging with the left button cancels (pointerdown never fires for a second button).
+- The player window is gone: Play in the Maps view opens the map in the Players view in the same window.
 
 ### Known gaps (next candidates)
 
@@ -123,7 +139,6 @@ Phase 1 is implemented on branch `feat/map-maker`. All requirements above have a
 
 - Hex grids.
 - Snap to wall endpoints, path node editing with handles in the editor.
-- Player-facing second window (GM vs player view).
 - Texture library management, stamps/asset packs.
 - Multi-level maps (floors).
 
@@ -134,3 +149,5 @@ Phase 1 is implemented on branch `feat/map-maker`. All requirements above have a
   layers, grid/ruler, fog of war, SVG export, canvas thumbnails, unit + MCP + e2e tests.
 - 2026-11-16 — Phase 2: Maps view and map tabs, player window, project map defaults, panel split, eraser, canvas
   handles, wall materials and solid structures, soft fog glimpse, vision robustness and door leak fixes.
+- 2026-11-16 — Phase 3: grouped tool rail with flyout options, token and light docks, token kinds, rooms with own
+  walls and light, room names, per-tool snapping, off-map grabbing, player window replaced by Play.
