@@ -30,13 +30,14 @@ export function addObject(doc: MapDoc, input: Record<string, unknown> & { kind: 
 }
 
 /**
- * What a new token of each kind starts with. Vision in cells (5 ft): sight is unlimited where it is lit, as in most
- * VTTs; darkvision 60 ft (12 cells) is the most common in D&D, so player characters and enemies start with it and the
- * GM removes it for humans. Edit any token afterwards.
+ * What a new token of each kind starts with. Sight is unlimited where it is lit (absent `vision`), as in most VTTs and
+ * in D&D. Player characters also start with darkvision 60 ft (12 cells), the most common range among player races,
+ * so they are not blind on a dark map; the GM removes it for humans. Enemies and NPCs never reveal the fog, so their
+ * vision only matters once the GM changes them.
  */
 export const TOKEN_PRESETS = {
   player: { name: 'Player', color: '#3f8f5a', player: true, darkvision: 12 },
-  enemy: { name: 'Enemy', color: '#b8322a', player: false, darkvision: 12 },
+  enemy: { name: 'Enemy', color: '#b8322a', player: false },
   npc: { name: 'NPC', color: '#3a73b8', player: false },
 } as const satisfies Record<TokenKind, { name: string; color: string; player: boolean; darkvision?: number }>
 
