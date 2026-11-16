@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 /** Built-in node types. Projects can add their own entity types (see `ProjectConfig.types`). */
-export const NODE_TYPES = ['story', 'chapter', 'scene', 'note', 'character', 'location', 'faction', 'item', 'idea', 'media'] as const
+export const NODE_TYPES = ['story', 'chapter', 'scene', 'note', 'character', 'location', 'faction', 'item', 'idea', 'media', 'map'] as const
 export type BuiltinType = (typeof NODE_TYPES)[number]
 export const TYPE_ID = /^[a-z][a-z0-9-]*$/
 /** A built-in or project-defined type id (lowercase slug). */
@@ -24,6 +24,7 @@ export const TYPE_DIRS: Record<BuiltinType, string> = {
   item: 'items',
   idea: 'backlog',
   media: 'media-nodes',
+  map: 'maps',
 }
 
 /** Which parent types a node type may have (empty = top level only). */
@@ -561,6 +562,7 @@ export const BUILTIN_TYPE_DEFS: Record<BuiltinType, { label: string; plural: str
   item: { label: 'Item', plural: 'Items', icon: 'box', color: '#eab308' },
   idea: { label: 'Idea', plural: 'Backlog', icon: 'lightbulb', color: '#ec4899' },
   media: { label: 'Media', plural: 'Media', icon: 'film', color: '#06b6d4' },
+  map: { label: 'Map', plural: 'Maps', icon: 'map', color: '#14b8a6' },
 }
 
 /** A node type as the project sees it: built-in defaults merged with overrides, or a custom type. */

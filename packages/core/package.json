@@ -9,7 +9,8 @@
     ".": "./src/index.ts",
     "./schema": "./src/schema.ts",
     "./layout": "./src/layout.ts",
-    "./sheet": "./src/sheet.ts"
+    "./sheet": "./src/sheet.ts",
+    "./map": "./src/map/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -p ."
@@ -19,6 +20,7 @@
     "@sindresorhus/transliterate": "^2.3.1",
     "elkjs": "^0.12.0",
     "fastest-levenshtein": "^1.0.16",
+    "polygon-clipping": "^0.15.7",
     "yaml": "^2.9.1",
     "zod": "^4.6.7"
   },

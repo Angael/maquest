@@ -17,6 +17,10 @@ UI and design:
 - Use the semantic tokens and `components/ui.tsx` primitives; don't introduce raw colors or hand-rolled popovers.
 - `pnpm screenshots` captures the main UI states of the built app into `.screenshots/` for visual review.
 
+Feature notes:
+
+- Larger features keep a live note in `docs/features/` (e.g. `docs/features/maps.md`): requirements, design, status and a log. Read it before working on that feature and update it when work lands.
+
 Layout:
 
 - packages/core: domain model, file I/O, graph, guidelines, templates
