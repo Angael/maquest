@@ -1,4 +1,5 @@
 import { MapObject, Token, explore, freeMapId, sight, type MapDoc, type MapObjectKind, type Point } from '@maquest/core/map'
+import type { TokenKind } from './mapStore'
 
 /** Small immutable helpers the editor uses on map documents. */
 
@@ -28,10 +29,26 @@ export function addObject(doc: MapDoc, input: Record<string, unknown> & { kind: 
   return { doc: { ...doc, objects: [...doc.objects, object] }, id }
 }
 
-export function addToken(doc: MapDoc, at: Point, layer: string | null): { doc: MapDoc; id: string } {
+/**
+ * What a new token of each kind starts with. Sight is unlimited where it is lit (absent `vision`), as in most VTTs and
+ * in D&D. Player characters also start with darkvision 60 ft (12 cells), the most common range among player races,
+ * so they are not blind on a dark map; the GM removes it for humans. Enemies and NPCs never reveal the fog, so their
+ * vision only matters once the GM changes them.
+ */
+export const TOKEN_PRESETS = {
+  player: { name: 'Player', color: '#3f8f5a', player: true, darkvision: 12 },
+  enemy: { name: 'Enemy', color: '#b8322a', player: false },
+  npc: { name: 'NPC', color: '#3a73b8', player: false },
+} as const satisfies Record<TokenKind, { name: string; color: string; player: boolean; darkvision?: number }>
+
+/** A new token of a kind, named "<Kind> <n>", snapped so it covers whole cells unless `free`. */
+export function addToken(doc: MapDoc, at: Point, layer: string | null, kind: TokenKind = 'player', free = false): { doc: MapDoc; id: string } {
   const id = freeMapId(doc, 'token')
-  const n = doc.tokens.length + 1
-  const token = Token.parse({ id, name: `Token ${n}`, ...snapToken(at, 1), player: true, layers: layer ? [layer] : [] })
+  const { name, ...preset } = TOKEN_PRESETS[kind]
+  const taken = new Set(doc.tokens.map((t) => t.name))
+  let n = doc.tokens.filter((t) => t.name.startsWith(`${name} `)).length + 1
+  while (taken.has(`${name} ${n}`)) n++
+  const token = Token.parse({ id, name: `${name} ${n}`, ...preset, ...(free ? at : snapToken(at, 1)), layers: layer ? [layer] : [] })
   return { doc: { ...doc, tokens: [...doc.tokens, token] }, id }
 }
 

@@ -271,7 +271,7 @@ export function objectLine(o: MapObject): string {
       what = `${shapeText(o)} ${o.op === 'subtract' ? 'erase' : (o.fill.texture ?? o.fill.color ?? '')}`
       break
     case 'room':
-      what = `${shapeText(o)}${o.op === 'subtract' ? ' subtract' : ''}`
+      what = `${shapeText(o)}${o.op === 'add' ? '' : ` ${o.op}`}${o.light ? ` ${o.light}` : ''}`
       break
     case 'wall':
     case 'path':

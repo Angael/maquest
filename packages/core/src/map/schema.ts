@@ -71,8 +71,19 @@ const Base = {
 
 /** Painted terrain. `subtract` erases the paint of areas below it. */
 export const AreaObject = z.object({ ...Base, kind: z.literal('area'), shape: Shape, op: BoolOp.default('add'), fill: Fill.default({ color: '#6b8f4e' }) })
-/** Rooms merge (add) and cut (subtract) in order into one floor; its outline becomes walls. */
-export const RoomObject = z.object({ ...Base, kind: z.literal('room'), shape: Shape, op: BoolOp.default('add') })
+export const LIGHT_LEVELS = ['light', 'dim', 'dark'] as const
+export const LightLevel = z.enum(LIGHT_LEVELS)
+export type LightLevel = z.infer<typeof LightLevel>
+
+export const ROOM_OPS = ['add', 'subtract', 'separate'] as const
+export const RoomOp = z.enum(ROOM_OPS)
+export type RoomOp = z.infer<typeof RoomOp>
+/**
+ * Rooms merge (add) and cut (subtract) in order into one floor; its outline becomes walls. A `separate` room keeps its
+ * own walls even inside another room (a room in a room, a tower in a courtyard). `light` overrides the map's ambient
+ * light inside the room (a lit tavern on a dark night, a dark cellar at noon). `name` shows in its middle for the GM.
+ */
+export const RoomObject = z.object({ ...Base, kind: z.literal('room'), shape: Shape, op: RoomOp.default('add'), light: LightLevel.optional() })
 /**
  * Free-standing wall line; blocks sight. `texture` is its material (wood, stone, brick, rock…), drawn along the line.
  * A closed wall may have a `fill`: a solid structure seen from outside, such as a roof, a cliff or a boulder.
@@ -183,7 +194,7 @@ export const Grid = z.object({
 })
 export type Grid = z.infer<typeof Grid>
 
-export const AMBIENT = ['light', 'dim', 'dark'] as const
+export const AMBIENT = LIGHT_LEVELS
 export const Fog = z.object({
   enabled: z.boolean().default(false),
   /** light: lit everywhere. dim: players see everywhere but it is darker away from lights. dark: players see only lit areas (or with darkvision). */

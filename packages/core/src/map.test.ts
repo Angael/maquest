@@ -104,6 +104,51 @@ test('fog: in the dark a player sees only lit areas and darkvision', () => {
   assert.ok(Math.abs(seen - 8 * Math.PI) < 1, `saw ${seen}`)
 })
 
+test('a separate room keeps its own walls inside another room', () => {
+  const outer = { op: 'add', object: { kind: 'room', x: 10, y: 10, shape: { type: 'rect', w: 10, h: 10 } } } as const
+  const merged = edit(emptyMap(), [outer, { op: 'add', object: { kind: 'room', x: 10, y: 10, shape: { type: 'rect', w: 4, h: 4 } } }])
+  const nested = edit(emptyMap(), [outer, { op: 'add', object: { kind: 'room', x: 10, y: 10, shape: { type: 'rect', w: 4, h: 4 }, op: 'separate' } }])
+  assert.equal(wallGeometry(merged).rooms.length, 1)
+  assert.equal(wallGeometry(nested).rooms.length, 2)
+  // Same floor either way; a player inside the inner room sees only it.
+  assert.ok(Math.abs(area(roomRegion(nested)) - 100) < 1e-6)
+  const seen = area(
+    sight(
+      edit(nested, [
+        { op: 'token', set: { name: 'Hero', x: 10.5, y: 10.5, player: true } },
+        { op: 'fog', enabled: true },
+      ]),
+    ).visible,
+  )
+  assert.ok(seen > 14 && seen < 16.5, `saw ${seen}`)
+})
+
+test('rooms override the ambient light inside them', () => {
+  const base = edit(emptyMap(), [
+    { op: 'add', object: { kind: 'room', x: 5, y: 5, shape: { type: 'rect', w: 4, h: 4 }, light: 'light' } },
+    { op: 'add', object: { kind: 'room', x: 20, y: 5, shape: { type: 'rect', w: 4, h: 4 }, light: 'dark' } },
+    { op: 'add', object: { kind: 'door', x: 5, y: 3, rotation: 0, open: true } },
+    { op: 'add', object: { kind: 'door', x: 20, y: 3, rotation: 0, open: true } },
+    { op: 'fog', enabled: true, ambient: 'dark' },
+  ])
+  // Night outside, a lit tavern: the player in the street sees into the tavern through its open door, nothing else.
+  const night = sight(edit(base, [{ op: 'token', set: { name: 'Hero', x: 5.5, y: 0.5, player: true } }]))
+  assert.ok(area(intersection(night.visible, rectRegion(3, 3, 4, 4))) > 0.5)
+  assert.ok(area(night.visible) < 20)
+  const cellar = sight(edit(base, [{ op: 'token', set: { name: 'Hero', x: 20.5, y: 0.5, player: true } }]))
+  assert.ok(area(intersection(cellar.visible, rectRegion(18, 3, 4, 4))) < 0.01)
+  // Daylight outside, a dark cellar: everything but the cellar.
+  const day = sight(
+    edit(base, [
+      { op: 'fog', ambient: 'light' },
+      { op: 'token', set: { name: 'Hero', x: 12.5, y: 1.5, player: true } },
+    ]),
+  )
+  assert.ok(area(intersection(day.visible, rectRegion(18, 3, 4, 4))) < 0.01)
+  assert.ok(area(day.visible) > 100)
+  assert.ok(day.shaded)
+})
+
 test('ruler: line and traced cells with diagonal rules', () => {
   assert.deepEqual(lineMeasure({ x: 0.5, y: 0.5 }, { x: 3.5, y: 2.5 }, 'equal').cells, 3)
   assert.deepEqual(lineMeasure({ x: 0.5, y: 0.5 }, { x: 3.5, y: 2.5 }, 'alternate').cells, 4)

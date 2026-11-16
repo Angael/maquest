@@ -28,7 +28,7 @@ import {
 } from '@maquest/core/map'
 import { api, mediaUrl } from '../../lib/api'
 import { toReact } from './svgReact'
-import { useMapUI } from './mapStore'
+import { moveSnap, snapOf, useMapUI } from './mapStore'
 import { addObject, addToken, moveIds, patchObject, removeIds, snapPoint, snapTo, snapToken, withExplored } from './edit'
 
 type View = { x: number; y: number; s: number }
@@ -77,7 +77,8 @@ export function MapViewport({ doc, commit, mapId }: { doc: MapDoc; commit: (next
       tool: s.tool,
       shape: s.shape,
       op: s.op,
-      snap: s.snap,
+      roomOp: s.roomOp,
+      tokenKind: s.tokenKind,
       fill: s.fill,
       stroke: s.stroke,
       ruler: s.ruler,
@@ -98,6 +99,8 @@ export function MapViewport({ doc, commit, mapId }: { doc: MapDoc; commit: (next
         fog: ui.viewMode,
         lighting: ui.viewMode,
         idPrefix: `ed-${mapId}-`,
+        // The GM sees (and can grab) things left outside the map; the players never do.
+        clip: ui.viewMode === 'player',
       }),
     [shown, ui.viewMode, mapId],
   )
@@ -130,7 +133,14 @@ export function MapViewport({ doc, commit, mapId }: { doc: MapDoc; commit: (next
     const r = host.current!.getBoundingClientRect()
     return { x: (e.clientX - r.left - v.x) / v.s, y: (e.clientY - r.top - v.y) / v.s }
   }
-  const step = (e: { ctrlKey: boolean; metaKey: boolean }) => (e.ctrlKey || e.metaKey ? 0 : ui.snap)
+  /** The snap step of what a gesture drags. */
+  const gestureStep = (g: Gesture, e: { ctrlKey: boolean; metaKey: boolean }) => {
+    if (g.type === 'move') return flip(moveSnap(g.base, g.ids), e)
+    if (g.type === 'radius') return step(g.base.tokens.some((t) => t.id === g.id) ? 'token' : 'light', e)
+    if (g.type === 'doorEnd') return step('door', e)
+    if (g.type === 'resize' || g.type === 'vertex') return step(g.base.objects.find((o) => o.id === g.id)?.kind ?? '', e)
+    return step(tool, e)
+  }
 
   // Wheel zooms around the cursor (pinch arrives as ctrl+wheel).
   useEffect(() => {
@@ -168,7 +178,7 @@ export function MapViewport({ doc, commit, mapId }: { doc: MapDoc; commit: (next
       const base = { x: o.x, y: o.y, shape }
       const input =
         pen.kind === 'room'
-          ? { kind: 'room' as const, ...base, op: st.op }
+          ? { kind: 'room' as const, ...base, op: st.roomOp, light: st.roomLight ?? undefined }
           : pen.kind === 'area'
             ? { kind: 'area' as const, ...base, op: st.op, fill: st.fill }
             : pen.kind === 'wall'
@@ -269,7 +279,7 @@ export function MapViewport({ doc, commit, mapId }: { doc: MapDoc; commit: (next
       else gesture.current = { type: 'vertex', id: selectedObject.id, index: Number(n), part: kind as 'pt' | 'in' | 'out', base: doc }
       return
     }
-    const s = step(e)
+    const s = step(tool, e)
     switch (tool) {
       case 'select': {
         const id = target?.closest('[data-token]')?.getAttribute('data-token') ?? target?.closest('[data-id]')?.getAttribute('data-id')
@@ -278,6 +288,9 @@ export function MapViewport({ doc, commit, mapId }: { doc: MapDoc; commit: (next
           const ids = e.shiftKey ? (already ? ui.selected.filter((x) => x !== id) : [...ui.selected, id]) : already ? ui.selected : [id]
           select(ids)
           if (ids.includes(id)) gesture.current = { type: 'move', ids, start: p, base: doc, moved: false }
+        } else if (!e.shiftKey && ui.selected.some((sid) => insideBox(doc, sid, p))) {
+          // Grab a selection by its box too (thin lines, things outside the map, a group of several).
+          gesture.current = { type: 'move', ids: ui.selected, start: p, base: doc, moved: false }
         } else {
           if (!e.shiftKey) select([])
           gesture.current = { type: 'marquee', start: p, add: e.shiftKey }
@@ -312,7 +325,7 @@ export function MapViewport({ doc, commit, mapId }: { doc: MapDoc; commit: (next
       case 'image': {
         if (!ui.image) return
         const src = ui.image
-        const at = snapPoint(p, s ? 0.5 : 0)
+        const at = snapPoint(p, s)
         const img = new Image()
         img.addEventListener('load', () => {
           const w = Math.min(doc.grid.cols, Math.max(1, img.naturalWidth / doc.grid.size))
@@ -325,20 +338,20 @@ export function MapViewport({ doc, commit, mapId }: { doc: MapDoc; commit: (next
         return
       }
       case 'label': {
-        const r = addObject(doc, { kind: 'label', ...snapPoint(p, s ? 0.5 : 0), text: 'Label' }, ui.activeLayer)
+        const r = addObject(doc, { kind: 'label', ...snapPoint(p, s), text: 'Label' }, ui.activeLayer)
         commit(r.doc)
         select([r.id])
         requestAnimationFrame(() => document.querySelector<HTMLInputElement>('[data-map-field="text"]')?.select())
         return
       }
       case 'light': {
-        const r = addObject(doc, { kind: 'light', ...snapPoint(p, s ? 0.5 : 0) }, ui.activeLayer)
+        const r = addObject(doc, { kind: 'light', ...snapPoint(p, s) }, ui.activeLayer)
         commit(r.doc)
         select([r.id])
         return
       }
       case 'token': {
-        const r = addToken(doc, p, ui.activeLayer)
+        const r = addToken(doc, p, ui.activeLayer, ui.tokenKind, !s)
         commit(withExplored(r.doc))
         select([r.id])
         return
@@ -397,6 +410,11 @@ export function MapViewport({ doc, commit, mapId }: { doc: MapDoc; commit: (next
   }
 
   const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    // A right press while dragging (no pointerdown fires for a second button) cancels the drag.
+    if (e.buttons & 2 && gesture.current && gesture.current.type !== 'pan') {
+      cancel()
+      return
+    }
     const p = toMap(e)
     setCursor(p)
     const g = gesture.current
@@ -404,7 +422,7 @@ export function MapViewport({ doc, commit, mapId }: { doc: MapDoc; commit: (next
       if (tool === 'eraser') setEraseHover(hitAt(e.clientX, e.clientY, true))
       return
     }
-    const s = step(e)
+    const s = gestureStep(g, e)
     switch (g.type) {
       case 'erase': {
         const hit = hitAt(e.clientX, e.clientY, g.broad)
@@ -545,7 +563,7 @@ export function MapViewport({ doc, commit, mapId }: { doc: MapDoc; commit: (next
         let next = preview
         // A resized token re-snaps so its footprint covers whole cells.
         const t = g.field === 'size' ? next.tokens.find((x) => x.id === g.id) : undefined
-        if (t && st.snap && !(e.ctrlKey || e.metaKey)) next = patchObject(next, t.id, snapToken(t, t.size))
+        if (t && step('token', e)) next = patchObject(next, t.id, snapToken(t, t.size))
         commit(next.tokens.some((x) => x.id === g.id && x.player) ? withExplored(next) : next)
         break
       }
@@ -565,10 +583,11 @@ export function MapViewport({ doc, commit, mapId }: { doc: MapDoc; commit: (next
         if (w < 0.1 || h < 0.1) break
         const center = { x: a.x + (Math.sign(b.x - a.x) * w) / 2, y: a.y + (Math.sign(b.y - a.y) * h) / 2 }
         const shape = st.shape === 'ellipse' ? { type: 'ellipse' as const, rx: w / 2, ry: h / 2 } : { type: 'rect' as const, w, h }
-        const op = e.altKey ? (st.op === 'add' ? 'subtract' : 'add') : st.op
         const r = addObject(
           doc,
-          ui.tool === 'room' ? { kind: 'room', ...center, shape, op } : { kind: 'area', ...center, shape, op, fill: st.fill },
+          ui.tool === 'room'
+            ? { kind: 'room', ...center, shape, op: altOp(st.roomOp, e.altKey), light: st.roomLight ?? undefined }
+            : { kind: 'area', ...center, shape, op: altOp(st.op, e.altKey), fill: st.fill },
           st.activeLayer,
         )
         commit(r.doc)
@@ -588,8 +607,15 @@ export function MapViewport({ doc, commit, mapId }: { doc: MapDoc; commit: (next
               ? addObject(
                   doc,
                   ui.tool === 'room'
-                    ? { kind: 'room', x: o.x, y: o.y, shape: { type: 'path', points, closed: true }, op: e.altKey ? 'subtract' : st.op }
-                    : { kind: 'area', x: o.x, y: o.y, shape: { type: 'path', points, closed: true }, op: e.altKey ? 'subtract' : st.op, fill: st.fill },
+                    ? {
+                        kind: 'room',
+                        x: o.x,
+                        y: o.y,
+                        shape: { type: 'path', points, closed: true },
+                        op: altOp(st.roomOp, e.altKey),
+                        light: st.roomLight ?? undefined,
+                      }
+                    : { kind: 'area', x: o.x, y: o.y, shape: { type: 'path', points, closed: true }, op: altOp(st.op, e.altKey), fill: st.fill },
                   st.activeLayer,
                 )
               : null
@@ -652,6 +678,10 @@ export function MapViewport({ doc, commit, mapId }: { doc: MapDoc; commit: (next
       className="absolute inset-0 overflow-hidden bg-app outline-none select-none"
       style={{ cursor: cursorStyle, touchAction: 'none' }}
       onPointerDown={onPointerDown}
+      onMouseDown={(e) => {
+        // Right click while drawing or dragging with the left button held: pointerdown only fires for the first button.
+        if (e.button === 2 && (gesture.current || pen || ruler || drawing || stroke)) cancel()
+      }}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerLeave={() => {
@@ -675,6 +705,7 @@ export function MapViewport({ doc, commit, mapId }: { doc: MapDoc; commit: (next
             {/* Map frame shadow so the map edge reads against the app background. */}
             <rect width={doc.grid.cols} height={doc.grid.rows} fill="none" stroke="black" strokeOpacity={0.5} strokeWidth={px(1)} />
             {content}
+            {ui.viewMode === 'gm' && <Outside cols={doc.grid.cols} rows={doc.grid.rows} />}
             <Overlays
               doc={shown}
               px={px}
@@ -684,11 +715,11 @@ export function MapViewport({ doc, commit, mapId }: { doc: MapDoc; commit: (next
               eraseHover={tool === 'eraser' ? eraseHover : null}
               pen={pen}
               cursor={cursor}
-              drawing={drawing && { ...drawing, ellipse: ui.shape === 'ellipse', subtract: ui.op === 'subtract' }}
+              drawing={drawing && { ...drawing, ellipse: ui.shape === 'ellipse', subtract: (ui.tool === 'room' ? ui.roomOp : ui.op) === 'subtract' }}
               stroke={stroke && { points: stroke, brush: ui.tool === 'brush', width: ui.stroke.width }}
               marquee={marquee}
               ruler={ruler}
-              doorGhost={tool === 'door' && cursor ? doorSpot(cursor, ui.snap) : null}
+              doorGhost={tool === 'door' && cursor ? doorSpot(cursor, snapOf('door')) : null}
             />
           </g>
         </svg>
@@ -697,10 +728,47 @@ export function MapViewport({ doc, commit, mapId }: { doc: MapDoc; commit: (next
   )
 }
 
+const flip = (base: number, e: { ctrlKey: boolean; metaKey: boolean }) => (e.ctrlKey || e.metaKey ? (base ? 0 : 1) : base)
+/** A tool's snap step; Ctrl flips snapping off (or on, for tools that place freely). */
+const step = (t: string, e: { ctrlKey: boolean; metaKey: boolean }) => flip(snapOf(t), e)
+
+/** Alt flips adding and subtracting while drawing (a separate room becomes a cut). */
+function altOp<T extends 'add' | 'subtract' | 'separate'>(op: T, alt: boolean): T | 'add' | 'subtract' {
+  if (!alt) return op
+  return op === 'subtract' ? 'add' : 'subtract'
+}
+
 /** Rooms and areas cover the map; the eraser only takes them when the stroke starts on one. */
 function isBroad(d: MapDoc, id: string) {
   const kind = d.objects.find((o) => o.id === id)?.kind
   return kind === 'room' || kind === 'area'
+}
+
+/** Whether a point lies in an object's (rotated) box or a token's footprint. */
+function insideBox(d: MapDoc, id: string, p: Point) {
+  const o = d.objects.find((x) => x.id === id)
+  if (o) {
+    const b = localBox(o)
+    const l = toLocal(o, p)
+    const pad = 0.15
+    return l.x >= b.x - pad && l.x <= b.x + b.w + pad && l.y >= b.y - pad && l.y <= b.y + b.h + pad
+  }
+  const t = d.tokens.find((x) => x.id === id)
+  return !!t && Math.abs(p.x - t.x) <= t.size / 2 && Math.abs(p.y - t.y) <= t.size / 2
+}
+
+/** Dims everything outside the map's rectangle: the GM sees what lies there, players never do. */
+function Outside({ cols, rows }: { cols: number; rows: number }) {
+  const far = 1e5
+  return (
+    <path
+      d={`M${-far} ${-far}H${far}V${far}H${-far}Z M0 0V${rows}H${cols}V0Z`}
+      fill="var(--color-app)"
+      fillOpacity={0.72}
+      fillRule="evenodd"
+      pointerEvents="none"
+    />
+  )
 }
 
 function replace(doc: MapDoc, o: MapObject): MapDoc {

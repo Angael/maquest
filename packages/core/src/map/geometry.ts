@@ -185,13 +185,25 @@ export const visibleObjects = (doc: MapDoc) => doc.objects.filter((o) => layerVi
 
 /** The floor: visible rooms merged and cut in order. */
 export function roomRegion(doc: MapDoc, objects = visibleObjects(doc)): Multi {
-  let region: Multi = []
+  return roomRegions(objects).floor
+}
+
+/** The floor, plus what is left of each `separate` room after the subtract rooms above it (their outlines are walls too). */
+export function roomRegions(objects: readonly MapObject[]): { floor: Multi; separate: Multi[] } {
+  let floor: Multi = []
+  const separate: Multi[] = []
   for (const o of objects) {
     if (o.kind !== 'room') continue
     const shape = objectRegion(o)
-    region = o.op === 'subtract' ? difference(region, shape) : union(region, shape)
+    if (o.op === 'subtract') {
+      floor = difference(floor, shape)
+      for (let i = 0; i < separate.length; i++) separate[i] = difference(separate[i], shape)
+    } else {
+      floor = union(floor, shape)
+      if (o.op === 'separate') separate.push(shape)
+    }
   }
-  return region
+  return { floor, separate }
 }
 
 /** Painted areas: each visible `add` area with what is left after the `subtract` areas above it. */
@@ -396,7 +408,9 @@ export function wallGeometry(doc: MapDoc, objects = visibleObjects(doc), floor =
   const doors = objects.filter((o): o is Door => o.kind === 'door')
   const width = doc.style.wall.width
   const cuts = doors.map((d) => doorCut(d, width))
-  const rooms = cutChains(floor.flat().map(ringLine), cuts)
+  // Separate rooms add their own outline, inside other rooms too.
+  const rings = [...floor.flat(), ...roomRegions(objects).separate.flatMap((r) => r.flat())]
+  const rooms = cutChains(rings.map(ringLine), cuts)
   const wallObjects = objects.filter((o): o is Extract<MapObject, { kind: 'wall' }> => o.kind === 'wall')
   const walls = wallObjects.map((o) => ({
     object: o,
@@ -536,43 +550,75 @@ export function visibility(o: Point, segments: readonly Segment[], radius: numbe
 export type Sight = {
   /** What player tokens see right now. */
   visible: Multi
-  /** Areas lit by lights (only computed when ambient is not light). */
+  /** Fully lit: bright light from lights and rooms (or the whole map) lit by daylight. */
   bright: Multi
+  /** Lit at least dimly (contains `bright`). Only computed when the map has darkness or dimness somewhere. */
   dim: Multi
+  /** Unlit darkness: players see it only with darkvision. */
+  dark: Multi
+  /** Ambient dimness not reached by any light (drawn darker than light's own dim edge). */
+  dusk: Multi
+  /** Whether anything on the map is not in plain daylight (else bright/dim/dark/dusk are empty). */
+  shaded: boolean
+}
+
+/**
+ * The map's light as zones: the ambient light everywhere, overridden inside rooms that set their own light (in order),
+ * then lights on top.
+ */
+function lightZones(doc: MapDoc, objects: readonly MapObject[], segments: readonly Segment[]) {
+  const rooms = objects.filter((o): o is Extract<MapObject, { kind: 'room' }> => o.kind === 'room' && !!o.light && o.op !== 'subtract')
+  const shaded = doc.fog.ambient !== 'light' || rooms.some((r) => r.light !== 'light')
+  if (!shaded) return { shaded, bright: [] as Multi, dim: [] as Multi, dark: [] as Multi, dusk: [] as Multi }
+  const map = rectRegion(0, 0, doc.grid.cols, doc.grid.rows)
+  const zone: Record<'light' | 'dim' | 'dark', Multi> = { light: [], dim: [], dark: [] }
+  zone[doc.fog.ambient] = map
+  for (const r of rooms) {
+    const region = objectRegion(r)
+    for (const k of ['light', 'dim', 'dark'] as const) zone[k] = k === r.light ? union(zone[k], region) : difference(zone[k], region)
+  }
+  let lit: Multi = []
+  let glow: Multi = []
+  for (const l of objects) {
+    if (l.kind !== 'light') continue
+    const reach = Math.max(l.bright, l.dim)
+    if (!reach) continue
+    const los = visibility(l, segments, reach)
+    if (l.bright) lit = union(lit, intersection(los, circle(l, l.bright)))
+    glow = union(glow, los)
+  }
+  const bright = union(zone.light, lit)
+  return {
+    shaded,
+    bright,
+    dim: union(bright, zone.dim, glow),
+    dark: difference(zone.dark, glow),
+    dusk: difference(zone.dim, glow),
+  }
 }
 
 export function sight(doc: MapDoc, objects = visibleObjects(doc), geo = wallGeometry(doc, objects)): Sight {
   const segments = sightSegments(geo)
   const far = Math.hypot(doc.grid.cols, doc.grid.rows) + 2
-  let bright: Multi = []
-  let dim: Multi = []
-  if (doc.fog.ambient !== 'light') {
-    for (const l of objects) {
-      if (l.kind !== 'light') continue
-      const reach = Math.max(l.bright, l.dim)
-      if (!reach) continue
-      const los = visibility(l, segments, reach)
-      if (l.bright) bright = union(bright, intersection(los, circle(l, l.bright)))
-      dim = union(dim, los)
-    }
-  }
+  const zones = lightZones(doc, objects, segments)
   let visible: Multi = []
   for (const t of doc.tokens) {
     if (!t.player || t.hidden || !layerVisible(doc, t.layers)) continue
-    visible = union(visible, tokenSight(doc, t, segments, far, dim))
+    visible = union(visible, tokenSight(t, segments, far, zones.dark, zones.dim))
   }
-  return { visible, bright, dim }
+  return { visible, ...zones }
 }
 
-function tokenSight(doc: MapDoc, t: Token, segments: readonly Segment[], far: number, lit: Multi): Multi {
+/** What one token sees: in range and in light (`lit`, unless nothing is `dark`), plus its darkvision. */
+function tokenSight(t: Token, segments: readonly Segment[], far: number, dark: Multi, lit: Multi): Multi {
   const range = t.vision ?? far
   const los = visibility(t, segments, Math.max(range, t.darkvision ?? 0))
   const inRange = t.vision === undefined ? los : intersection(los, circle(t, range))
-  if (doc.fog.ambient !== 'dark') return inRange
+  if (!dark.length) return inRange
   const seenLit = intersection(inRange, lit)
-  const dark = t.darkvision ? intersection(los, circle(t, t.darkvision)) : []
+  const darkSeen = t.darkvision ? intersection(los, circle(t, t.darkvision)) : []
   // Players always see their own square.
-  return union(seenLit, dark, circle(t, Math.max(0.5, t.size / 2), 24))
+  return union(seenLit, darkSeen, circle(t, Math.max(0.5, t.size / 2), 24))
 }
 
 /** Explored fog grown by what is visible now; coordinates rounded so the file stays small. */
