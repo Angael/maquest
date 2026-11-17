@@ -616,7 +616,7 @@ const WriteItem = z.object({
     .record(z.string(), z.unknown())
     .optional()
     .describe(
-      'The node\'s data by key: text, numbers, lists or maps, in the format of the type\'s field widgets (overview lists them), e.g. { role: "smuggler", hp: { value: 12, max: 20 }, scores: { str: 9, dex: 14 }, allies: ["mira"] }. Merged into the existing fields, maps one level deep; null removes. Keep numbers and structured data here, not in the body.',
+      'The node\'s data by key: text, numbers, lists or maps, in the format of the type\'s field widgets (overview lists them), e.g. { role: "smuggler", hp: { value: 12, max: 20 }, scores: { str: 9, dex: 14 }, allies: ["mira"] }. Merged into the existing fields, maps one level deep; null removes. Keep numbers and structured data here, not in the body. Values are read at a glance: tiles and chips take a few words, lists a few dozen items, numbers at most 2 decimals; Maquest reports oversized ones (field-oversized).',
     ),
   body: z.string().optional().describe('Markdown body (replaces the existing body)'),
   bodyFile: z
