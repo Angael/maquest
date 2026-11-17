@@ -3,7 +3,7 @@
  * the app renders exactly what the MCP server and the checks see. Nothing here knows any game or genre: types define
  * their fields and tabs in maquest.json.
  */
-import { itemFields, type FieldDef, type StoryNode, type TabDef, type TypeInfo, type Widget } from './schema'
+import { WORD_MAX, itemFields, longWord, type FieldDef, type StoryNode, type TabDef, type TypeInfo, type Widget } from './schema'
 
 // ---------- values ----------
 
@@ -57,6 +57,75 @@ export function toNumber(v: unknown): number | null {
 /** Signed number with a real minus sign: +2, −1, +0. */
 export const signed = (n: number) => (n > 0 ? `+${n}` : n < 0 ? `−${-n}` : '+0')
 
+// ---------- display ----------
+
+const MINUS = '−'
+const COMPACT = [
+  [1e12, 'T'],
+  [1e9, 'B'],
+  [1e6, 'M'],
+] as const
+const trimZeros = (s: string) => (s.includes('.') ? s.replace(/\.?0+$/, '') : s)
+
+/**
+ * A number as a sheet shows it, short enough for a tile: at most two decimals (three significant digits below 1),
+ * compact from a million on (1.2M, 34B, 5.6T), with an exponent beyond that or when tiny (1.2e21, 4e−6), and a real
+ * minus sign. The value in the file is unchanged; widgets show it in full on hover.
+ */
+export function formatNumber(n: number): string {
+  if (Number.isNaN(n)) return 'NaN'
+  if (!Number.isFinite(n)) return n > 0 ? '∞' : `${MINUS}∞`
+  const a = Math.abs(n)
+  const sign = n < 0 ? MINUS : ''
+  let body: string
+  if (a === 0) body = '0'
+  else if (a >= 1e15 || a < 1e-3) {
+    const [m, e] = a.toExponential(1).split('e')
+    body = `${trimZeros(m)}e${Number(e) < 0 ? MINUS : ''}${Math.abs(Number(e))}`
+  } else if (a >= 1e6) {
+    const [unit, suffix] = COMPACT.find(([u]) => a >= u)!
+    const q = a / unit
+    body = `${trimZeros(q.toFixed(q >= 100 ? 0 : 1))}${suffix}`
+  } else body = trimZeros(a >= 1 ? a.toFixed(2) : a.toPrecision(3))
+  return body === '0' ? '0' : sign + body
+}
+
+/** Text that is only a number: 14, +2, −1.5, 1,5. */
+export const NUMBER_ONLY = /^\s*[+\-−]?\d+(?:[.,]\d+)?\s*$/
+
+/**
+ * A number value as a sheet shows it, or null when the value isn't a number. Numbers are formatted (formatNumber);
+ * number-only text keeps how it is written ("+2", "1,5", "007") unless it is too long or precise to read.
+ */
+export function numberText(v: unknown): string | null {
+  if (typeof v === 'number') return formatNumber(v)
+  if (typeof v !== 'string' || !NUMBER_ONLY.test(v)) return null
+  const s = v.trim()
+  const decimals = /\.(\d+)$/.exec(s)?.[1].length ?? 0
+  // A comma may be a decimal or a thousands separator ("1,5" or "1,000"), so such text stays as written.
+  if (s.includes(',') || (s.replaceAll(/\D/g, '').length <= 7 && decimals <= 2)) return s.replace(/^-/, MINUS)
+  return formatNumber(Number(s.replace(MINUS, '-')))
+}
+
+/** Any value as a sheet shows it in one piece of text: numbers formatted, everything else as plain text. */
+export const displayText = (v: unknown) => numberText(v) ?? plainText(v)
+
+/** A number with its sign for display: +2, −1.5, +1.2M. */
+export const signedText = (n: number) => (n > 0 ? '+' : n < 0 ? '' : '+') + formatNumber(n)
+
+/** Text cut to `max` characters with an ellipsis, for quoting values in messages. */
+export const clip = (s: string, max = 32) => {
+  const one = s.replaceAll(/\s+/g, ' ').trim()
+  return one.length > max ? `${one.slice(0, max - 1).trimEnd()}…` : one
+}
+
+/** The first few items of a list, then "+N more": "a, b, c (+12 more)". */
+export const someOf = (items: readonly string[], n = 3, max = 32) =>
+  `${items
+    .slice(0, n)
+    .map((s) => clip(s, max))
+    .join(', ')}${items.length > n ? ` (+${items.length - n} more)` : ''}`
+
 /** Yes/no of a toggle value; null when it isn't one. */
 export function toBool(v: unknown): boolean | null {
   if (typeof v === 'boolean') return v
@@ -79,7 +148,16 @@ export function meterValue(def: Pick<FieldDef, 'max'>, v: unknown): { value: num
   return { value: toNumber(v), max: def.max ?? null }
 }
 
-export type ScoreCell = { key: string; label: string; value: string; number: number | null; modifier?: string }
+export type ScoreCell = {
+  key: string
+  label: string
+  /** The value as written. */
+  value: string
+  /** The value as shown (numbers formatted). */
+  display: string
+  number: number | null
+  modifier?: string
+}
 
 /** Score cells in the field's key order, then any extra keys; with the field's modifier when it has one. */
 export function scoreCells(def: Pick<FieldDef, 'keys' | 'labels' | 'modifier'>, v: unknown): ScoreCell[] {
@@ -93,24 +171,30 @@ export function scoreCells(def: Pick<FieldDef, 'keys' | 'labels' | 'modifier'>, 
       key,
       label: def.labels?.[key] ?? key,
       value: plainText(raw),
+      display: displayText(raw),
       number,
-      ...(m && number !== null && { modifier: signed(Math.floor((number - m.base) / m.step)) }),
+      ...(m && number !== null && { modifier: signedText(Math.floor((number - m.base) / m.step)) }),
     }
   })
 }
 
-/** Named values ("Stealth +6"): from a map, a list, or text like "Stealth +6, History 4". */
-export function pairEntries(def: Pick<FieldDef, 'labels' | 'signed'>, v: unknown): { key: string; label: string; value: string }[] {
-  const show = (x: unknown) => (typeof x === 'number' && def.signed !== false ? signed(x) : plainText(x))
+/**
+ * Named values ("Stealth +6"): from a map, a list, or text like "Stealth +6, History 4". `value` is as written (with a
+ * sign), `display` as shown (numbers formatted).
+ */
+export function pairEntries(def: Pick<FieldDef, 'labels' | 'signed'>, v: unknown): { key: string; label: string; value: string; display: string }[] {
+  const sign = def.signed !== false
+  const show = (x: unknown) => (typeof x === 'number' && sign ? signed(x) : plainText(x))
+  const display = (x: unknown) => (typeof x === 'number' ? (sign ? signedText(x) : formatNumber(x)) : displayText(x))
   const label = (k: string) => def.labels?.[k] ?? k
-  if (isMap(v)) return Object.entries(v).map(([key, x]) => ({ key, label: label(key), value: show(x) }))
+  if (isMap(v)) return Object.entries(v).map(([key, x]) => ({ key, label: label(key), value: show(x), display: display(x) }))
   const items = Array.isArray(v) ? v.map(plainText) : typeof v === 'string' ? v.split(/[,;·]/) : []
   return items
     .map((s) => s.trim())
     .filter(Boolean)
     .map((s) => {
       const m = /^(.*?)\s*([+\-−]?\d+%?)$/.exec(s)
-      return m && m[1] ? { key: m[1], label: label(m[1]), value: m[2] } : { key: s, label: s, value: '' }
+      return m && m[1] ? { key: m[1], label: label(m[1]), value: m[2], display: m[2] } : { key: s, label: s, value: '', display: '' }
     })
 }
 
@@ -220,15 +304,15 @@ const outOfRange = (def: Pick<FieldDef, 'min' | 'max'>, n: number, what = 'value
 export function fieldProblem(def: FieldDef, v: unknown): string | null {
   if (isEmptyValue(v)) return null
   const allowed = (s: string) => !def.options || def.options.some((o) => normalizeName(o) === normalizeName(s))
-  const choices = () => `one of ${def.options!.join(', ')}`
+  const choices = () => `one of ${someOf(def.options!, 8)}`
   switch (def.widget) {
     case 'scores': {
       if (!isMap(v)) return `expected a map like { ${(def.keys ?? ['a', 'b']).slice(0, 2).join(': 1, ')}: 1 }`
       const bad = Object.entries(v).filter(([, x]) => toNumber(x) === null && !isEmptyValue(x))
-      if (bad.length) return `not numbers: ${bad.map(([k]) => k).join(', ')}`
+      if (bad.length) return `not numbers: ${someOf(bad.map(([k]) => k))}`
       for (const [k, x] of Object.entries(v)) {
         const n = toNumber(x)
-        const problem = n === null ? null : outOfRange(def, n, k)
+        const problem = n === null ? null : outOfRange(def, n, clip(k, 24))
         if (problem) return problem
       }
       return null
@@ -252,7 +336,7 @@ export function fieldProblem(def: FieldDef, v: unknown): string | null {
       return recordProblems(def, v).slice(0, 3).join('; ') || null
     case 'tags': {
       const bad = listItems(v).filter((t) => !allowed(t))
-      return bad.length ? `${bad.join(', ')} not ${choices()}` : null
+      return bad.length ? `${someOf(bad)} not ${choices()}` : null
     }
     case 'pairs':
     case 'list':
@@ -262,6 +346,163 @@ export function fieldProblem(def: FieldDef, v: unknown): string | null {
       if (isMap(v) || Array.isArray(v)) return 'expected text'
       return allowed(plainText(v)) ? null : `expected ${choices()}`
   }
+}
+
+// ---------- size ----------
+
+/**
+ * How much each widget shows well. Past these a value still renders (clipped with the rest on hover, folded, or behind
+ * "show all"), but the checks report it as oversized. `chars`: length of the value; `items`: entries (tags, list
+ * items, keys, rows, records); `item`: length of one entry (a chip, a label, a list item, a cell, a record name).
+ */
+export const FIELD_LIMITS: Record<Widget, { chars?: number; items?: number; item?: number }> = {
+  text: { chars: 300 },
+  subtitle: { chars: 120 },
+  quote: { chars: 500 },
+  stat: { chars: 24 },
+  toggle: {},
+  meter: {},
+  scores: { items: 24, item: 20 },
+  pairs: { items: 24, item: 32 },
+  tags: { items: 24, item: 32 },
+  list: { items: 40, item: 300 },
+  refs: { items: 40 },
+  table: { items: 100, item: 200 },
+  records: { items: 200, item: 80 },
+}
+/** A stat's note (the small line under the number). */
+export const NOTE_MAX = 80
+/** Table columns that fit side by side. */
+export const TABLE_COLUMNS_MAX = 8
+/** Most dots or boxes a meter draws, segments a clock draws, dots per score, and axes a radar draws. */
+export const PIPS_MAX = 40
+export const CLOCK_MAX = 12
+export const SCORE_DOTS_MAX = 20
+export const RADAR_MAX = 12
+
+/** Why a number is hard to read on a sheet (too big, too small, too precise, not finite), or null. */
+export function numberProblem(v: unknown): string | null {
+  const n = typeof v === 'number' ? v : typeof v === 'string' && NUMBER_ONLY.test(v) ? Number(v.trim().replace(MINUS, '-').replace(',', '.')) : null
+  if (n === null) return null
+  if (!Number.isFinite(n)) return `${plainText(v)} is not a finite number`
+  const a = Math.abs(n)
+  if (a >= 1e12) return `${clip(plainText(v), 24)} is too large to read; use a bigger unit`
+  if (a > 0 && a < 1e-3) return `${clip(plainText(v), 24)} is too small to read; use a smaller unit`
+  const decimals = /\.(\d+)$/.exec(String(n))?.[1].length ?? 0
+  return decimals > 3 ? `${clip(plainText(v), 24)} has ${decimals} decimals; round it to 2` : null
+}
+
+/**
+ * What in a field's value is more than its widget shows well (FIELD_LIMITS): long text, too many items, long items,
+ * words too long to wrap, unreadable numbers, more pips or axes than the style draws. At most 3, most telling first.
+ */
+export function fieldSizeProblems(def: FieldDef, v: unknown, maxWord = WORD_MAX): string[] {
+  if (isEmptyValue(v)) return []
+  const lim = FIELD_LIMITS[def.widget] ?? {}
+  const out: string[] = []
+  const length = (s: string, max: number | undefined, what: string) => {
+    if (max && s.length > max) out.push(`${what} is ${s.length} chars (max ${max})`)
+  }
+  const count = (n: number, what: string, max = lim.items) => {
+    if (max && n > max) out.push(`${n} ${what} (max ${max})`)
+  }
+  const each = (items: readonly string[], what: string, max = lim.item) => {
+    const long = max ? items.filter((s) => s.length > max) : []
+    if (long.length)
+      out.push(
+        `${long.length === 1 ? `${/^[aeiou]/.test(what) ? 'an' : 'a'} ${what} is` : `${long.length} ${what}s are`} over ${max} chars ("${clip(long[0], 24)}")`,
+      )
+  }
+  const numbers = (values: readonly unknown[]) => {
+    const problem = values.map(numberProblem).find(Boolean)
+    if (problem) out.push(problem)
+  }
+  const words = (texts: readonly string[]) => {
+    const word = texts.map((t) => longWord(t, maxWord)).find(Boolean)
+    if (word) out.push(`a ${word.length}-char word ("${clip(word, 20)}") can't wrap`)
+  }
+  switch (def.widget) {
+    case 'toggle':
+      break
+    case 'meter': {
+      const m = meterValue(def, v)
+      numbers([m.value, m.max])
+      const style = def.style ?? 'bar'
+      if ((style === 'dots' || style === 'boxes') && m.max !== null && m.max > PIPS_MAX)
+        out.push(`max ${formatNumber(m.max)} is more than ${style} can draw (${PIPS_MAX}); use style bar`)
+      if (style === 'clock' && m.max !== null && m.max > CLOCK_MAX)
+        out.push(`max ${formatNumber(m.max)} is more than a clock can draw (${CLOCK_MAX}); use style bar`)
+      break
+    }
+    case 'scores': {
+      const cells = scoreCells(def, v)
+      const style = def.style ?? 'grid'
+      count(cells.length, 'scores')
+      if (style === 'radar' && cells.length > RADAR_MAX) out.push(`${cells.length} axes are more than a radar can draw (${RADAR_MAX}); use style bars`)
+      if (style === 'dots' && def.max !== undefined && def.max > SCORE_DOTS_MAX)
+        out.push(`max ${def.max} is more dots than fit (${SCORE_DOTS_MAX}); use style bars`)
+      each(
+        cells.map((c) => c.label),
+        'label',
+      )
+      numbers(isMap(v) ? Object.values(v) : [])
+      words(cells.map((c) => `${c.label} ${c.value}`))
+      break
+    }
+    case 'pairs': {
+      const entries = pairEntries(def, v)
+      count(entries.length, 'pairs')
+      each(
+        entries.map((e) => e.label),
+        'name',
+      )
+      numbers(isMap(v) ? Object.values(v) : [])
+      words(entries.map((e) => `${e.label} ${e.value}`))
+      break
+    }
+    case 'tags':
+    case 'refs':
+    case 'list': {
+      const items = def.widget === 'list' ? listItems(v, /\n/) : listItems(v)
+      count(items.length, def.widget === 'list' ? 'items' : def.widget)
+      each(items, def.widget === 'refs' ? 'id' : def.widget === 'tags' ? 'tag' : 'item')
+      if (def.widget !== 'refs') words(items)
+      break
+    }
+    case 'table': {
+      const { columns, rows } = tableRows(def, v)
+      count(rows.length, 'rows')
+      count(columns.length, 'columns', TABLE_COLUMNS_MAX)
+      const cells = rows.flatMap((r) => Object.values(r))
+      each(cells, 'cell')
+      numbers(Array.isArray(v) ? v.flatMap((r) => (isMap(r) ? Object.values(r) : [])) : [])
+      words(cells)
+      break
+    }
+    case 'records': {
+      const records = recordList(def, v)
+      count(records.length, 'records')
+      each(
+        records.map((r) => r.name),
+        'name',
+      )
+      words(records.flatMap((r) => [r.name, r.text]))
+      const facts = recordFacts(def)
+      for (const r of records) {
+        for (const f of facts) for (const p of fieldSizeProblems(f, r.values[f.key], maxWord)) out.push(`#${r.index + 1} (${clip(r.name, 24)}) ${f.key}: ${p}`)
+        if (out.length > 3) break
+      }
+      break
+    }
+    default: {
+      const t = noted(v)
+      numbers([isMap(v) ? v.value : v])
+      length(t.value, lim.chars, def.widget === 'stat' ? 'value' : 'text')
+      length(t.note ?? '', NOTE_MAX, 'note')
+      words([t.value, t.note ?? ''])
+    }
+  }
+  return out.length > 3 ? [...out.slice(0, 3), `+${out.length - 3} more`] : out
 }
 
 /** Lowercase, accent-free form of a name, for matching labels, aliases and titles across scripts. */
@@ -561,7 +802,7 @@ export function recordProblems(def: FieldDef, v: unknown): string[] {
   const out: string[] = []
   v.forEach((raw, i) => {
     const name = isMap(raw) ? plainText(raw[def.titleKey ?? 'name']).trim() : ''
-    const at = `#${i + 1}${name ? ` (${name})` : ''}`
+    const at = `#${i + 1}${name ? ` (${clip(name, 24)})` : ''}`
     if (!isMap(raw)) {
       out.push(`${at} is not a record`)
       return
@@ -569,7 +810,7 @@ export function recordProblems(def: FieldDef, v: unknown): string[] {
     const missing = fields.filter((f) => isRequired(f, raw) && isEmptyValue(raw[f.key])).map((f) => f.key)
     if (missing.length) out.push(`${at} lacks ${missing.join(', ')}`)
     const unknown = Object.keys(raw).filter((k) => !known.has(k))
-    if (unknown.length) out.push(`${at} has keys the item doesn't define: ${unknown.join(', ')} (item: ${[...known].join(', ')})`)
+    if (unknown.length) out.push(`${at} has keys the item doesn't define: ${someOf(unknown)} (item: ${someOf([...known], 8)})`)
     for (const f of fields) {
       const problem = fieldProblem(f, raw[f.key])
       if (problem) out.push(`${at} ${f.key}: ${problem}`)

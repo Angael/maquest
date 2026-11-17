@@ -115,13 +115,57 @@ export const EDGE_LABEL_MAX = 48
 /** Soft limit: summaries are one line on cards; longer detail belongs in the body. */
 export const SUMMARY_MAX = 160
 
-/** Advisory notes about a node's title/summary (never blocks a write). */
-export function textWarnings(n: { title?: string; summary?: string }): string[] {
+/** Soft limit: titles are short phrases that fit a card in a few lines. */
+export const TITLE_MAX = 80
+/** Soft limit: node tags are short chips. */
+export const TAG_MAX = 32
+/** Longest word (no space or hyphen) that still reads as a word; anything longer can only wrap mid-word. */
+export const WORD_MAX = 40
+
+const NO_SPACE_SCRIPT = /[\u0E00-\u0EFF\u3000-\u9FFF\uAC00-\uD7AF\uF900-\uFAFF\uFF00-\uFFEF]/
+const NOT_A_WORD = /:\/\/|^www\.|\]\(|\[\[|^`/
+
+/**
+ * The first word in a text longer than `max` characters, which no layout can wrap without breaking it. Hyphens are
+ * break points; links, URLs and scripts written without spaces are skipped.
+ */
+export function longWord(text: string, max = WORD_MAX): string | undefined {
+  for (const token of text.split(/\s+/)) {
+    if (token.length <= max || NOT_A_WORD.test(token) || NO_SPACE_SCRIPT.test(token)) continue
+    const word = token.split(/[-‐–—]+/).find((w) => w.length > max)
+    if (word) return word
+  }
+  return undefined
+}
+
+/** What is too long in a node's title, summary or tags, one line each (the summary-length rule). */
+export function textProblems(n: { title?: string; summary?: string; tags?: readonly string[] }): string[] {
   const out: string[] = []
-  if (n.title && /(…|\.\.\.)\s*$/.test(n.title)) out.push('title ends with "…"; use a short complete phrase')
-  if (n.summary && n.summary.length > SUMMARY_MAX)
-    out.push(`summary is ${n.summary.length} chars; keep it one sentence under ${SUMMARY_MAX} and move detail to body`)
+  const word = (what: string, text?: string) => {
+    const w = text && longWord(text)
+    if (w) out.push(`${what} has a ${w.length}-char word that can't wrap`)
+  }
+  if (n.title && n.title.length > TITLE_MAX) out.push(`title is ${n.title.length} chars (max ${TITLE_MAX})`)
+  if (n.title && /(…|\.\.\.)\s*$/.test(n.title)) out.push('title ends with "…"')
+  word('title', n.title)
+  if (n.summary && n.summary.length > SUMMARY_MAX) out.push(`summary is ${n.summary.length} chars (max ${SUMMARY_MAX})`)
+  word('summary', n.summary)
+  const long = (n.tags ?? []).filter((t) => t.length > TAG_MAX)
+  if (long.length) out.push(`${long.length === 1 ? 'a tag is' : `${long.length} tags are`} over ${TAG_MAX} chars`)
   return out
+}
+
+/** Advisory notes about a node's title/summary/tags (never blocks a write). */
+export function textWarnings(n: { title?: string; summary?: string; tags?: readonly string[] }): string[] {
+  return textProblems(n).map((p) =>
+    p.startsWith('title')
+      ? `${p}; use a short complete phrase`
+      : p.startsWith('summary is')
+        ? `${p}; keep it one sentence and move detail to body`
+        : p.includes('tag')
+          ? `${p}; tags are a word or two`
+          : p,
+  )
 }
 
 /** Incoming clue-for count per target node (only nodes with at least one clue). */

@@ -311,3 +311,62 @@ test('records without a description and text fields that repeat a records group 
   assert.equal(issues.find((i) => i.rule === 'record-undescribed')?.message, 'Abilities: no description for Hold Person')
   assert.match(issues.find((i) => i.rule === 'field-duplicates-records')!.message, /Zaklęcia repeats the records in Abilities → Zaklęcia/)
 })
+
+test('oversized fields and long titles are reported with what to shorten', () => {
+  const p = tmp()
+  p.setTypes({
+    monster: {
+      label: 'Monster',
+      fields: [{ key: 'gold', widget: 'stat' }, { key: 'traits', widget: 'tags' }, 'role'],
+      tabs: [{ title: 'Stats', kind: 'fields', fields: ['gold', 'traits'] }],
+    },
+  })
+  const n = p.createNode({
+    type: 'monster',
+    title: 'Hoard',
+    fields: { gold: 0.1 + 0.2, traits: Array.from({ length: 30 }, (_, i) => `t${i}`), role: 'guard' },
+  })
+  p.updateBoard('main', { addNodes: [n.id] })
+  const issues = p.check().issues.filter((i) => i.rule === 'field-oversized')
+  assert.deepEqual(
+    issues.map((i) => [i.message, i.open]),
+    [
+      ['gold: 0.30000000000000004 has 17 decimals; round it to 2', 'Stats'],
+      ['traits: 30 tags (max 24)', 'Stats'],
+    ],
+  )
+  p.updateNode(n.id, { title: `Hoard of ${'Gold'.repeat(12)}` })
+  assert.deepEqual(
+    p
+      .check()
+      .issues.filter((i) => i.rule === 'summary-length')
+      .map((i) => i.message),
+    ["title has a 48-char word that can't wrap"],
+  )
+  // The word limit is an option; nodes opt out like from any rule.
+  p.setChecks({ 'field-oversized': ['warn', { maxWord: 60 }] })
+  p.updateNode(n.id, { checks: { off: ['field-oversized'] } })
+  assert.deepEqual(rules(p, n.id), ['summary-length'])
+})
+
+test('messages quote at most a few values, cut short', () => {
+  const p = tmp()
+  p.setTypes({
+    monster: {
+      label: 'Monster',
+      fields: [
+        { key: 'kin', widget: 'tags', options: ['beast', 'fey'] },
+        { key: 'allies', widget: 'refs' },
+      ],
+    },
+  })
+  const n = p.createNode({
+    type: 'monster',
+    title: 'Swarm',
+    fields: { kin: Array.from({ length: 9 }, (_, i) => `kin ${i}`), allies: Array.from({ length: 9 }, (_, i) => `ally-${i}`) },
+  })
+  p.updateBoard('main', { addNodes: [n.id] })
+  const message = (rule: string) => p.check().issues.find((i) => i.rule === rule)!.message
+  assert.equal(message('field-invalid'), 'kin: kin 0, kin 1, kin 2 (+6 more) not one of beast, fey')
+  assert.equal(message('broken-ref'), 'allies refers to ally-0, ally-1, ally-2 (+6 more), which do not exist')
+})

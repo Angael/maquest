@@ -5,7 +5,10 @@ import {
   fieldForKey,
   fieldLayout,
   fieldProblem,
+  fieldSizeProblems,
   fieldSummary,
+  formatNumber,
+  numberText,
   isRequired,
   joinSections,
   meterValue,
@@ -277,4 +280,63 @@ test('problems: shapes, choices and ranges by widget', () => {
   assert.equal(fieldProblem(field({ key: 'arcana', options: ['Fool', 'Magician'] }), 'Tower'), 'expected one of Fool, Magician')
   assert.equal(fieldProblem(field({ key: 'flag', widget: 'toggle' }), 'maybe'), 'expected yes or no (true/false)')
   assert.equal(fieldProblem(field({ key: 'gear', widget: 'table' }), 'sword'), 'expected a list of rows like [{ name: …, … }]')
+})
+
+const shown = (ns: number[]) => ns.map(formatNumber)
+
+test('numbers display short: two decimals, compact millions, exponents for extremes, text as written', () => {
+  assert.deepEqual(shown([0, 14, -3, 1492, 123456, 0.30000000000000004, 3.14159, 0.00123]), ['0', '14', '−3', '1492', '123456', '0.3', '3.14', '0.00123'])
+  assert.deepEqual(shown([1234567, -98765432.1, 1e9, 1.5e12, 1.2345e29, 0.000004, Infinity]), ['1.2M', '−98.8M', '1B', '1.5T', '1.2e29', '4e−6', '∞'])
+  assert.deepEqual(['+2', '-1', '1,5', '1,000', '007', '12345678901', '3.14159', 'two'].map(numberText), [
+    '+2',
+    '−1',
+    '1,5',
+    '1,000',
+    '007',
+    '12.3B',
+    '3.14',
+    null,
+  ])
+  const cells = scoreCells(field({ key: 's', widget: 'scores', modifier: { base: 10, step: 2 } }), { str: 1e21, dex: 14.123456 })
+  assert.deepEqual(
+    cells.map((c) => [c.value, c.display, c.modifier]),
+    [
+      ['1e+21', '1e21', '+5e20'],
+      ['14.123456', '14.12', '+2'],
+    ],
+  )
+})
+
+test('size: oversized text, items, words, numbers and styles are reported per widget', () => {
+  const word = 'x'.repeat(60)
+  const size = (f: Record<string, unknown>, v: unknown) => fieldSizeProblems(field(f), v)
+  assert.deepEqual(size({ key: 'ac', widget: 'stat' }, { value: 14, note: 'studded leather' }), [])
+  assert.deepEqual(size({ key: 'ac', widget: 'stat' }, 'fourteen, or sixteen with a shield and the blessing'), ['value is 51 chars (max 24)'])
+  assert.deepEqual(size({ key: 'gold', widget: 'stat' }, 1e21), ['1e+21 is too large to read; use a bigger unit'])
+  assert.deepEqual(size({ key: 'w', widget: 'stat' }, 0.30000000000000004), ['0.30000000000000004 has 17 decimals; round it to 2'])
+  assert.deepEqual(size({ key: 'role' }, `a ${word} b`), ['a 60-char word ("xxxxxxxxxxxxxxxxxxx…") can\'t wrap'])
+  assert.deepEqual(size({ key: 'role' }, 'see https://example.com/a/very/long/path/that/goes/on/and/on/for/ever/and/ever'), [])
+  assert.deepEqual(
+    size(
+      { key: 'traits', widget: 'tags' },
+      Array.from({ length: 30 }, (_, i) => (i ? `t${i}` : 'a tag that is really a whole sentence')),
+    ),
+    ['30 tags (max 24)', 'a tag is over 32 chars ("a tag that is really a…")'],
+  )
+  assert.deepEqual(size({ key: 'stress', widget: 'meter', style: 'dots' }, { value: 3, max: 100 }), ['max 100 is more than dots can draw (40); use style bar'])
+  assert.deepEqual(size({ key: 'doom', widget: 'meter', style: 'clock' }, '3/24'), ['max 24 is more than a clock can draw (12); use style bar'])
+  assert.match(
+    size({ key: 'social', widget: 'scores', style: 'radar' }, Object.fromEntries(Array.from({ length: 14 }, (_, i) => [`k${i}`, i])))[0],
+    /14 axes are more than a radar can draw/,
+  )
+  const moves = field({ key: 'moves', widget: 'records', item: ['cost', { key: 'tags', widget: 'tags' }] })
+  assert.deepEqual(fieldSizeProblems(moves, [{ name: 'Bite', cost: 1.23456, tags: ['ok'] }]), ['#1 (Bite) cost: 1.23456 has 5 decimals; round it to 2'])
+  // At most three problems, then a count.
+  assert.deepEqual(
+    size(
+      { key: 'gear', widget: 'table' },
+      Array.from({ length: 120 }, (_, i) => ({ a: word, b: 1e30, [`c${i}`]: 1 })),
+    ).at(-1),
+    '+1 more',
+  )
 })
