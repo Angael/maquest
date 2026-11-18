@@ -11,6 +11,7 @@ import {
   listItems,
   meterValue,
   normalizeName,
+  numberText,
   recordFacts,
   recordGroups,
   recordList,
@@ -23,6 +24,7 @@ import { useTypes } from '../../lib/styles'
 import { MarkdownPreview } from '../MarkdownEditor'
 import { Popover, cn } from '../ui'
 import { Block, Pips, eyebrow } from './Widgets'
+import { Clamp, fullOnHover, useLimit } from '../fit'
 
 /*
  * A records field: a list of same-shaped entries (abilities, spells, moves, inventory) defined by the project's item
@@ -34,6 +36,10 @@ import { Block, Pips, eyebrow } from './Widgets'
 const NO_NODES: StoryNode[] = []
 /** From this many records on, the list gets a search box and group filters. */
 const SEARCH_FROM = 6
+/** Records drawn at first, and added per "Show more": long lists stay quick to open. */
+const PAGE = 50
+/** Tags shown in one fact before "+N". */
+const FACT_TAGS = 6
 
 type Linked = { node: StoryNode; label: string; color: string }
 
@@ -58,11 +64,19 @@ export const Records = memo(function Records({ row, onSet }: { row: FieldRow; on
   const [group, setGroup] = useState<string | null>(null)
   const deferred = useDeferredValue(query)
   const words = normalizeName(deferred).split(' ').filter(Boolean)
-  const shown = groups
+  const found = groups
     .filter((g) => group === null || g.title === group)
     .map((g) => ({ ...g, records: g.records.filter((r) => matches(def, r, words)) }))
     .filter((g) => g.records.length)
-  const count = shown.reduce((n, g) => n + g.records.length, 0)
+  const count = found.reduce((n, g) => n + g.records.length, 0)
+  // The first pages of the matches, group by group.
+  const { visible, more } = useLimit(
+    found.flatMap((g) => g.records.map((r) => ({ g, r }))),
+    PAGE,
+    { page: PAGE, noun: fieldLabel(def).toLowerCase() },
+  )
+  const kept = new Set(visible.map((x) => x.r))
+  const shown = found.map((g) => ({ ...g, records: g.records.filter((r) => kept.has(r)) })).filter((g) => g.records.length)
   const style = def.style ?? 'list'
 
   const linked = (r: RecordEntry): Linked | undefined => {
@@ -119,7 +133,7 @@ export const Records = memo(function Records({ row, onSet }: { row: FieldRow; on
               )}
             </label>
             {groups.length > 1 && (
-              <div role="group" aria-label={`${fieldLabel(def)} groups`} className="flex flex-wrap gap-1">
+              <div role="group" aria-label={`${fieldLabel(def)} groups`} className="flex max-w-full min-w-0 flex-wrap gap-1">
                 {groups.map((g) => {
                   const on = group === g.title
                   return (
@@ -129,14 +143,16 @@ export const Records = memo(function Records({ row, onSet }: { row: FieldRow; on
                       aria-pressed={on}
                       onClick={() => setGroup(on ? null : (g.title ?? null))}
                       className={cn(
-                        'inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs outline-none transition-[background-color,color,box-shadow] duration-100 focus-visible:ring-2 focus-visible:ring-accent/70',
+                        'inline-flex h-7 max-w-[min(100%,14rem)] items-center gap-1.5 rounded-md px-2 text-xs outline-none transition-[background-color,color,box-shadow] duration-100 focus-visible:ring-2 focus-visible:ring-accent/70',
                         on
                           ? 'bg-[color-mix(in_oklab,var(--tint)_18%,var(--color-surface))] text-fg shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--tint)_45%,transparent)]'
                           : 'text-fg-muted shadow-[inset_0_0_0_1px_var(--color-line)] hover:bg-hover hover:text-fg',
                       )}
                     >
-                      {g.title ?? 'Other'}
-                      <span className="tabular text-fg-faint">{g.records.length}</span>
+                      <span className="min-w-0 truncate" {...fullOnHover(g.title ?? 'Other')}>
+                        {g.title ?? 'Other'}
+                      </span>
+                      <span className="tabular shrink-0 text-fg-faint">{g.records.length}</span>
                     </button>
                   )
                 })}
@@ -149,9 +165,13 @@ export const Records = memo(function Records({ row, onSet }: { row: FieldRow; on
           <section key={g.title ?? ''} aria-label={g.title ?? fieldLabel(def)} className="space-y-1.5">
             {g.title && (shown.length > 1 || group === null) && (
               <h4 className={cn(eyebrow, 'flex items-center gap-2 pt-1')}>
-                <span className="size-1.5 rounded-full bg-[var(--tint)]" aria-hidden />
-                {g.title}
-                <span className="tabular font-normal tracking-normal text-fg-faint normal-case">{g.records.length}</span>
+                <span className="size-1.5 shrink-0 rounded-full bg-[var(--tint)]" aria-hidden />
+                <span className="min-w-0 truncate" {...fullOnHover(g.title)}>
+                  {g.title}
+                </span>
+                <span className="tabular shrink-0 font-normal tracking-normal text-fg-faint normal-case">
+                  {found.find((x) => x.title === g.title)?.records.length ?? g.records.length}
+                </span>
               </h4>
             )}
             {style === 'cards' ? (
@@ -169,6 +189,7 @@ export const Records = memo(function Records({ row, onSet }: { row: FieldRow; on
             )}
           </section>
         ))}
+        {more}
       </div>
     </Block>
   )
@@ -216,13 +237,15 @@ function RecordRow({ def, record: r, linked, words, setItem }: { def: FieldDef; 
         <Facts def={def} record={r} setItem={setItem} />
       </div>
       {r.text ? (
-        <div className="card-text record-text text-fg-muted">
+        <Clamp rich lines={8} className="card-text record-text text-fg-muted">
           <MarkdownPreview source={r.text} breaks />
-        </div>
+        </Clamp>
       ) : (
         shared && (
-          <div className="card-text record-text text-fg-muted" data-library-text>
-            <MarkdownPreview source={shared} breaks />
+          <div data-library-text>
+            <Clamp rich lines={8} className="card-text record-text text-fg-muted">
+              <MarkdownPreview source={shared} breaks />
+            </Clamp>
           </div>
         )
       )}
@@ -233,7 +256,12 @@ function RecordRow({ def, record: r, linked, words, setItem }: { def: FieldDef; 
 /** The record's name; a record that stands for a library node links to it and shows its text on hover. */
 function RecordName({ record: r, linked, words }: { record: RecordEntry; linked?: Linked; words: string[] }) {
   const name = <Highlight text={r.name || 'Unnamed'} words={words} />
-  if (!linked) return <span className="min-w-0 text-sm leading-6 font-semibold text-fg">{name}</span>
+  if (!linked)
+    return (
+      <span className="line-clamp-3 min-w-0 text-sm leading-6 font-semibold wrap-anywhere text-fg" {...fullOnHover(r.name)}>
+        {name}
+      </span>
+    )
   return (
     <Popover
       hover
@@ -244,7 +272,7 @@ function RecordName({ record: r, linked, words }: { record: RecordEntry; linked?
         <button
           type="button"
           {...nodeLinkProps(linked.node.id)}
-          className="min-w-0 rounded-sm text-left text-sm leading-6 font-semibold text-fg underline decoration-[color-mix(in_oklab,var(--tint)_60%,transparent)] decoration-dotted decoration-1 underline-offset-[3px] outline-none hover:decoration-solid focus-visible:ring-2 focus-visible:ring-accent/70"
+          className="line-clamp-3 min-w-0 rounded-sm text-left text-sm leading-6 font-semibold wrap-anywhere text-fg underline decoration-[color-mix(in_oklab,var(--tint)_60%,transparent)] decoration-dotted decoration-1 underline-offset-[3px] outline-none hover:decoration-solid focus-visible:ring-2 focus-visible:ring-accent/70"
         >
           {name}
         </button>
@@ -259,20 +287,20 @@ function LibraryCard({ linked, own, name, facts }: { linked?: Linked; own: strin
   const shared = linked?.node.body.trim()
   return (
     <div className="max-h-[min(60vh,520px)] overflow-y-auto p-3.5">
-      <div className="font-serif text-lg leading-snug font-semibold text-fg">{name ?? linked?.node.title}</div>
+      <div className="font-serif text-lg leading-snug font-semibold wrap-anywhere text-fg">{name ?? linked?.node.title}</div>
       {(facts || linked) && (
         <div className="mt-1.5 flex flex-wrap items-center gap-1">
           {facts}
           {linked && (
-            <span className="inline-flex h-5 items-center gap-1 rounded px-1.5 text-2xs text-fg-subtle shadow-[inset_0_0_0_1px_var(--color-line)]">
-              <span className="size-1.5 rounded-full" style={{ background: linked.color }} aria-hidden />
-              {linked.label}
+            <span className="inline-flex h-5 max-w-full items-center gap-1 rounded px-1.5 text-2xs text-fg-subtle shadow-[inset_0_0_0_1px_var(--color-line)]">
+              <span className="size-1.5 shrink-0 rounded-full" style={{ background: linked.color }} aria-hidden />
+              <span className="truncate">{linked.label}</span>
             </span>
           )}
         </div>
       )}
-      {linked?.node.summary && <p className="mt-2 text-sm leading-5 text-fg-muted">{linked.node.summary}</p>}
-      <div className={cn('card-text mt-2', !shared && !own && 'text-sm text-fg-faint')}>
+      {linked?.node.summary && <p className="mt-2 text-sm leading-5 wrap-anywhere text-fg-muted">{linked.node.summary}</p>}
+      <div className={cn('card-text mt-2 wrap-anywhere', !shared && !own && 'text-sm text-fg-faint')}>
         {shared && <MarkdownPreview source={shared} breaks />}
         {own && shared && <div className={cn(eyebrow, 'mt-3 mb-1')}>On this sheet</div>}
         {own && <MarkdownPreview source={own} breaks />}
@@ -333,7 +361,7 @@ function Fact({ def, value, onSet }: { def: FieldDef; value: unknown; onSet?: (v
           ))
       return (
         <span className={cn(chip, 'shadow-[inset_0_0_0_1px_var(--color-line)]')} title={label}>
-          <span className="text-fg-subtle">{label}</span>
+          <span className="min-w-0 truncate text-fg-subtle">{label}</span>
           <Pips
             label={label}
             value={m.value}
@@ -346,27 +374,39 @@ function Fact({ def, value, onSet }: { def: FieldDef; value: unknown; onSet?: (v
       )
     }
   }
-  if (def.widget === 'tags' || def.widget === 'refs')
+  if (def.widget === 'tags' || def.widget === 'refs') {
+    const items = listItems(value)
+    const rest = items.slice(FACT_TAGS)
     return (
       <>
-        {listItems(value).map((t) => (
-          <span key={t} className={cn(chip, 'bg-active text-fg-muted')}>
-            {t}
+        {items.slice(0, FACT_TAGS).map((t, i) => (
+          <span key={`${i}:${t}`} className={cn(chip, 'max-w-[min(100%,12rem)] bg-active text-fg-muted')}>
+            <span className="min-w-0 truncate" {...fullOnHover(t)}>
+              {t}
+            </span>
           </span>
         ))}
+        {rest.length > 0 && (
+          <span className={cn(chip, 'tabular text-fg-subtle shadow-[inset_0_0_0_1px_var(--color-line)]')} title={rest.join(', ')}>
+            +{rest.length}
+          </span>
+        )}
       </>
     )
+  }
   const text = fieldSummary(def, value)
-  const numeric = typeof value === 'number' || /^\s*[+\-−]?\d+(?:[.,]\d+)?\s*$/.test(text)
+  const number = numberText(value && typeof value === 'object' && 'value' in value ? (value as { value: unknown }).value : value)
   return (
-    <span className={cn(chip, 'bg-active text-fg-muted')} title={label}>
-      {numeric ? (
+    <span className={cn(chip, 'bg-active text-fg-muted')} title={number !== null && number !== text ? `${label}: ${text}` : label}>
+      {number !== null ? (
         <>
-          <span className="text-fg-subtle">{label}</span>
-          <span className="tabular font-semibold text-fg">{text}</span>
+          <span className="min-w-0 truncate text-fg-subtle">{label}</span>
+          <span className="tabular shrink-0 font-semibold text-fg">{number}</span>
         </>
       ) : (
-        <span className="min-w-0 break-words">{text}</span>
+        <span className="line-clamp-2 min-w-0 wrap-anywhere" {...fullOnHover(text)}>
+          {text}
+        </span>
       )}
     </span>
   )
@@ -386,13 +426,13 @@ function RecordTile({ def, record: r, linked, words, setItem }: { def: FieldDef;
     >
       <span
         className={cn(
-          'text-sm leading-5 font-semibold text-fg',
+          'line-clamp-3 max-w-full text-sm leading-5 font-semibold wrap-anywhere text-fg',
           linked && 'underline decoration-[color-mix(in_oklab,var(--tint)_60%,transparent)] decoration-dotted underline-offset-[3px]',
         )}
       >
         <Highlight text={r.name || 'Unnamed'} words={words} />
       </span>
-      {facts && <span className="text-2xs leading-4 text-fg-muted">{facts}</span>}
+      {facts && <span className="line-clamp-2 max-w-full text-2xs leading-4 wrap-anywhere text-fg-muted">{facts}</span>}
     </button>
   )
   return (

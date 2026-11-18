@@ -20,6 +20,7 @@ import {
 } from '@maquest/core/sheet'
 import { Button, IconButton, cn } from '../ui'
 import { GhostSelect, GhostText, PropertyRow, TagInput, ghost, oneLine } from '../inspector/fields'
+import { fullOnHover, useLimit } from '../fit'
 
 const SAVE_DELAY = 400
 const isMap = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
@@ -77,7 +78,11 @@ export function FieldForm({
     <div className="space-y-4" data-field-form>
       {sections.map((s, i) => (
         <div key={`${i}:${s.title ?? ''}`} className="space-y-0.5">
-          {s.title && <div className="pb-1 text-xs font-medium text-fg-subtle">{s.title}</div>}
+          {s.title && (
+            <div className="truncate pb-1 text-xs font-medium text-fg-subtle" {...fullOnHover(s.title)}>
+              {s.title}
+            </div>
+          )}
           {s.fields.map((def) => (
             <FieldInput key={def.key} row={{ def, value: draft[def.key], known: true }} onChange={(v) => set(def.key, v)} />
           ))}
@@ -359,13 +364,15 @@ function OptionChips({ options, value, onChange }: { options: string[]; value: s
             aria-pressed={on}
             onClick={() => onChange(on ? value.filter((v) => v !== o) : [...value, o])}
             className={cn(
-              'inline-flex h-6 items-center rounded-full px-2.5 text-xs outline-none transition-[background-color,color,box-shadow] duration-100 focus-visible:ring-2 focus-visible:ring-accent/70',
+              'inline-flex h-6 max-w-full items-center rounded-full px-2.5 text-xs outline-none transition-[background-color,color,box-shadow] duration-100 focus-visible:ring-2 focus-visible:ring-accent/70',
               on
                 ? 'bg-accent-soft text-fg shadow-[inset_0_0_0_1px_var(--color-line-strong)]'
                 : 'text-fg-subtle shadow-[inset_0_0_0_1px_var(--color-line)] hover:bg-hover hover:text-fg',
             )}
           >
-            {o}
+            <span className="min-w-0 truncate" {...fullOnHover(o)}>
+              {o}
+            </span>
           </button>
         )
       })}
@@ -416,7 +423,7 @@ function CommitText({
       <textarea
         {...props}
         rows={2}
-        className={cn(ghost, 'block resize-none py-1 leading-5 [field-sizing:content]', className)}
+        className={cn(ghost, 'block max-h-80 resize-none overflow-y-auto py-1 leading-5 [field-sizing:content]', className)}
         onChange={(e) => setText(e.target.value)}
       />
     )
@@ -471,6 +478,8 @@ function RecordsInput({
     setOpen((o) => new Set([...o].map((k) => (k === i ? j : k === j ? i : k))))
   }
   const toggle = (i: number) => setOpen((o) => (o.has(i) ? new Set([...o].filter((k) => k !== i)) : new Set([...o, i])))
+  // Long lists open with their first records; the button adds more (a record just added always shows).
+  const { visible, more } = useLimit(list, 50, { page: 50, noun: 'records', atLeast: Math.max(0, ...open) + 1 })
   return (
     <div className="group/row py-1" data-records-input>
       <div className="flex h-7 items-center gap-1 text-xs text-fg-subtle">
@@ -479,7 +488,7 @@ function RecordsInput({
         {remove}
       </div>
       <ul className="space-y-1">
-        {list.map((raw, i) => {
+        {visible.map((raw, i) => {
           const rec = isMap(raw) ? raw : {}
           const name = typeof rec[titleKey] === 'string' || typeof rec[titleKey] === 'number' ? String(rec[titleKey]) : ''
           const expanded = open.has(i)
@@ -501,7 +510,11 @@ function RecordsInput({
                   className={cn(ghost, 'h-8 min-w-0 flex-1 font-medium')}
                   onChange={(e) => setItem(i, titleKey, oneLine(e.target.value))}
                 />
-                {group && !expanded && <span className="max-w-[35%] truncate text-2xs text-fg-subtle">{noted(rec[group.key]).value}</span>}
+                {group && !expanded && (
+                  <span className="max-w-[35%] truncate text-2xs text-fg-subtle" {...fullOnHover(noted(rec[group.key]).value)}>
+                    {noted(rec[group.key]).value}
+                  </span>
+                )}
                 <IconButton icon={ArrowUp} label="Move up" size="sm" disabled={i === 0} onClick={() => move(i, -1)} />
                 <IconButton icon={ArrowDown} label="Move down" size="sm" disabled={i === list.length - 1} onClick={() => move(i, 1)} />
                 <IconButton
@@ -533,6 +546,7 @@ function RecordsInput({
           )
         })}
       </ul>
+      {more && <div className="mt-1 pl-1">{more}</div>}
       <Button
         variant="ghost"
         size="sm"
