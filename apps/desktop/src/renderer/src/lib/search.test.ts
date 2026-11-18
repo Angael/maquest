@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { findSnippet, rankScored } from './search'
+import { findSnippet, matchesFilter, rankScored } from './search'
 
 test('rankScored keeps scores and ranks title matches above other texts', () => {
   const items = [
@@ -30,4 +30,16 @@ test('findSnippet matches accents loosely and trims long lines around the match'
   assert.equal(s.match, 'needle')
   assert.ok(s.before.startsWith('…') && s.after.endsWith('…'))
   assert.ok((s.before + s.match + s.after).length <= 94)
+})
+
+test('matchesFilter needs every word, with #tag words matching tags only', () => {
+  const idea = { title: 'The innkeeper is the lost heir', body: 'Reveal in act two', tags: ['twist', 'Act2'] }
+  assert.ok(matchesFilter('', idea))
+  assert.ok(matchesFilter('innkeeper heir', idea))
+  assert.ok(matchesFilter('REVEAL', idea))
+  assert.ok(matchesFilter('#tw', idea))
+  assert.ok(matchesFilter('#act2 heir', idea))
+  assert.ok(!matchesFilter('#reveal', idea))
+  assert.ok(!matchesFilter('innkeeper dragon', idea))
+  assert.ok(matchesFilter('#', idea))
 })

@@ -1,5 +1,6 @@
-import { forwardRef, useState, type ReactNode, type TextareaHTMLAttributes } from 'react'
+import { forwardRef, useMemo, useRef, useState, type ReactNode, type TextareaHTMLAttributes } from 'react'
 import { Select as BaseSelect } from '@base-ui/react/select'
+import { Autocomplete } from '@base-ui/react/autocomplete'
 import { Check, ChevronDown, X } from 'lucide-react'
 import { cn, menuItem, popupSurface } from '../ui'
 
@@ -148,55 +149,95 @@ const split = (s: string) =>
     .filter(Boolean)
 
 /** Tag chips with an inline input: Enter or comma adds, Backspace on an empty input removes the last tag. */
-export function TagInput({ id, tags, onChange }: { id: string; tags: string[]; onChange: (tags: string[]) => void }) {
+const NO_TAGS: readonly string[] = []
+
+/**
+ * Chips plus a text field; comma or Enter adds a tag. `suggestions` (e.g. the project's other tags) pop up as you type,
+ * so a tag is reused instead of retyped with a different spelling.
+ */
+export function TagInput({
+  id,
+  tags,
+  onChange,
+  suggestions = NO_TAGS,
+}: {
+  id: string
+  tags: string[]
+  onChange: (tags: string[]) => void
+  suggestions?: readonly string[]
+}) {
   const [text, setText] = useState('')
+  const highlighted = useRef<string | undefined>(undefined)
   const commit = (raw: string) => {
     const added = split(raw).filter((t) => !tags.includes(t))
     if (added.length) onChange([...new Set([...tags, ...added])])
     setText('')
   }
+  const items = useMemo(() => suggestions.filter((t) => !tags.includes(t)), [suggestions, tags])
   return (
-    <div
-      className="flex min-h-7 w-full min-w-0 cursor-text flex-wrap items-center gap-1 rounded-[5px] px-1.5 py-1 transition-[background-color,box-shadow] duration-100 focus-within:bg-surface focus-within:shadow-[inset_0_0_0_1px_var(--color-line-strong)] hover:bg-hover"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) {
-          e.preventDefault()
-          document.getElementById(id)?.focus()
-        }
+    <Autocomplete.Root
+      items={items}
+      value={text}
+      openOnInputClick={false}
+      onItemHighlighted={(item) => {
+        highlighted.current = item as string | undefined
+      }}
+      onValueChange={(v, details) => {
+        if (details.reason === 'item-press') return commit(v)
+        if (v.includes(',')) {
+          const cut = v.lastIndexOf(',')
+          commit(v.slice(0, cut))
+          setText(v.slice(cut + 1).trimStart())
+        } else setText(v)
       }}
     >
-      {tags.map((t) => (
-        <Chip key={t} removeLabel={`Remove tag ${t}`} onRemove={() => onChange(tags.filter((x) => x !== t))}>
-          {t}
-        </Chip>
-      ))}
-      <input
-        id={id}
-        value={text}
-        placeholder={tags.length ? '' : 'Add tags…'}
-        autoComplete="off"
-        spellCheck={false}
-        className="h-5 min-w-12 flex-1 bg-transparent text-sm text-fg outline-none placeholder:text-fg-faint focus-visible:outline-none"
-        onChange={(e) => {
-          const v = e.target.value
-          if (v.includes(',')) {
-            const cut = v.lastIndexOf(',')
-            commit(v.slice(0, cut))
-            setText(v.slice(cut + 1).trimStart())
-          } else setText(v)
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
+      <div
+        className="flex min-h-7 w-full min-w-0 cursor-text flex-wrap items-center gap-1 rounded-[5px] px-1.5 py-1 transition-[background-color,box-shadow] duration-100 focus-within:bg-surface focus-within:shadow-[inset_0_0_0_1px_var(--color-line-strong)] hover:bg-hover"
+        onMouseDown={(e) => {
+          if (e.target === e.currentTarget) {
             e.preventDefault()
-            commit(text)
-          } else if (e.key === 'Backspace' && !text && tags.length) {
-            e.preventDefault()
-            onChange(tags.slice(0, -1))
+            document.getElementById(id)?.focus()
           }
         }}
-        onBlur={() => text.trim() && commit(text)}
-      />
-    </div>
+      >
+        {tags.map((t) => (
+          <Chip key={t} removeLabel={`Remove tag ${t}`} onRemove={() => onChange(tags.filter((x) => x !== t))}>
+            {t}
+          </Chip>
+        ))}
+        <Autocomplete.Input
+          id={id}
+          placeholder={tags.length ? '' : 'Add tags…'}
+          autoComplete="off"
+          spellCheck={false}
+          className="h-5 min-w-12 flex-1 bg-transparent text-sm text-fg outline-none placeholder:text-fg-faint focus-visible:outline-none"
+          onKeyDown={(e) => {
+            // With a suggestion highlighted, Enter picks it (onValueChange); otherwise it adds what was typed.
+            if (e.key === 'Enter' && !highlighted.current) {
+              e.preventDefault()
+              commit(text)
+            } else if (e.key === 'Backspace' && !text && tags.length) {
+              e.preventDefault()
+              onChange(tags.slice(0, -1))
+            }
+          }}
+          onBlur={() => text.trim() && commit(text)}
+        />
+      </div>
+      <Autocomplete.Portal>
+        <Autocomplete.Positioner className="z-[60] outline-none" sideOffset={4} align="start">
+          <Autocomplete.Popup className={cn(popupSurface, 'popup-motion max-h-56 min-w-40 overflow-y-auto data-[empty]:hidden')}>
+            <Autocomplete.List>
+              {(tag: string) => (
+                <Autocomplete.Item key={tag} value={tag} className={menuItem}>
+                  <span className="truncate">{tag}</span>
+                </Autocomplete.Item>
+              )}
+            </Autocomplete.List>
+          </Autocomplete.Popup>
+        </Autocomplete.Positioner>
+      </Autocomplete.Portal>
+    </Autocomplete.Root>
   )
 }
 

@@ -256,9 +256,16 @@ const CoreProperties = memo(function CoreProperties({ node }: { node: StoryNode 
 
 const TagsRow = memo(function TagsRow({ tags, onChange }: { tags: string[]; onChange: (patch: Patch) => void }) {
   const tagId = useId()
+  const { data: all = NO_NODES } = useNodes()
+  // Every tag used in the project, most used first, as suggestions.
+  const known = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const n of all) for (const t of n.tags) counts.set(t, (counts.get(t) ?? 0) + 1)
+    return [...counts].toSorted((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([t]) => t)
+  }, [all])
   return (
     <PropertyRow label="Tags" htmlFor={tagId}>
-      <TagInput id={tagId} tags={tags} onChange={(next) => onChange({ tags: next })} />
+      <TagInput id={tagId} tags={tags} suggestions={known} onChange={(next) => onChange({ tags: next })} />
     </PropertyRow>
   )
 })

@@ -88,3 +88,18 @@ export function findSnippet(text: string, search: string, titles: ReadonlyMap<st
   }
   return null
 }
+
+/**
+ * A list filter: `#tag` words must each be one of the item's tags (prefix match), the remaining words must each appear
+ * in its title, body or tags. Accents and case are ignored; an empty filter matches everything.
+ */
+export function matchesFilter(filter: string, item: { title: string; body?: string; tags?: readonly string[] }): boolean {
+  // A lone "#" is a tag still being typed: ignore it rather than hide everything.
+  const words = filter
+    .split(/\s+/)
+    .map(normalize)
+    .filter((w) => w && w !== '#')
+  const tags = (item.tags ?? []).map(normalize)
+  const text = normalize([item.title, item.body ?? '', ...(item.tags ?? [])].join('\n'))
+  return words.every((w) => (w.startsWith('#') ? tags.some((t) => t.startsWith(w.slice(1))) : text.includes(w)))
+}
