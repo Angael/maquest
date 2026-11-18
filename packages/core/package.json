@@ -10,6 +10,7 @@
     "./schema": "./src/schema.ts",
     "./layout": "./src/layout.ts",
     "./sheet": "./src/sheet.ts",
+    "./text": "./src/text.ts",
     "./map": "./src/map/index.ts"
   },
   "scripts": {

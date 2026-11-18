@@ -176,10 +176,14 @@ function styleReminder(p: Project) {
     : `\n\n---\n## Style reminder (${STYLE_GUIDELINE_ID})\n${g.body}`
 }
 
+/** Words in a node and everything under it. */
+const totalWords = (n: OutlineNode): number => n.words + n.children.reduce((sum, c) => sum + totalWords(c), 0)
+
 function outlineText(nodes: OutlineNode[], depth = 0): string {
   return nodes
     .map((n) => {
-      const head = `${'  '.repeat(depth)}- ${n.id} [${n.type}${n.status ? `, ${n.status}` : ''}] ${n.title}${n.summary ? ` — ${n.summary}` : ''}`
+      const words = totalWords(n)
+      const head = `${'  '.repeat(depth)}- ${n.id} [${n.type}${n.status ? `, ${n.status}` : ''}${words ? `, ${words.toLocaleString('en')} words` : ''}] ${n.title}${n.summary ? ` — ${n.summary}` : ''}`
       return n.children.length ? `${head}\n${outlineText(n.children, depth + 1)}` : head
     })
     .join('\n')
