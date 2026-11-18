@@ -167,6 +167,7 @@ export function TagInput({
   suggestions?: readonly string[]
 }) {
   const [text, setText] = useState('')
+  const [open, setOpen] = useState(false)
   const highlighted = useRef<string | undefined>(undefined)
   const commit = (raw: string) => {
     const added = split(raw).filter((t) => !tags.includes(t))
@@ -178,13 +179,17 @@ export function TagInput({
     <Autocomplete.Root
       items={items}
       value={text}
+      // Suggestions only while typing: an open list would otherwise take focus back when it closes.
+      open={open && !!text.trim()}
+      onOpenChange={setOpen}
       openOnInputClick={false}
       onItemHighlighted={(item) => {
         highlighted.current = item as string | undefined
       }}
       onValueChange={(v, details) => {
         if (details.reason === 'item-press') return commit(v)
-        if (v.includes(',')) {
+        // Only the user's typing splits on commas; other updates (e.g. highlighting) just mirror the value.
+        if (details.reason === 'input-change' && v.includes(',')) {
           const cut = v.lastIndexOf(',')
           commit(v.slice(0, cut))
           setText(v.slice(cut + 1).trimStart())

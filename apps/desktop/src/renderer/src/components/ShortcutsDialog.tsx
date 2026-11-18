@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { Dialog } from '@base-ui/react/dialog'
 import { X } from 'lucide-react'
 import { useUI } from '../lib/store'
@@ -30,6 +30,8 @@ export function ShortcutList({ groups, className }: { groups: readonly ShortcutG
 export function ShortcutsDialog() {
   const open = useUI((s) => s.shortcutsOpen)
   const setOpen = useUI((s) => s.setShortcutsOpen)
+  // Focus the scrolling list, not the Close button: its tooltip would eat the first Escape.
+  const body = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const handle = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey) || e.altKey || e.key !== '/') return
@@ -45,6 +47,7 @@ export function ShortcutsDialog() {
       <Dialog.Portal>
         <Dialog.Backdrop className="fixed inset-0 z-[90] bg-black/40" />
         <Dialog.Popup
+          initialFocus={body}
           className={cn(
             'fixed top-[12vh] left-1/2 z-[90] flex max-h-[76vh] w-[680px] max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-col overflow-hidden rounded-xl bg-panel shadow-[var(--shadow-popover)] outline-none',
           )}
@@ -53,7 +56,7 @@ export function ShortcutsDialog() {
             <Dialog.Title className="flex-1 text-base font-semibold text-fg">Keyboard shortcuts</Dialog.Title>
             <Dialog.Close render={<IconButton icon={X} label="Close" shortcut="Esc" size="sm" />} />
           </div>
-          <div className="min-h-0 overflow-y-auto px-5 pt-4 pb-2">
+          <div ref={body} tabIndex={-1} className="min-h-0 overflow-y-auto px-5 pt-4 pb-2 outline-none">
             <ShortcutList groups={[...SHORTCUTS.general, ...SHORTCUTS.canvas]} className="columns-2 gap-8" />
           </div>
           <p className="shrink-0 border-t border-line px-5 py-2.5 text-2xs text-fg-faint">

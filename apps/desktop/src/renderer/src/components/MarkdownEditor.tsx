@@ -4,6 +4,7 @@ import { openImage } from './Lightbox'
 import { insertNewlineContinueMarkup, markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { insertNewlineAndIndent } from '@codemirror/commands'
 import { Prec } from '@codemirror/state'
+import { completionStatus } from '@codemirror/autocomplete'
 import { keymap } from '@codemirror/view'
 import { languages } from '@codemirror/language-data'
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
@@ -33,6 +34,8 @@ const listEnter = Prec.highest(
       key: 'Enter',
       run: (view) => {
         const { state } = view
+        // Enter picks the highlighted [[ suggestion instead.
+        if (completionStatus(state) === 'active') return false
         const sel = state.selection.main
         if (!sel.empty) return insertNewlineContinueMarkup(view)
         const line = state.doc.lineAt(sel.head)
@@ -81,7 +84,14 @@ const editorTheme = EditorView.theme(
 /** One instance for every editor, so reconfiguring (e.g. toggling spellcheck) keeps the suggested nodes. */
 const nodeLinks = linkCompletion()
 
-const basicSetup = { lineNumbers: false, foldGutter: false, highlightActiveLine: false, highlightActiveLineGutter: false, syntaxHighlighting: false }
+const basicSetup = {
+  autocompletion: false,
+  lineNumbers: false,
+  foldGutter: false,
+  highlightActiveLine: false,
+  highlightActiveLineGutter: false,
+  syntaxHighlighting: false,
+}
 
 /** `breaks` keeps single newlines as line breaks, for short texts written line by line (sheet records). */
 export function MarkdownPreview({ source, breaks }: { source: string; breaks?: boolean }) {

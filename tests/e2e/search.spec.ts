@@ -3,7 +3,7 @@ import { test, expect } from './fixtures'
 test('Ctrl+K searches entities and Enter jumps to the match', async ({ desktop }) => {
   const { page, ids } = desktop
   await page.keyboard.press('ControlOrMeta+k')
-  const input = page.getByPlaceholder('Search everything…')
+  const input = page.getByPlaceholder('Search everything or type a command…')
   await expect(input).toBeFocused()
   await input.fill('cellar')
   await expect(page.locator('[cmdk-item][aria-selected="true"]')).toContainText('Cellar')
@@ -16,7 +16,7 @@ test('Ctrl+K searches entities and Enter jumps to the match', async ({ desktop }
 test('Ctrl+F opens a guideline and Escape closes the palette', async ({ desktop }) => {
   const { page } = desktop
   await page.keyboard.press('ControlOrMeta+f')
-  const input = page.getByPlaceholder('Search everything…')
+  const input = page.getByPlaceholder('Search everything or type a command…')
   await input.fill('screenplay')
   await expect(page.locator('[cmdk-item][aria-selected="true"]')).toContainText('Screenplay')
   await page.keyboard.press('Enter')
@@ -30,6 +30,6 @@ test('Ctrl+F opens a guideline and Escape closes the palette', async ({ desktop 
 test('Ctrl+K tolerates a one-letter typo in a title', async ({ desktop }) => {
   const { page } = desktop
   await page.keyboard.press('ControlOrMeta+k')
-  await page.getByPlaceholder('Search everything…').fill('cellsr')
+  await page.getByPlaceholder('Search everything or type a command…').fill('cellsr')
   await expect(page.locator('[cmdk-item][aria-selected="true"]')).toContainText('Cellar')
 })

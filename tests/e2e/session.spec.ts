@@ -59,7 +59,7 @@ test('search ranks title matches first regardless of the previous query', async 
   project.createNode({ type: 'note', title: 'Prawda dla DM', tags: ['sekrety'] })
   project.createNode({ type: 'character', title: 'Anselm' })
   await page.keyboard.press('ControlOrMeta+k')
-  const input = page.getByPlaceholder('Search everything…')
+  const input = page.getByPlaceholder('Search everything or type a command…')
   await input.fill('prawda')
   await expect(page.locator('[cmdk-item][aria-selected="true"]')).toContainText('Prawda dla DM')
   await input.fill('ansel')

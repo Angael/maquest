@@ -66,7 +66,9 @@ export function useNavigationShortcuts() {
       const arrows = event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')
       const brackets = mac && event.metaKey && !event.altKey && !event.ctrlKey && (event.key === '[' || event.key === ']')
       if (!arrows && !brackets) return
+      // Before React Flow sees it: on a focused card, Alt+arrows would otherwise also nudge the card.
       event.preventDefault()
+      event.stopPropagation()
       navigate(event.key === 'ArrowLeft' || event.key === '[' ? -1 : 1)
     }
     // Buttons 3 and 4 are the mouse's back and forward thumb buttons.
@@ -76,11 +78,11 @@ export function useNavigationShortcuts() {
       navigate(event.button === 3 ? -1 : 1)
     }
     const stop = (event: MouseEvent) => (event.button === 3 || event.button === 4) && event.preventDefault()
-    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keydown', onKeyDown, true)
     window.addEventListener('mouseup', onMouseUp)
     window.addEventListener('mousedown', stop)
     return () => {
-      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keydown', onKeyDown, true)
       window.removeEventListener('mouseup', onMouseUp)
       window.removeEventListener('mousedown', stop)
     }
