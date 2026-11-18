@@ -49,10 +49,9 @@ export const GroupFrame = memo(function GroupFrame({ data, selected }: NodeProps
   const renaming = useRenaming((s) => s.id === group.id)
   useEffect(() => {
     if (!renaming) return
+    // Clearing the request re-runs this effect, so the frame is not cancelled on cleanup.
     useRenaming.setState({ id: null })
-    // After the menu has handed focus back, or the field would lose it at once.
-    const frame = requestAnimationFrame(() => setTitle(group.title))
-    return () => cancelAnimationFrame(frame)
+    requestAnimationFrame(() => setTitle(group.title))
   }, [renaming, group.title])
   const commit = () => {
     if (title?.trim() && title.trim() !== group.title) data.rename(title.trim())
