@@ -7,12 +7,13 @@ import { useEffect, useRef } from 'react'
  */
 const flushers = new Set<() => unknown>()
 
+async function flushAll() {
+  for (let round = 0; round < 2; round++) await Promise.allSettled([...flushers].map((flush) => Promise.resolve().then(flush)))
+}
+
 /** Runs every registered flush (twice: a sheet field flushes into the node's own debounced save) and waits for them. */
 export async function flushPending(timeout = 2500) {
-  const run = async () => {
-    for (let round = 0; round < 2; round++) await Promise.allSettled([...flushers].map((flush) => Promise.resolve().then(flush)))
-  }
-  await Promise.race([run(), new Promise((resolve) => setTimeout(resolve, timeout))])
+  await Promise.race([flushAll(), new Promise((resolve) => setTimeout(resolve, timeout))])
 }
 
 /** Registers `flush` (the latest one passed) for as long as the component is mounted. */
