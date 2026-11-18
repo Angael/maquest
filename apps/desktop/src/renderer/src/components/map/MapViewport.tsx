@@ -1,4 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import {
   cellCenter,
@@ -29,7 +39,10 @@ import {
 import { api, mediaUrl } from '../../lib/api'
 import { toReact } from './svgReact'
 import { moveSnap, snapOf, useMapUI } from './mapStore'
-import { addObject, addToken, moveIds, patchObject, removeIds, snapPoint, snapTo, snapToken, withExplored } from './edit'
+import { addObject, addToken, duplicateIds, moveIds, patchObject, removeIds, reorder, snapPoint, snapTo, snapToken, withExplored } from './edit'
+import { ArrowDown, ArrowUp, BoxSelect, BringToFront, CopyPlus, DoorOpen, Layers, Maximize, SendToBack, Trash2 } from 'lucide-react'
+import { openContextMenu } from '../ContextMenu'
+import { MenuItem, MenuLabel, MenuSeparator, MenuSub } from '../ui'
 
 type View = { x: number; y: number; s: number }
 
@@ -251,11 +264,25 @@ export function MapViewport({ doc, commit, mapId }: { doc: MapDoc; commit: (next
   useEffect(() => {
     cancelRef.current = cancel
   })
+  /** Whether the last right press cancelled something, so its contextmenu event opens no menu. */
+  const cancelled = useRef(false)
+  const openMenu = (e: ReactMouseEvent<HTMLDivElement>) => {
+    if (cancelled.current || ui.viewMode !== 'gm') {
+      cancelled.current = false
+      return e.preventDefault()
+    }
+    // Right-clicking something outside the selection selects it first, like in a drawing app.
+    const target = e.target instanceof Element ? e.target : null
+    const hit = target?.closest('[data-token]')?.getAttribute('data-token') ?? target?.closest('[data-id]')?.getAttribute('data-id')
+    const ids = hit && !ui.selected.includes(hit) ? [hit] : hit || ui.selected.length ? ui.selected : []
+    if (hit && !ui.selected.includes(hit)) select(ids)
+    openContextMenu(e, () => <MapMenu doc={doc} commit={commit} ids={ids} />, { label: 'Map actions', target: null, restore: host.current, force: true })
+  }
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
-    // A right click cancels the line, shape or drag in progress.
+    // A right click cancels the line, shape or drag in progress; otherwise it opens the menu.
     if (e.button === 2) {
-      cancel()
+      cancelled.current = !!(drawing || stroke) || cancel()
       return
     }
     if (gesture.current) return
@@ -680,7 +707,10 @@ export function MapViewport({ doc, commit, mapId }: { doc: MapDoc; commit: (next
       onPointerDown={onPointerDown}
       onMouseDown={(e) => {
         // Right click while drawing or dragging with the left button held: pointerdown only fires for the first button.
-        if (e.button === 2 && (gesture.current || pen || ruler || drawing || stroke)) cancel()
+        if (e.button === 2 && (gesture.current || pen || ruler || drawing || stroke)) {
+          cancel()
+          cancelled.current = true
+        }
       }}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -697,7 +727,7 @@ export function MapViewport({ doc, commit, mapId }: { doc: MapDoc; commit: (next
       }}
       onDragOver={(e) => e.dataTransfer.types.includes('Files') && e.preventDefault()}
       onDrop={(e) => void onDrop(e)}
-      onContextMenu={(e) => e.preventDefault()}
+      onContextMenu={openMenu}
     >
       {view && (
         <svg className="absolute inset-0 h-full w-full" role="img" aria-label="Map">
@@ -1163,5 +1193,74 @@ function Tag({ at, text, px }: { at: Point; text: string; px: (n: number) => num
         {text}
       </text>
     </g>
+  )
+}
+
+/** Right-click menu of the map editor: the selection's actions, or the map's when nothing is selected. */
+function MapMenu({ doc, commit, ids }: { doc: MapDoc; commit: (next: MapDoc) => void; ids: string[] }) {
+  const select = useMapUI.getState().select
+  const door = ids.length === 1 ? doc.objects.find((o) => o.id === ids[0] && o.kind === 'door') : undefined
+  const all = [...doc.objects.map((o) => o.id), ...doc.tokens.map((t) => t.id)]
+  return (
+    <>
+      {ids.length > 0 && (
+        <>
+          {ids.length > 1 && <MenuLabel>{ids.length} selected</MenuLabel>}
+          {door?.kind === 'door' && (
+            <MenuItem icon={DoorOpen} onClick={() => commit(withExplored(patchObject(doc, door.id, { open: !door.open })))}>
+              {door.open ? 'Close door' : 'Open door'}
+            </MenuItem>
+          )}
+          <MenuItem
+            icon={CopyPlus}
+            shortcut="Ctrl+D"
+            onClick={() => {
+              const r = duplicateIds(doc, ids)
+              commit(r.doc)
+              select(r.ids)
+            }}
+          >
+            Duplicate
+          </MenuItem>
+          <MenuSub label="Order" icon={Layers}>
+            <MenuItem icon={BringToFront} shortcut="Shift+]" onClick={() => commit(reorder(doc, ids, 'front'))}>
+              Bring to front
+            </MenuItem>
+            <MenuItem icon={ArrowUp} shortcut="]" onClick={() => commit(reorder(doc, ids, 'forward'))}>
+              Bring forward
+            </MenuItem>
+            <MenuItem icon={ArrowDown} shortcut="[" onClick={() => commit(reorder(doc, ids, 'backward'))}>
+              Send backward
+            </MenuItem>
+            <MenuItem icon={SendToBack} shortcut="Shift+[" onClick={() => commit(reorder(doc, ids, 'back'))}>
+              Send to back
+            </MenuItem>
+          </MenuSub>
+          <MenuSeparator />
+        </>
+      )}
+      <MenuItem icon={BoxSelect} shortcut="Ctrl+A" disabled={!all.length} onClick={() => select(all)}>
+        Select all
+      </MenuItem>
+      <MenuItem icon={Maximize} onClick={() => window.dispatchEvent(new Event('maquest:map-fit'))}>
+        Fit map to screen
+      </MenuItem>
+      {ids.length > 0 && (
+        <>
+          <MenuSeparator />
+          <MenuItem
+            icon={Trash2}
+            danger
+            shortcut="Del"
+            onClick={() => {
+              commit(removeIds(doc, ids))
+              select([])
+            }}
+          >
+            Delete
+          </MenuItem>
+        </>
+      )}
+    </>
   )
 }

@@ -151,3 +151,6 @@ Phase 1 is implemented on branch `feat/map-maker`. All requirements above have a
   handles, wall materials and solid structures, soft fog glimpse, vision robustness and door leak fixes.
 - 2026-11-16 — Phase 3: grouped tool rail with flyout options, token and light docks, token kinds, rooms with own
   walls and light, room names, per-tool snapping, off-map grabbing, player window replaced by Play.
+- 2026-11-18 — Right-click menu in the editor: duplicate, order, open/close a door, delete for the selection; select
+  all and fit for the map. Right-click still cancels a line, shape or drag in progress. Map tabs and map cards gained
+  menus too (close others/right/all, play, background tab, rename, show file).
