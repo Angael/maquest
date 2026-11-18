@@ -1,5 +1,5 @@
 import { useReactFlow, useStoreApi } from '@xyflow/react'
-import { refsOf, type NodeType } from '@maquest/core/schema'
+import { ALL_BOARD, refsOf, type NodeType } from '@maquest/core/schema'
 import { api } from './api'
 import { currentBoardId, queryClient, useBoard, useGraph } from './queries'
 import { useUI } from './store'
@@ -18,7 +18,14 @@ export function useCreateNode() {
     const pos =
       opts.position ??
       (el ? flow.screenToFlowPosition({ x: el.x + el.width / 2 - 128 + Math.random() * 60, y: el.y + el.height / 2 - 40 + Math.random() * 60 }) : undefined)
-    const node = await api.createNode({ type, title: opts.title ?? `New ${type}`, parent: opts.parent, src: opts.src }, pos, currentBoardId(), opts.group)
+    // The read-only "All" canvas has no layout of its own: new nodes go on the first board.
+    const board = currentBoardId() === ALL_BOARD ? undefined : currentBoardId()
+    const node = await api.createNode(
+      { type, title: opts.title ?? `New ${type}`, parent: opts.parent, src: opts.src },
+      board && board ? pos : undefined,
+      board,
+      opts.group,
+    )
     await refresh()
     select({ kind: 'node', id: node.id })
     return node

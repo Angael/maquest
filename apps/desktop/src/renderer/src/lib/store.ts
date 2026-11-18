@@ -66,6 +66,15 @@ type UI = {
   /** Command palette (Ctrl+K) open. Not persisted. */
   paletteOpen: boolean
   setPaletteOpen: (open: boolean) => void
+  /** Keyboard shortcuts reference (Ctrl+/) open. Not persisted. */
+  shortcutsOpen: boolean
+  setShortcutsOpen: (open: boolean) => void
+  /** Spellchecking in documents and notes. */
+  spellcheck: boolean
+  setSpellcheck: (on: boolean) => void
+  /** Collapsed sidebar sections (`section:<type>`) and outline rows (node ids). */
+  collapsed: string[]
+  setCollapsed: (key: string, collapsed: boolean) => void
   /** Shows a node on the canvas: switches to `board` (when given), selects and centers it. */
   focusNode: (id: string, board?: string) => void
   setView: (v: View) => void
@@ -136,6 +145,13 @@ export const useUI = create<UI>()(
       sidebarOpen: true,
       sidebarWidth: 248,
       paletteOpen: false,
+      shortcutsOpen: false,
+      setShortcutsOpen: (shortcutsOpen) => set({ shortcutsOpen }),
+      spellcheck: true,
+      setSpellcheck: (spellcheck) => set({ spellcheck }),
+      collapsed: [],
+      setCollapsed: (key, collapsed) =>
+        set((s) => (s.collapsed.includes(key) === collapsed ? {} : { collapsed: collapsed ? [...s.collapsed, key] : s.collapsed.filter((k) => k !== key) })),
       minimap: false,
       setMinimap: (minimap) => set({ minimap }),
       tabs: [],
@@ -226,6 +242,8 @@ export const useUI = create<UI>()(
           sidebarOpen: saved.sidebarOpen ?? true,
           sidebarWidth: saved.sidebarWidth ?? 248,
           minimap: saved.minimap ?? false,
+          spellcheck: saved.spellcheck ?? true,
+          collapsed: saved.collapsed ?? [],
         }
       },
       partialize: ({
@@ -240,7 +258,11 @@ export const useUI = create<UI>()(
         sidebarOpen,
         sidebarWidth,
         minimap,
+        spellcheck,
+        collapsed,
       }) => ({
+        spellcheck,
+        collapsed,
         liveNotesOpen,
         liveNotesSize,
         sidebarOpen,

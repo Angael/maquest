@@ -17,6 +17,7 @@ import { AddTab, Sheet, useSheet } from '../sheet/Sheet'
 import { FieldInput, fieldPatch } from '../sheet/FieldForm'
 import { mergeValues, propertyRows } from '@maquest/core/sheet'
 import { MapThumb } from '../map/MapThumb'
+import { useFlushOnLeave } from '../../lib/pending'
 
 type Draft = Pick<StoryNode, 'title' | 'summary' | 'body' | 'fields' | 'tags'>
 /** Unsaved changes; `fields` holds only changed keys, null marking removal (maps merge one level, like the server). */
@@ -57,6 +58,11 @@ export function NodeInspector({ id }: { id: string }) {
     saveQueue.current = saveQueue.current.then(persist)
     return saveQueue.current
   }, 500)
+
+  useFlushOnLeave(() => {
+    save.flush()
+    return saveQueue.current
+  })
 
   // Never replace an in-flight draft with an older watcher/refetch result.
   useEffect(() => {
@@ -225,7 +231,7 @@ const NodeHeader = memo(function NodeHeader({ node }: { node: StoryNode }) {
       </MenuItem>
     </>
   )
-  return <InspectorHeader icon={S.icon} label={S.label} color={S.color} id={node.id} menu={menu} />
+  return <InspectorHeader icon={S.icon} label={S.label} color={S.color} id={node.id} menu={menu} history />
 })
 
 /** Type, status and parent. */

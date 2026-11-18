@@ -152,6 +152,7 @@ export const MarkdownEditor = memo(function MarkdownEditor({
   useLayoutEffect(() => {
     onChangeRef.current = onChange
   })
+  const spellcheck = useUI((s) => s.spellcheck)
   const [view, setView] = useState<EditorView>()
   const titles = useMemo(() => new Map(nodes.map((n) => [n.id, n.title])), [nodes])
   useEffect(() => view?.dispatch({ effects: setNodeTitles.of(titles) }), [view, titles])
@@ -163,8 +164,10 @@ export const MarkdownEditor = memo(function MarkdownEditor({
       mediaHandlers,
       editorTheme,
       livePreview({ open: (id, newTab) => (newTab ? openNodeTab(id) : select({ kind: 'node', id })) }),
+      // Prose gets the OS spellchecker (suggestions in the right-click menu); toggled from the command palette.
+      EditorView.contentAttributes.of({ spellcheck: spellcheck ? 'true' : 'false', autocapitalize: 'sentences' }),
     ],
-    [select],
+    [select, spellcheck],
   )
   // Keep CodeMirror's listener/configuration stable while the controlled draft
   // updates. External value changes are already annotated by react-codemirror.
