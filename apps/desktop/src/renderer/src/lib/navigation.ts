@@ -55,14 +55,14 @@ export function navigate(step: -1 | 1): boolean {
 }
 
 /** Views that show the node inspector, where back/forward make sense. */
-const NAVIGABLE: View[] = ['canvas', 'backlog']
+const NAVIGABLE = new Set<View>(['canvas', 'backlog'])
 
 /** Alt+← / Alt+→ (⌘[ / ⌘] on macOS) and the mouse's back/forward buttons, outside text fields. */
 export function useNavigationShortcuts() {
   useEffect(() => {
     const mac = window.maquest.platform === 'darwin'
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.isComposing || isEditingTarget(event.target) || !NAVIGABLE.includes(useUI.getState().view)) return
+      if (event.defaultPrevented || event.isComposing || isEditingTarget(event.target) || !NAVIGABLE.has(useUI.getState().view)) return
       const arrows = event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')
       const brackets = mac && event.metaKey && !event.altKey && !event.ctrlKey && (event.key === '[' || event.key === ']')
       if (!arrows && !brackets) return
@@ -71,7 +71,7 @@ export function useNavigationShortcuts() {
     }
     // Buttons 3 and 4 are the mouse's back and forward thumb buttons.
     const onMouseUp = (event: MouseEvent) => {
-      if ((event.button !== 3 && event.button !== 4) || !NAVIGABLE.includes(useUI.getState().view)) return
+      if ((event.button !== 3 && event.button !== 4) || !NAVIGABLE.has(useUI.getState().view)) return
       event.preventDefault()
       navigate(event.button === 3 ? -1 : 1)
     }

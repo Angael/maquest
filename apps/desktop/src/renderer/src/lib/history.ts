@@ -31,7 +31,7 @@ export function travel(direction: 'undo' | 'redo') {
 }
 
 /** Views where Ctrl+Z undoes project edits; the map editor keeps its own shortcut, and text fields their own undo. */
-const UNDOABLE: View[] = ['canvas', 'backlog']
+const UNDOABLE = new Set<View>(['canvas', 'backlog'])
 
 /** Ctrl/⌘+Z undoes, Ctrl+Y or Ctrl/⌘+Shift+Z redoes. */
 export function useHistoryShortcuts() {
@@ -39,7 +39,7 @@ export function useHistoryShortcuts() {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey) || event.altKey || event.defaultPrevented || isEditingTarget(event.target)) return
       const key = event.key.toLowerCase()
-      if ((key !== 'z' && key !== 'y') || !UNDOABLE.includes(useUI.getState().view)) return
+      if ((key !== 'z' && key !== 'y') || !UNDOABLE.has(useUI.getState().view)) return
       event.preventDefault()
       travel(key === 'y' || event.shiftKey ? 'redo' : 'undo')
     }

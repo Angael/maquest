@@ -325,10 +325,11 @@ function SnippetText({ snippet }: { snippet: Snippet }) {
   )
 }
 
+const refresh = () => queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] !== 'app' })
+
 /** Creates a node named after the query where it can be seen: ideas in the backlog, maps in their tab, the rest on the canvas. */
 function useCreateFromPalette() {
   const createOnCanvas = useCreateNode()
-  const refresh = () => queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] !== 'app' })
   return async (type: string, title?: string) => {
     const ui = useUI.getState()
     try {

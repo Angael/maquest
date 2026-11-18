@@ -22,7 +22,7 @@ export function useCreateNode() {
     const board = currentBoardId() === ALL_BOARD ? undefined : currentBoardId()
     const node = await api.createNode(
       { type, title: opts.title ?? `New ${type}`, parent: opts.parent, src: opts.src },
-      board && board ? pos : undefined,
+      board ? pos : undefined,
       board,
       opts.group,
     )
