@@ -8,6 +8,9 @@ import {
   CustomCheck,
   RuleSetting,
   SUMMARY_MAX,
+  TAG_MAX,
+  TITLE_MAX,
+  WORD_MAX,
   clueCounts,
   entityOf,
   overlapWarnings,
@@ -18,14 +21,17 @@ import {
   type StoryNode,
   type TabDef,
   type TypeInfo,
+  textProblems,
   typeProblems,
 } from './schema'
 import {
+  clip,
   fieldForKey,
   fieldLayout,
   fieldsTabText,
   fieldLabel,
   fieldProblem,
+  fieldSizeProblems,
   isEmptyValue,
   isRequired,
   libraryIndex,
@@ -34,6 +40,7 @@ import {
   plainText,
   recordList,
   refIds,
+  someOf,
   splitSections,
   tabOfField,
   type SheetType,
@@ -217,11 +224,11 @@ export const RULES: RuleMeta[] = [
   },
   {
     id: 'summary-length',
-    title: 'Long summaries and cut-off titles',
+    title: 'Long titles, summaries and tags',
     category: 'content',
     level: 'warn',
-    description: `Summaries are one line on cards (under ${SUMMARY_MAX} chars); titles are short complete phrases.`,
-    fix: 'Shorten the summary to one sentence and move detail into the body; finish the title.',
+    description: `Titles are short complete phrases (under ${TITLE_MAX} chars), summaries one sentence on cards (under ${SUMMARY_MAX}), tags a word or two (under ${TAG_MAX}); none has a word over ${WORD_MAX} chars. Cards cut longer text off.`,
+    fix: 'Shorten the summary to one sentence and move detail into the body; finish or shorten the title; split run-together words.',
   },
   {
     id: 'missing-summary',
@@ -273,6 +280,16 @@ export const RULES: RuleMeta[] = [
     level: 'warn',
     description: "A field's value doesn't fit its widget, choices or range (e.g. scores that aren't numbers).",
     fix: "Rewrite the value in the field's format (overview lists each type's fields).",
+  },
+  {
+    id: 'field-oversized',
+    title: 'Oversized fields',
+    category: 'sheets',
+    level: 'warn',
+    description:
+      'A field holds more than its widget shows well: text too long, too many items or too long ones, a word too long to wrap, a number too big, small or precise to read, or more dots or axes than its style draws. The sheet folds or cuts it off.',
+    fix: 'Shorten it: tiles and chips take a few words, numbers at most 2 decimals in a sensible unit. Move long text to a prose tab or a record description, many items into records or a library, and pick a style that fits (bar for big meters).',
+    options: [{ key: 'maxWord', label: 'Longest word', type: 'number', default: WORD_MAX }, ...scope],
   },
   {
     id: 'field-alias',
@@ -482,6 +499,8 @@ export function runChecks(input: CheckInput): CheckReport {
   }
 
   // ---- sheets ----
+  const oversized = new Set(subjects('field-oversized').map((n) => n.id))
+  const maxWord = Number(opts('field-oversized').maxWord ?? WORD_MAX)
   for (const n of nodes) {
     const type = typeOf.get(n.type)
     if (!type) continue
@@ -493,7 +512,7 @@ export function runChecks(input: CheckInput): CheckReport {
           emit({
             rule: 'broken-ref',
             node: n.id,
-            message: `${def.key} refers to ${missing.join(', ')}, which ${missing.length === 1 ? 'does' : 'do'} not exist`,
+            message: `${def.key} refers to ${someOf(missing)}, which ${missing.length === 1 ? 'does' : 'do'} not exist`,
           })
         for (const id of refIds(value)) {
           linked.add(id)
@@ -503,6 +522,11 @@ export function runChecks(input: CheckInput): CheckReport {
       const problem = fieldProblem(def, value)
       if (problem) emit({ rule: 'field-invalid', node: n.id, message: `${def.key}: ${problem}`, open: tabOfField(type, def.key) })
     }
+    if (oversized.has(n.id))
+      for (const def of type.fields) {
+        const size = fieldSizeProblems(def, n.fields[def.key], maxWord)
+        if (size.length) emit({ rule: 'field-oversized', node: n.id, message: `${def.key}: ${size.join('; ')}`, open: tabOfField(type, def.key) })
+      }
     const strays = Object.fromEntries(
       Object.keys(n.fields).flatMap((k) => {
         const f = fieldForKey(type.fields, k)
@@ -540,7 +564,7 @@ export function runChecks(input: CheckInput): CheckReport {
         emit({
           rule: 'record-undescribed',
           node: n.id,
-          message: `${fieldLabel(def)}: no description for ${bare.map((r) => r.name || `#${r.index + 1}`).join(', ')}`,
+          message: `${fieldLabel(def)}: no description for ${someOf(bare.map((r) => r.name || `#${r.index + 1}`))}`,
           hint: `Write what each does under ${def.textKey ?? 'text'}, or add a library node with the same name.`,
           open: tabOfField(type, def.key),
         })
@@ -562,7 +586,7 @@ export function runChecks(input: CheckInput): CheckReport {
         emit({
           rule: 'field-duplicates-records',
           node: n.id,
-          message: `${fieldLabel(f)} repeats the records in ${hit}`,
+          message: `${fieldLabel(f)} repeats the records in ${clip(hit, 60)}`,
           hint: `Move what's missing into the records, then clear it (fields: { ${f.key}: null }).`,
           open: tabOfField(type, f.key),
         })
@@ -586,7 +610,7 @@ export function runChecks(input: CheckInput): CheckReport {
             emit({
               rule: 'shared-record',
               node: n.id,
-              message: `${def.key}: "${r.name}" repeats text that the library node ${lib.id} holds`,
+              message: `${def.key}: "${clip(r.name)}" repeats text that the library node ${lib.id} holds`,
               hint: `Keep only the name (and changes specific to ${n.id}) in the record; the sheet shows ${lib.id}'s text.`,
               open: tabOfField(type, def.key),
             })
@@ -607,7 +631,7 @@ export function runChecks(input: CheckInput): CheckReport {
         emit({
           rule: 'shared-record',
           node: id,
-          message: `"${copies[0].name}" is written out in ${where.length} nodes (${where.join(', ')})`,
+          message: `"${clip(copies[0].name)}" is written out in ${where.length} nodes (${someOf(where)})`,
           hint: lib
             ? `Create a ${lib.id} node "${copies[0].name}" with the full text and keep only the name in each record.`
             : `Add a library type (project types: { "<id>": { "label": "…", "library": true } }), create a "${copies[0].name}" node with the full text, and keep only the name in each record.`,
@@ -660,11 +684,7 @@ export function runChecks(input: CheckInput): CheckReport {
     if (count > maxWords) emit({ rule: 'long-body', node: n.id, message: `body is ${count} words (limit ${maxWords})` })
   }
 
-  for (const n of subjects('summary-length')) {
-    if (n.summary && n.summary.length > SUMMARY_MAX)
-      emit({ rule: 'summary-length', node: n.id, message: `summary is ${n.summary.length} chars (max ${SUMMARY_MAX})` })
-    if (/(…|\.\.\.)\s*$/.test(n.title)) emit({ rule: 'summary-length', node: n.id, message: 'title ends with "…"' })
-  }
+  for (const n of subjects('summary-length')) for (const message of textProblems(n)) emit({ rule: 'summary-length', node: n.id, message })
 
   for (const n of subjects('missing-summary', (x) => !x.summary?.trim())) emit({ rule: 'missing-summary', node: n.id, message: 'has no summary' })
   for (const n of subjects('missing-status', (x) => !x.status)) emit({ rule: 'missing-status', node: n.id, message: 'has no status' })
@@ -686,10 +706,7 @@ export function runChecks(input: CheckInput): CheckReport {
         emit({
           rule: 'duplicate-title',
           node: n.id,
-          message: `shares the title "${n.title}" with ${same
-            .filter((x) => x !== n)
-            .map((x) => x.id)
-            .join(', ')}`,
+          message: `shares the title "${clip(n.title, 48)}" with ${someOf(same.filter((x) => x !== n).map((x) => x.id))}`,
         })
     }
   }

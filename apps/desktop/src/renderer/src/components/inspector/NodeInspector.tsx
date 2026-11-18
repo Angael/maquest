@@ -19,7 +19,7 @@ import { mergeValues, propertyRows } from '@maquest/core/sheet'
 import { MapThumb } from '../map/MapThumb'
 import { useFlushOnLeave } from '../../lib/pending'
 import { DocumentFooter } from './DocumentFooter'
-import { NodeMenuItems } from '../NodeMenu'
+import { NodeMenu } from '../menus/NodeMenu'
 
 type Draft = Pick<StoryNode, 'title' | 'summary' | 'body' | 'fields' | 'tags'>
 /** Unsaved changes; `fields` holds only changed keys, null marking removal (maps merge one level, like the server). */
@@ -108,6 +108,7 @@ export function NodeInspector({ id }: { id: string }) {
       <div className="px-4">
         <GhostText
           aria-label="Title"
+          data-node-title={node.id}
           value={draft.title}
           placeholder="Untitled"
           className="-mx-1.5 py-0.5 font-serif text-[22px] leading-[1.3] font-semibold tracking-[-0.005em] text-fg focus:bg-transparent focus:shadow-none"
@@ -198,7 +199,7 @@ function BodyArea({ node, body, onBody }: { node: StoryNode; body: string; onBod
 
 const NodeHeader = memo(function NodeHeader({ node }: { node: StoryNode }) {
   const S = useTypes().of(node.type)
-  return <InspectorHeader icon={S.icon} label={S.label} color={S.color} id={node.id} menu={<NodeMenuItems id={node.id} />} history />
+  return <InspectorHeader icon={S.icon} label={S.label} color={S.color} id={node.id} menu={<NodeMenu id={node.id} />} history />
 })
 
 /** Type, status and parent. */

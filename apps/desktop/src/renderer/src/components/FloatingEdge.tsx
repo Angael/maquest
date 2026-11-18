@@ -15,6 +15,9 @@ import { useUI } from '../lib/store'
 import type { CardData } from './StoryCard'
 import { useCanvasHover } from './canvas/hover'
 import { cn } from './ui'
+import { openContextMenu } from './ContextMenu'
+import { EdgeMenu } from './canvas/menus'
+import { EDGE_REF } from './canvas/shared'
 
 type Rect = { x: number; y: number; width: number; height: number }
 export type FloatingData = {
@@ -86,6 +89,10 @@ export const FloatingEdge = memo(function FloatingEdge({ id, source, target, sty
             onClick={(event) => {
               event.stopPropagation()
               select({ kind: 'edge', id })
+            }}
+            onContextMenu={(event) => {
+              const edge = id.split(EDGE_REF)[0]
+              openContextMenu(event, () => <EdgeMenu id={edge} select={() => select({ kind: 'edge', id: edge })} />, { label: 'Connection actions' })
             }}
             onKeyDown={(event) => {
               if (event.key === 'Enter' || event.key === ' ') {

@@ -4,15 +4,16 @@ import { Map as MapIcon, Maximize2, Pin, Search } from 'lucide-react'
 import { MapThumb } from './map/MapThumb'
 import { openImage } from './Lightbox'
 import { useAction } from '../lib/queries'
-import { fieldLabel, isEmptyValue } from '@maquest/core/sheet'
+import { fieldLabel, isEmptyValue, plainText } from '@maquest/core/sheet'
 import { badgeText } from './sheet/Widgets'
-import type { EdgeType, NodeType, StoryNode } from '@maquest/core/schema'
+import { SUMMARY_MAX, type EdgeType, type NodeType, type StoryNode } from '@maquest/core/schema'
 import { useUI } from '../lib/store'
 import { ClockDial } from './ClockDial'
 import { api, isVideo, mediaUrl } from '../lib/api'
 import { STATUS_STYLE, useTypes } from '../lib/styles'
 import { cn } from './ui'
 import { nodeLinkProps } from '../lib/nodeLink'
+import { fullOnHover } from './fit'
 
 /** A reference edge (involves, located-at, …) drawn as a chip on its source card. */
 export type CardRef = { edge: string; type: EdgeType; id: string; title: string; nodeType: NodeType }
@@ -20,6 +21,9 @@ export type CardData = { node: StoryNode; emphasis?: 'neighbor' | 'dimmed'; refs
 
 /** Grab points only; the stored edge has no handle ids because edges float. */
 const sides = [Position.Top, Position.Right, Position.Bottom, Position.Left]
+
+/** Reference chips drawn before "+N". */
+const REFS_SHOWN = 6
 
 /** Small square buttons revealed on hover / focus; they keep their space so nothing shifts. */
 const reveal =
@@ -43,7 +47,7 @@ export const StoryCard = memo(function StoryCard({ data, selected }: NodeProps<N
     () =>
       S.fields
         .filter((d) => d.badge && !isEmptyValue(n.fields[d.key]))
-        .map((d) => ({ key: d.key, label: fieldLabel(d), value: badgeText(d, n.fields[d.key]) })),
+        .map((d) => ({ key: d.key, label: fieldLabel(d), value: badgeText(d, n.fields[d.key]), full: plainText(n.fields[d.key]) })),
     [n, S],
   )
 
@@ -118,7 +122,9 @@ export const StoryCard = memo(function StoryCard({ data, selected }: NodeProps<N
       {(isMedia && cover) || isMap ? (
         <div className="card-band card-band--caption flex h-8 items-center gap-1.5 pr-1.5 pl-2.5">
           <S.icon size={12} aria-hidden className="shrink-0 text-(--type-color)" />
-          <span className="min-w-0 flex-1 truncate text-xs text-fg">{n.title}</span>
+          <span className="min-w-0 flex-1 truncate text-xs text-fg" {...fullOnHover(n.title)}>
+            {n.title}
+          </span>
           {pin}
         </div>
       ) : (
@@ -136,18 +142,29 @@ export const StoryCard = memo(function StoryCard({ data, selected }: NodeProps<N
             {pin}
           </div>
           <div className="px-3 pt-1.5 pb-2.5">
-            <div className="font-serif text-[15px] leading-snug font-medium text-pretty text-fg">{n.title}</div>
+            {/* A title or summary past its limit (the checks report it) is cut off, in full on hover. */}
+            <div className="line-clamp-3 font-serif text-[15px] leading-snug font-medium text-pretty wrap-anywhere text-fg" {...fullOnHover(n.title)}>
+              {n.title}
+            </div>
             {summary && (
-              <div data-card-summary className="mt-1 text-xs leading-[1.45] break-words text-fg-muted">
+              <div
+                data-card-summary
+                className={cn('mt-1 text-xs leading-[1.45] wrap-anywhere text-fg-muted', summary.length > SUMMARY_MAX && 'line-clamp-4')}
+                {...fullOnHover(summary)}
+              >
                 {summary}
               </div>
             )}
             {badges.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-1 text-2xs" data-card-badges>
                 {badges.map((b) => (
-                  <span key={b.key} className="tabular inline-flex h-5 max-w-full items-center gap-1 rounded bg-hover px-1.5 text-fg-muted">
-                    <span className="text-fg-subtle">{b.label}</span>
-                    <span className="truncate">{b.value}</span>
+                  <span
+                    key={b.key}
+                    title={`${b.label}: ${b.full}`}
+                    className="tabular inline-flex h-5 max-w-full items-center gap-1 rounded bg-hover px-1.5 text-fg-muted"
+                  >
+                    <span className="max-w-[50%] shrink-0 truncate text-fg-subtle">{b.label}</span>
+                    <span className="min-w-0 truncate">{b.value}</span>
                   </span>
                 ))}
               </div>
@@ -175,7 +192,7 @@ export const StoryCard = memo(function StoryCard({ data, selected }: NodeProps<N
             )}
             {!!data.refs?.length && (
               <div className="mt-2 flex flex-wrap gap-1">
-                {data.refs.map((r) => {
+                {data.refs.slice(0, REFS_SHOWN).map((r) => {
                   const T = types.of(r.nodeType)
                   return (
                     <button
@@ -194,6 +211,17 @@ export const StoryCard = memo(function StoryCard({ data, selected }: NodeProps<N
                     </button>
                   )
                 })}
+                {data.refs.length > REFS_SHOWN && (
+                  <span
+                    className="tabular inline-flex h-5 items-center rounded-full px-1.5 text-[10px] text-fg-subtle shadow-[inset_0_0_0_1px_var(--color-line)]"
+                    title={data.refs
+                      .slice(REFS_SHOWN)
+                      .map((r) => r.title)
+                      .join(', ')}
+                  >
+                    +{data.refs.length - REFS_SHOWN}
+                  </span>
+                )}
               </div>
             )}
           </div>

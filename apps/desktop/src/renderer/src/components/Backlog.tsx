@@ -6,9 +6,11 @@ import { api } from '../lib/api'
 import { useAction, useNodes } from '../lib/queries'
 import { useUI } from '../lib/store'
 import { useTypes, type TypeStyle } from '../lib/styles'
-import { Button, IconButton, Input, Kbd, Menu, MenuItem, MenuLabel, cn } from './ui'
+import { Button, IconButton, Input, Kbd, Menu, MenuItem, MenuLabel, MenuSub, cn } from './ui'
 import { PageHeader } from './views/ViewLayout'
 import { nodeLinkProps } from '../lib/nodeLink'
+import { openContextMenu } from './ContextMenu'
+import { NodeMenu } from './menus/NodeMenu'
 import { absolute, ago } from '../lib/time'
 import { matchesFilter } from '../lib/search'
 
@@ -210,6 +212,17 @@ const IdeaCard = memo(function IdeaCard({
     await remove.mutateAsync([[idea.id], false])
     toast(`Deleted “${idea.title}”`, { action: { label: 'Undo', onClick: () => undo.mutate([]) } })
   }
+  const menu = () => (
+    <NodeMenu id={idea.id} remove={() => void destroy()}>
+      <MenuSub label="Promote to" icon={ArrowUpRight}>
+        {promote.map((t) => (
+          <MenuItem key={t.id} icon={t.icon} color={t.color} onClick={() => update.mutate([idea.id, { type: t.id }])}>
+            {t.label}
+          </MenuItem>
+        ))}
+      </MenuSub>
+    </NodeMenu>
+  )
 
   return (
     <li
@@ -227,6 +240,7 @@ const IdeaCard = memo(function IdeaCard({
             type="button"
             aria-pressed={selected}
             {...nodeLinkProps(idea.id)}
+            onContextMenu={(e) => void openContextMenu(e, menu, { label: 'Idea actions', target: e.currentTarget.closest('li') })}
             className="block w-full text-left text-base leading-6 font-medium text-fg outline-none after:absolute after:inset-0 after:rounded-lg focus-visible:after:ring-2 focus-visible:after:ring-accent/70"
           >
             <span className="line-clamp-2 text-pretty break-words">{idea.title || 'Untitled idea'}</span>

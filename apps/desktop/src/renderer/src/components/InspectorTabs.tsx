@@ -1,9 +1,11 @@
 import { memo, useEffect, useMemo, useRef } from 'react'
-import { X } from 'lucide-react'
+import { PanelRightClose, Pin, X } from 'lucide-react'
 import { useNodes } from '../lib/queries'
 import { useUI } from '../lib/store'
 import { useTypes } from '../lib/styles'
-import { ContextMenu, MenuItem, MenuSeparator, cn } from './ui'
+import { MenuItem, cn } from './ui'
+import { contextMenu } from './ContextMenu'
+import { NodeMenu } from './menus/NodeMenu'
 
 /** Pinned nodes (middle-click a card) for flipping between e.g. several stat blocks; the viewed node shows as a preview tab. */
 export const InspectorTabs = memo(function InspectorTabs() {
@@ -46,10 +48,18 @@ export const InspectorTabs = memo(function InspectorTabs() {
         const on = node.id === active
         // Preview tab sits after every pinned tab.
         const at = pinned ? tabs.indexOf(node.id) : tabs.length
-        const menu = (
-          <>
-            {pinned ? <MenuItem onClick={() => closeTab(node.id)}>Close</MenuItem> : <MenuItem onClick={() => openTab(node.id)}>Keep open</MenuItem>}
-            <MenuItem disabled={tabs.length - (pinned ? 1 : 0) === 0} onClick={() => setTabs(pinned ? [node.id] : [], node.id)}>
+        const menu = () => (
+          <NodeMenu id={node.id}>
+            {pinned ? (
+              <MenuItem icon={X} onClick={() => closeTab(node.id)}>
+                Close
+              </MenuItem>
+            ) : (
+              <MenuItem icon={Pin} onClick={() => openTab(node.id)}>
+                Keep open
+              </MenuItem>
+            )}
+            <MenuItem icon={PanelRightClose} disabled={tabs.length - (pinned ? 1 : 0) === 0} onClick={() => setTabs(pinned ? [node.id] : [], node.id)}>
               Close others
             </MenuItem>
             <MenuItem disabled={at === 0} onClick={() => setTabs(tabs.slice(at), node.id)}>
@@ -58,51 +68,50 @@ export const InspectorTabs = memo(function InspectorTabs() {
             <MenuItem disabled={at >= tabs.length - 1} onClick={() => setTabs(tabs.slice(0, at + 1), node.id)}>
               Close tabs to the right
             </MenuItem>
-            <MenuSeparator />
             <MenuItem onClick={() => setTabs([])}>Close all</MenuItem>
-          </>
+          </NodeMenu>
         )
         return (
-          <ContextMenu key={node.id} menu={menu}>
-            <div
-              className={cn(
-                'group/tab flex h-7 max-w-44 shrink-0 items-center gap-1 rounded-t-md pr-1 pl-2 text-xs transition-colors duration-100',
-                on
-                  ? 'bg-panel text-fg shadow-[inset_1px_0_0_var(--color-line),inset_-1px_0_0_var(--color-line),inset_0_1px_0_var(--color-line)]'
-                  : 'text-fg-subtle hover:bg-hover hover:text-fg-muted',
-              )}
+          <div
+            key={node.id}
+            {...contextMenu(menu, { label: 'Tab actions' })}
+            className={cn(
+              'group/tab flex h-7 max-w-44 shrink-0 items-center gap-1 rounded-t-md pr-1 pl-2 text-xs transition-colors duration-100',
+              on
+                ? 'bg-panel text-fg shadow-[inset_1px_0_0_var(--color-line),inset_-1px_0_0_var(--color-line),inset_0_1px_0_var(--color-line)]'
+                : 'text-fg-subtle hover:bg-hover hover:text-fg-muted',
+            )}
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={on}
+              title={pinned ? node.title : `${node.title} (double-click to keep open)`}
+              className={cn('flex h-full min-w-0 items-center gap-1.5 outline-none focus-visible:underline', !pinned && 'italic')}
+              onClick={() => select({ kind: 'node', id: node.id })}
+              onDoubleClick={() => openTab(node.id)}
+              onAuxClick={(e) => e.button === 1 && pinned && closeTab(node.id)}
             >
+              <S.icon size={12} aria-hidden style={{ color: S.color }} className="shrink-0" />
+              <span className="truncate">{node.title}</span>
+            </button>
+            {pinned ? (
               <button
                 type="button"
-                role="tab"
-                aria-selected={on}
-                title={pinned ? node.title : `${node.title} (double-click to keep open)`}
-                className={cn('flex h-full min-w-0 items-center gap-1.5 outline-none focus-visible:underline', !pinned && 'italic')}
-                onClick={() => select({ kind: 'node', id: node.id })}
-                onDoubleClick={() => openTab(node.id)}
-                onAuxClick={(e) => e.button === 1 && pinned && closeTab(node.id)}
+                aria-label={`Close ${node.title}`}
+                title={`Close ${node.title}`}
+                className={cn(
+                  'flex size-4 shrink-0 items-center justify-center rounded-[3px] text-fg-faint outline-none hover:bg-hover hover:text-fg focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-accent/70',
+                  on ? 'opacity-100' : 'opacity-0 group-hover/tab:opacity-100',
+                )}
+                onClick={() => closeTab(node.id)}
               >
-                <S.icon size={12} aria-hidden style={{ color: S.color }} className="shrink-0" />
-                <span className="truncate">{node.title}</span>
+                <X size={11} aria-hidden />
               </button>
-              {pinned ? (
-                <button
-                  type="button"
-                  aria-label={`Close ${node.title}`}
-                  title={`Close ${node.title}`}
-                  className={cn(
-                    'flex size-4 shrink-0 items-center justify-center rounded-[3px] text-fg-faint outline-none hover:bg-hover hover:text-fg focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-accent/70',
-                    on ? 'opacity-100' : 'opacity-0 group-hover/tab:opacity-100',
-                  )}
-                  onClick={() => closeTab(node.id)}
-                >
-                  <X size={11} aria-hidden />
-                </button>
-              ) : (
-                <span className="w-1" />
-              )}
-            </div>
-          </ContextMenu>
+            ) : (
+              <span className="w-1" />
+            )}
+          </div>
         )
       })}
     </div>

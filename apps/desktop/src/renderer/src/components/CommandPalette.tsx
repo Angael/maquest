@@ -104,7 +104,7 @@ function Palette() {
   const recent = useNavigation((s) => s.recent)
   const commands = useCommands()
   const create = useCreateFromPalette()
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useState(() => useUI.getState().paletteQuery)
   // The highlighted item, remembered only for the query it was picked under.
   const [picked, setPicked] = useState({ search: '', value: '' })
 
@@ -370,12 +370,13 @@ function useCommands(): PaletteCommand[] {
   const root = current?.root
   const { data: isRepo } = useQuery({ queryKey: ['app', 'isGitRepo', root], queryFn: () => api.isGitRepo(), enabled: !!root })
   const { data: nodes } = useNodes()
+  // The same setting as the native text menu's "Check spelling while typing".
+  const { data: spellcheck = true, refetch: refetchSpellcheck } = useQuery({ queryKey: ['app', 'spellcheck'], queryFn: () => api.spellcheck() })
   const state = useUI(
     useShallow((s) => ({
       sidebarOpen: s.sidebarOpen,
       liveNotesOpen: s.liveNotesOpen,
       minimap: s.minimap,
-      spellcheck: s.spellcheck,
       selected: s.selection?.kind === 'node' ? s.selection.id : null,
     })),
   )
@@ -451,10 +452,10 @@ function useCommands(): PaletteCommand[] {
     },
     {
       id: 'spellcheck',
-      label: state.spellcheck ? 'Turn spellcheck off' : 'Turn spellcheck on',
+      label: spellcheck ? 'Turn spellcheck off' : 'Turn spellcheck on',
       icon: SpellCheck,
       keywords: ['spelling', 'dictionary'],
-      run: () => ui.setSpellcheck(!state.spellcheck),
+      run: () => void api.setSpellcheck(!spellcheck).then(() => refetchSpellcheck()),
     },
     { id: 'shortcuts', label: 'Keyboard shortcuts', icon: Keyboard, shortcut: `${MOD}+/`, keywords: ['keys', 'help'], run: () => ui.setShortcutsOpen(true) },
     { id: 'recent', label: 'Clear recent nodes', icon: History, keywords: ['history'], run: () => useNavigation.setState({ recent: [] }) },

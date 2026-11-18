@@ -65,13 +65,12 @@ type UI = {
   setSidebarWidth: (width: number) => void
   /** Command palette (Ctrl+K) open. Not persisted. */
   paletteOpen: boolean
-  setPaletteOpen: (open: boolean) => void
+  /** Text the palette opens with (e.g. "Search project for …" in the text menu). Not persisted. */
+  paletteQuery: string
+  setPaletteOpen: (open: boolean, query?: string) => void
   /** Keyboard shortcuts reference (Ctrl+/) open. Not persisted. */
   shortcutsOpen: boolean
   setShortcutsOpen: (open: boolean) => void
-  /** Spellchecking in documents and notes. */
-  spellcheck: boolean
-  setSpellcheck: (on: boolean) => void
   /** Collapsed sidebar sections (`section:<type>`) and outline rows (node ids). */
   collapsed: string[]
   setCollapsed: (key: string, collapsed: boolean) => void
@@ -145,10 +144,9 @@ export const useUI = create<UI>()(
       sidebarOpen: true,
       sidebarWidth: 248,
       paletteOpen: false,
+      paletteQuery: '',
       shortcutsOpen: false,
       setShortcutsOpen: (shortcutsOpen) => set({ shortcutsOpen }),
-      spellcheck: true,
-      setSpellcheck: (spellcheck) => set({ spellcheck }),
       collapsed: [],
       setCollapsed: (key, collapsed) =>
         set((s) => (s.collapsed.includes(key) === collapsed ? {} : { collapsed: collapsed ? [...s.collapsed, key] : s.collapsed.filter((k) => k !== key) })),
@@ -180,7 +178,7 @@ export const useUI = create<UI>()(
       setLiveNotesSize: (liveNotesSize) => set({ liveNotesSize }),
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
       setSidebarWidth: (sidebarWidth) => set({ sidebarWidth }),
-      setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
+      setPaletteOpen: (paletteOpen, query = '') => set({ paletteOpen, paletteQuery: query }),
       setView: (view) =>
         set((s) =>
           s.view === view
@@ -242,7 +240,6 @@ export const useUI = create<UI>()(
           sidebarOpen: saved.sidebarOpen ?? true,
           sidebarWidth: saved.sidebarWidth ?? 248,
           minimap: saved.minimap ?? false,
-          spellcheck: saved.spellcheck ?? true,
           collapsed: saved.collapsed ?? [],
         }
       },
@@ -258,10 +255,8 @@ export const useUI = create<UI>()(
         sidebarOpen,
         sidebarWidth,
         minimap,
-        spellcheck,
         collapsed,
       }) => ({
-        spellcheck,
         collapsed,
         liveNotesOpen,
         liveNotesSize,

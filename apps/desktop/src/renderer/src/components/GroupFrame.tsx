@@ -1,8 +1,10 @@
-import { memo, useState } from 'react'
+import { memo, useEffect, useState } from 'react'
+import { create } from 'zustand'
 import { NodeResizeControl, NodeToolbar, Position, ResizeControlVariant, type ControlPosition, type Node, type NodeProps } from '@xyflow/react'
 import { Ungroup } from 'lucide-react'
 import { GROUP_COLORS, GROUP_HEADER, type Group, type GroupColor, type Rect } from '@maquest/core/schema'
 import { GROUP_STYLE } from '../lib/styles'
+import { leaveFocus } from './ContextMenu'
 import { IconButton, Separator, cn, floating } from './ui'
 
 export type GroupData = {
@@ -17,6 +19,13 @@ export type GroupData = {
   resized: (rect: Rect) => void
 }
 export type GroupFlowNode = Node<GroupData, 'frame'>
+
+/** The group whose title is being renamed from its context menu. */
+const useRenaming = create<{ id: string | null }>(() => ({ id: null }))
+export const renameGroup = (id: string) => {
+  leaveFocus()
+  useRenaming.setState({ id })
+}
 
 const LINES: ControlPosition[] = ['top', 'right', 'bottom', 'left']
 const CORNERS: ControlPosition[] = ['top-left', 'top-right', 'bottom-left', 'bottom-right']
@@ -37,6 +46,13 @@ export const GroupFrame = memo(function GroupFrame({ data, selected }: NodeProps
   const { group } = data
   const style = GROUP_STYLE[group.color]
   const [title, setTitle] = useState<string | null>(null)
+  const renaming = useRenaming((s) => s.id === group.id)
+  useEffect(() => {
+    if (!renaming) return
+    // Clearing the request re-runs this effect, so the frame is not cancelled on cleanup.
+    useRenaming.setState({ id: null })
+    requestAnimationFrame(() => setTitle(group.title))
+  }, [renaming, group.title])
   const commit = () => {
     if (title?.trim() && title.trim() !== group.title) data.rename(title.trim())
     setTitle(null)

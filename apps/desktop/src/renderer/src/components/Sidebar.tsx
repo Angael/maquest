@@ -1,13 +1,15 @@
 import { createContext, memo, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ChevronRight, Plus } from 'lucide-react'
+import { ChevronRight, ChevronsDownUp, ChevronsUpDown, Palette, Plus } from 'lucide-react'
+import { create as createStore } from 'zustand'
 import type { NodeType, OutlineNode, Status, StoryNode } from '@maquest/core/schema'
 import { NODE_DRAG_TYPE, useCreateNode, useRevealNode } from '../lib/actions'
 import { api } from '../lib/api'
 import { queryClient, useAction, useNodes, useOutline } from '../lib/queries'
 import { useUI } from '../lib/store'
 import { useTypes, type TypeStyle } from '../lib/styles'
-import { ContextMenu, IconButton, cn } from './ui'
-import { NodeMenuItems } from './NodeMenu'
+import { IconButton, MenuItem, MenuSeparator, cn } from './ui'
+import { contextMenu, leaveFocus } from './ContextMenu'
+import { NodeMenu, act } from './menus/NodeMenu'
 import { STATUS_LABEL, StatusDot } from './inspector/properties'
 import { openNodeTab, preventMiddleDown } from '../lib/nodeLink'
 
@@ -29,6 +31,44 @@ type Actions = {
 /** Stable callbacks shared by every row, so rows don't each subscribe to React Flow and the queries. */
 const ActionsContext = createContext<Actions | null>(null)
 const useActions = () => useContext(ActionsContext)!
+
+/** The row being renamed in place (from its menu or F2). */
+const useRenaming = createStore<{ id: string | null }>(() => ({ id: null }))
+const startRename = (id: string) => {
+  leaveFocus()
+  useRenaming.setState({ id })
+}
+const stopRename = () => useRenaming.setState({ id: null })
+
+/** Title field of a row being renamed: Enter or leaving saves, Escape cancels. */
+function RenameField({ id, title }: { id: string; title: string }) {
+  const done = useRef(false)
+  const finish = (value: string | null) => {
+    if (done.current) return
+    done.current = true
+    stopRename()
+    const next = value?.trim()
+    if (next && next !== title) void act(api.updateNode(id, { title: next }))
+    // Back to the row, so the keyboard keeps its place in the tree.
+    requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-row="${CSS.escape(id)}"]`)?.focus())
+  }
+  return (
+    <input
+      autoFocus
+      aria-label="Name"
+      defaultValue={title}
+      onFocus={(e) => e.currentTarget.select()}
+      onClick={(e) => e.stopPropagation()}
+      onBlur={(e) => finish(e.currentTarget.value)}
+      onKeyDown={(e) => {
+        e.stopPropagation()
+        if (e.key === 'Enter') finish(e.currentTarget.value)
+        else if (e.key === 'Escape') finish(null)
+      }}
+      className="h-6 min-w-0 flex-1 rounded-[4px] bg-surface px-1.5 text-sm text-fg shadow-[inset_0_0_0_1px_var(--color-accent)] outline-none"
+    />
+  )
+}
 
 /** Moves keyboard focus to the previous/next visible row. */
 function focusSibling(from: HTMLElement, step: 1 | -1) {
@@ -65,107 +105,122 @@ const Row = memo(function Row({
   const child = CHILD[type]
   const Icon = style.icon
   const canDrop = () => reorderable && draggedRow && draggedRow.type === type && draggedRow.id !== id
+  const renaming = useRenaming((s) => s.id === id)
+  const menu = () => (
+    <NodeMenu id={id} open={() => actions.focus(id)} rename={() => startRename(id)}>
+      {child && (
+        <MenuItem icon={Plus} onClick={() => actions.create(child, id)}>
+          New {child}
+        </MenuItem>
+      )}
+      {onToggle && (
+        <MenuItem icon={open ? ChevronsDownUp : ChevronsUpDown} onClick={onToggle}>
+          {open ? 'Collapse' : 'Expand'}
+        </MenuItem>
+      )}
+    </NodeMenu>
+  )
   return (
-    <ContextMenu menu={<NodeMenuItems id={id} openTab onAddChild={actions.create} />}>
-      <div
-        role="button"
-        tabIndex={0}
-        aria-label={title}
-        aria-pressed={selected}
-        aria-expanded={onToggle ? open : undefined}
-        className={cn(
-          'group/row relative flex h-7 cursor-default items-center gap-1.5 rounded-md pr-1 text-sm outline-none select-none focus-visible:shadow-[inset_0_0_0_1px_var(--color-accent)] focus-visible:outline-none!',
-          selected ? 'bg-active text-fg' : 'text-fg-muted hover:bg-hover hover:text-fg',
-          dropAt === 'before' && 'shadow-[inset_0_2px_0_var(--color-accent)]',
-          dropAt === 'after' && 'shadow-[inset_0_-2px_0_var(--color-accent)]',
-        )}
-        data-row={id}
-        style={{ paddingLeft: PAD + depth * INDENT }}
-        draggable
-        onDragStart={(event) => {
-          event.dataTransfer.setData(NODE_DRAG_TYPE, id)
-          event.dataTransfer.effectAllowed = 'copyMove'
-          draggedRow = { id, type }
-        }}
-        onDragEnd={() => {
-          draggedRow = null
-        }}
-        onDragOver={(event) => {
-          if (!canDrop()) return
-          event.preventDefault()
-          event.dataTransfer.dropEffect = 'move'
-          const rect = event.currentTarget.getBoundingClientRect()
-          setDropAt(event.clientY > rect.top + rect.height / 2 ? 'after' : 'before')
-        }}
-        onDragLeave={() => setDropAt(null)}
-        onDrop={(event) => {
-          setDropAt(null)
-          if (!canDrop() || !draggedRow) return
-          event.preventDefault()
-          const rect = event.currentTarget.getBoundingClientRect()
-          actions.move(type, id, draggedRow.id, event.clientY > rect.top + rect.height / 2)
-          draggedRow = null
-        }}
-        onClick={(event) => {
-          event.currentTarget.focus()
-          actions.focus(id)
-        }}
-        onMouseDown={preventMiddleDown}
-        onAuxClick={(event) => {
-          if (event.button !== 1) return
-          event.preventDefault()
-          if (type === 'map') useUI.getState().openMap(id, true)
-          else openNodeTab(id)
-        }}
-        onKeyDown={(event) => {
-          if (event.target !== event.currentTarget) return
-          if (event.key === 'Enter' || event.key === ' ') actions.focus(id)
-          else if (event.key === 'ArrowDown') focusSibling(event.currentTarget, 1)
-          else if (event.key === 'ArrowUp') focusSibling(event.currentTarget, -1)
-          else if (event.key === 'ArrowRight' && onToggle && !open) onToggle()
-          else if (event.key === 'ArrowLeft' && onToggle && open) onToggle()
-          else return
-          event.preventDefault()
+    <div
+      role="button"
+      tabIndex={0}
+      aria-label={title}
+      aria-pressed={selected}
+      aria-expanded={onToggle ? open : undefined}
+      className={cn(
+        'group/row relative flex h-7 cursor-default items-center gap-1.5 rounded-md pr-1 text-sm outline-none select-none focus-visible:shadow-[inset_0_0_0_1px_var(--color-accent)] focus-visible:outline-none!',
+        selected ? 'bg-active text-fg' : 'text-fg-muted hover:bg-hover hover:text-fg',
+        dropAt === 'before' && 'shadow-[inset_0_2px_0_var(--color-accent)]',
+        dropAt === 'after' && 'shadow-[inset_0_-2px_0_var(--color-accent)]',
+      )}
+      data-row={id}
+      style={{ paddingLeft: PAD + depth * INDENT }}
+      draggable={!renaming}
+      {...contextMenu(menu, { label: `${title} actions` })}
+      onDragStart={(event) => {
+        event.dataTransfer.setData(NODE_DRAG_TYPE, id)
+        event.dataTransfer.effectAllowed = 'copyMove'
+        draggedRow = { id, type }
+      }}
+      onDragEnd={() => {
+        draggedRow = null
+      }}
+      onDragOver={(event) => {
+        if (!canDrop()) return
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'move'
+        const rect = event.currentTarget.getBoundingClientRect()
+        setDropAt(event.clientY > rect.top + rect.height / 2 ? 'after' : 'before')
+      }}
+      onDragLeave={() => setDropAt(null)}
+      onDrop={(event) => {
+        setDropAt(null)
+        if (!canDrop() || !draggedRow) return
+        event.preventDefault()
+        const rect = event.currentTarget.getBoundingClientRect()
+        actions.move(type, id, draggedRow.id, event.clientY > rect.top + rect.height / 2)
+        draggedRow = null
+      }}
+      onClick={(event) => {
+        event.currentTarget.focus()
+        actions.focus(id)
+      }}
+      onMouseDown={preventMiddleDown}
+      onAuxClick={(event) => {
+        if (event.button !== 1) return
+        event.preventDefault()
+        if (type === 'map') useUI.getState().openMap(id, true)
+        else openNodeTab(id)
+      }}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return
+        if (event.key === 'Enter' || event.key === ' ') actions.focus(id)
+        else if (event.key === 'F2') startRename(id)
+        else if (event.key === 'ArrowDown') focusSibling(event.currentTarget, 1)
+        else if (event.key === 'ArrowUp') focusSibling(event.currentTarget, -1)
+        else if (event.key === 'ArrowRight' && onToggle && !open) onToggle()
+        else if (event.key === 'ArrowLeft' && onToggle && open) onToggle()
+        else return
+        event.preventDefault()
+      }}
+    >
+      {/* Indent guides: one hairline under each ancestor's chevron. */}
+      {Array.from({ length: depth }, (_, level) => (
+        <span key={level} aria-hidden className="absolute inset-y-0 w-px bg-line" style={{ left: PAD + level * INDENT + 7.5 }} />
+      ))}
+      <span
+        aria-hidden
+        className="flex size-4 shrink-0 items-center justify-center rounded-[4px] text-fg-faint hover:text-fg"
+        onClick={(e) => {
+          if (!onToggle) return
+          e.stopPropagation()
+          onToggle()
         }}
       >
-        {/* Indent guides: one hairline under each ancestor's chevron. */}
-        {Array.from({ length: depth }, (_, level) => (
-          <span key={level} aria-hidden className="absolute inset-y-0 w-px bg-line" style={{ left: PAD + level * INDENT + 7.5 }} />
-        ))}
-        <span
-          aria-hidden
-          className="flex size-4 shrink-0 items-center justify-center rounded-[4px] text-fg-faint hover:text-fg"
-          onClick={(e) => {
-            if (!onToggle) return
-            e.stopPropagation()
-            onToggle()
-          }}
-        >
-          {onToggle && <ChevronRight size={12} className={cn('transition-transform duration-100', open && 'rotate-90')} />}
+        {onToggle && <ChevronRight size={12} className={cn('transition-transform duration-100', open && 'rotate-90')} />}
+      </span>
+      <Icon size={14} style={{ color: style.color }} className="shrink-0" aria-hidden />
+      {renaming ? <RenameField id={id} title={title} /> : <span className="min-w-0 flex-1 truncate">{title}</span>}
+      {status && !renaming && (
+        <span title={STATUS_LABEL[status]} className="flex size-4 shrink-0 items-center justify-center">
+          <StatusDot status={status} />
+          <span className="sr-only">{STATUS_LABEL[status]}</span>
         </span>
-        <Icon size={14} style={{ color: style.color }} className="shrink-0" aria-hidden />
-        <span className="min-w-0 flex-1 truncate">{title}</span>
-        {status && (
-          <span title={STATUS_LABEL[status]} className="flex size-4 shrink-0 items-center justify-center">
-            <StatusDot status={status} />
-            <span className="sr-only">{STATUS_LABEL[status]}</span>
-          </span>
-        )}
-        {child && (
-          <IconButton
-            icon={Plus}
-            size="sm"
-            label={`Add ${child}`}
-            tooltipSide="right"
-            className="size-5 opacity-0 group-focus-within/row:opacity-100 group-hover/row:opacity-100 focus-visible:opacity-100"
-            onClick={(e) => {
-              e.stopPropagation()
-              actions.create(child, id)
-            }}
-          />
-        )}
-      </div>
-    </ContextMenu>
+      )}
+      {child && !renaming && (
+        <IconButton
+          icon={Plus}
+          size="sm"
+          label={`Add ${child}`}
+          tooltipSide="right"
+          className="size-5 opacity-0 group-focus-within/row:opacity-100 group-hover/row:opacity-100 focus-visible:opacity-100"
+          onClick={(e) => {
+            e.stopPropagation()
+            actions.create(child, id)
+          }}
+        />
+      )}
+    </div>
   )
 })
 
@@ -198,9 +253,29 @@ function Section({ title, type, count, children }: { title: string; type: NodeTy
   const open = useUI((s) => !s.collapsed.includes(key))
   const setOpen = (value: boolean) => useUI.getState().setCollapsed(key, !value)
   const contentId = useId()
+  const menu = () => (
+    <>
+      <MenuItem
+        icon={Plus}
+        onClick={() => {
+          setOpen(true)
+          actions.create(type)
+        }}
+      >
+        New {type}
+      </MenuItem>
+      <MenuItem icon={open ? ChevronsDownUp : ChevronsUpDown} onClick={() => setOpen(!open)}>
+        {open ? 'Collapse section' : 'Expand section'}
+      </MenuItem>
+      <MenuSeparator />
+      <MenuItem icon={Palette} onClick={() => useUI.getState().setView('types')}>
+        Customize types…
+      </MenuItem>
+    </>
+  )
   return (
     <section className="mb-2" aria-label={title}>
-      <div className="group/section flex h-7 items-center pr-1">
+      <div className="group/section flex h-7 items-center pr-1" {...contextMenu(menu, { label: `${title} actions` })}>
         <button
           type="button"
           aria-expanded={open}

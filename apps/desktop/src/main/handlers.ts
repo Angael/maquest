@@ -1,7 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { app, BrowserWindow, dialog, shell } from 'electron'
+import { app, BrowserWindow, clipboard, ClipboardItem, dialog, nativeImage, session, shell } from 'electron'
+import { setSpellcheck } from './contextMenu'
 import chokidar, { type FSWatcher } from 'chokidar'
 import {
   Project,
@@ -157,6 +158,20 @@ export const handlers = {
   showPath: (abs: string) => shell.showItemInFolder(abs),
   /** Opens a project file (e.g. a node's markdown) in the OS default app. Resolves to an error message, or '' on success. */
   openFile: (rel: string) => shell.openPath(p().resolve(rel)),
+  /** Opens a recent project's folder in the file manager (no project needs to be open). */
+  showFolder: (root: string) => {
+    if (!Project.isProject(root)) throw new Error(`Not a Maquest project: ${root}`)
+    void shell.openPath(root)
+  },
+  /** Puts a project media image on the clipboard as an image. */
+  copyMedia: async (rel: string) => {
+    const image = nativeImage.createFromPath(p().resolve(rel))
+    if (image.isEmpty()) throw new Error(`Not an image: ${rel}`)
+    await clipboard.write([new ClipboardItem({ 'image/png': new Blob([new Uint8Array(image.toPNG())], { type: 'image/png' }) })])
+  },
+  /** "Check spelling while typing" (shared with the native text menu's checkbox; saved in userData/settings.json). */
+  spellcheck: () => session.defaultSession.isSpellCheckerEnabled(),
+  setSpellcheck: (on: boolean) => setSpellcheck(session.defaultSession, on),
   mcpLaunch: () => mcpLaunch(),
 
   // ---- project ----

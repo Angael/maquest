@@ -63,6 +63,27 @@ the type icon and small accents only, never for large fills or text bodies.
 - Popovers for quick settings/pickers, menus for actions, the inspector for editing. Dialogs only for blocking,
   destructive confirmations.
 
+## Any data fits (`components/fit.tsx`)
+
+Values come from agents and can be any length. Every view of user or agent data must look tidy with absurd input:
+a 300-character word, 2,000 characters of text, 500 items, `1.2e29` or `0.30000000000000004`. Nothing pushes a panel
+sideways, and nothing is hidden without a way to see it.
+
+- Wrap prose with `wrap-anywhere` (not `break-words`: only `anywhere` lets flex and grid items shrink). Give flex and
+  grid children that hold text `min-w-0`.
+- Chips, labels and one-line values: `truncate` plus `fullOnHover(text)` (shows the full text as a tooltip only when cut
+  off). Chips also cap their width (`max-w-[min(100%,20rem)]`); a value next to a label is `shrink-0`.
+- Multi-line text: `<Clamp lines={n}>` (ellipsis, "Show more" only when it overflows); markdown: `<Clamp rich>`.
+- Lists: `useLimit(items, n)` shows the first `n` with "Show all N" (`chip` for "+N more" in chip rows, `page` to add a
+  page at a time for heavy rows). Card-sized surfaces cap with a "+N" chip and the rest in its title.
+- Numbers: show `formatNumber` / `numberText` / `displayText` from `@maquest/core/sheet` (2 decimals, `1.2M`, `1.2e29`),
+  never `String(n)`; size big numbers with `numberSize`. Keep the exact value for hover.
+- Drawings with a fixed number of parts (pips, clock segments, radar axes) fall back to a bar past what they can draw.
+- Grid label columns: `fit-content(40%)`, never `max-content`, so one long label can't squeeze the values.
+- Scroll areas that should scroll sideways (tables, tab strips) are marked `data-allow-scroll`; `tests/e2e/hardcore.spec.ts`
+  fails on anything else that sticks out. Add new data views to it.
+- The checks report the same values (`field-oversized`, `summary-length`): the UI copes, the agent is told to fix them.
+
 ## Motion
 
 - Tokens: `--ease-out` (enter/exit), `--ease-in-out` (on-screen movement), `--ease-drawer` (panels). Durations:

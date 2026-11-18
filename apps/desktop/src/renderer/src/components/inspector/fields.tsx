@@ -3,6 +3,7 @@ import { Select as BaseSelect } from '@base-ui/react/select'
 import { Autocomplete } from '@base-ui/react/autocomplete'
 import { Check, ChevronDown, X } from 'lucide-react'
 import { cn, menuItem, popupSurface } from '../ui'
+import { fullOnHover } from '../fit'
 
 /*
  * Inspector property-list building blocks (Linear/Notion style): a fixed label column and value controls that read as
@@ -115,7 +116,7 @@ export const GhostText = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<
         if (e.key === 'Enter') e.preventDefault()
         onKeyDown?.(e)
       }}
-      className={cn(ghost, 'block resize-none py-1 leading-5 [field-sizing:content]', className)}
+      className={cn(ghost, 'block max-h-48 resize-none overflow-y-auto py-1 leading-5 [field-sizing:content]', className)}
     />
   )
 })
@@ -126,7 +127,9 @@ export const oneLine = (s: string) => s.replaceAll(/\s*\n\s*/g, ' ')
 export function Chip({ children, onRemove, removeLabel, className }: { children: ReactNode; onRemove?: () => void; removeLabel?: string; className?: string }) {
   return (
     <span className={cn('inline-flex h-5 max-w-full items-center rounded bg-active text-xs text-fg-muted', onRemove ? 'pr-0.5 pl-1.5' : 'px-1.5', className)}>
-      <span className="min-w-0 truncate">{children}</span>
+      <span className="min-w-0 truncate" {...(typeof children === 'string' && fullOnHover(children))}>
+        {children}
+      </span>
       {onRemove && (
         <button
           type="button"
