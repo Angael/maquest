@@ -111,10 +111,7 @@ export function Types() {
                       <MenuItem icon={Pencil} onClick={() => setActive(x.id)}>
                         Edit
                       </MenuItem>
-                      <MenuCheckboxItem
-                        checked={!hidden}
-                        onCheckedChange={() => useUI.getState().toggleNode(x.id)}
-                      >
+                      <MenuCheckboxItem checked={!hidden} onCheckedChange={() => useUI.getState().toggleNode(x.id)}>
                         Show on canvas
                       </MenuCheckboxItem>
                       <MenuSeparator />

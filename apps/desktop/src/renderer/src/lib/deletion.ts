@@ -11,7 +11,9 @@ export const BEFORE_DELETE = 'maquest:before-delete'
 export function isEditingTarget(target: EventTarget | null) {
   return (
     target instanceof Element &&
-    !!target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), .cm-editor, [role="menu"], [role="dialog"], [role="alertdialog"]')
+    !!target.closest(
+      'input, textarea, select, [contenteditable]:not([contenteditable="false"]), .cm-editor, [role="menu"], [role="dialog"], [role="alertdialog"]',
+    )
   )
 }
 

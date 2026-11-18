@@ -68,19 +68,18 @@ export function attachContextMenu(win: BrowserWindow) {
           return arg && shell.showItemInFolder(mediaPath(mediaRel(arg)))
       }
     }
-    const template = items.map(
-      (item: EditItem): MenuItemConstructorOptions =>
-        item.type === 'separator'
-          ? { type: 'separator' }
-          : item.type === 'checkbox'
-            ? { type: 'checkbox', label: item.label, checked: item.checked, click: () => run(item.action) }
-            : {
-                label: item.label,
-                enabled: item.enabled ?? true,
-                accelerator: item.accelerator,
-                registerAccelerator: false,
-                click: () => run(item.action, item.arg),
-              },
+    const template = items.map((item: EditItem): MenuItemConstructorOptions =>
+      item.type === 'separator'
+        ? { type: 'separator' }
+        : item.type === 'checkbox'
+          ? { type: 'checkbox', label: item.label, checked: item.checked, click: () => run(item.action) }
+          : {
+              label: item.label,
+              enabled: item.enabled ?? true,
+              accelerator: item.accelerator,
+              registerAccelerator: false,
+              click: () => run(item.action, item.arg),
+            },
     )
     // Keyboard-opened menus (Menu key, Shift+F10) appear at the caret; mouse menus at the pointer.
     const at = params.menuSourceType === 'keyboard' ? { x: params.x, y: params.y } : {}

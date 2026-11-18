@@ -175,7 +175,11 @@ export function StartScreen() {
               </h2>
               <ul className="space-y-px">
                 {recent.map((r) => (
-                  <li key={r.root} {...contextMenu(() => recentItems(r.root, true), { label: `${r.config.name} actions` })} className="group relative flex items-center rounded-lg focus-within:bg-hover hover:bg-hover">
+                  <li
+                    key={r.root}
+                    {...contextMenu(() => recentItems(r.root, true), { label: `${r.config.name} actions` })}
+                    className="group relative flex items-center rounded-lg focus-within:bg-hover hover:bg-hover"
+                  >
                     <button
                       type="button"
                       disabled={busy}

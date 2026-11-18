@@ -151,7 +151,8 @@ function MapCard({ node }: { node: StoryNode }) {
       onKeyDown={(e) => {
         if (e.key === 'F2' && !renaming && !(e.target instanceof HTMLInputElement)) setRenaming(true)
       }}
-      className="group relative flex flex-col overflow-hidden rounded-xl bg-surface shadow-[inset_0_0_0_1px_var(--color-line)] transition-shadow duration-100 hover:shadow-[inset_0_0_0_1px_var(--color-line-strong)]">
+      className="group relative flex flex-col overflow-hidden rounded-xl bg-surface shadow-[inset_0_0_0_1px_var(--color-line)] transition-shadow duration-100 hover:shadow-[inset_0_0_0_1px_var(--color-line-strong)]"
+    >
       <button
         type="button"
         aria-label={`Open ${node.title}`}
@@ -193,11 +194,7 @@ function MapCard({ node }: { node: StoryNode }) {
             </>
           )}
         </div>
-        <IconButton
-          icon={Play}
-          label="Play: open as the players see it (fog covers what they have not seen)"
-          onClick={play}
-        />
+        <IconButton icon={Play} label="Play: open as the players see it (fog covers what they have not seen)" onClick={play} />
         <Menu align="end" trigger={<IconButton icon={MoreHorizontal} label={`More actions for ${node.title}`} />}>
           {items()}
         </Menu>

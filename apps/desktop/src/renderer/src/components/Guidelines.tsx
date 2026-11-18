@@ -97,9 +97,7 @@ export function Guidelines() {
       ))}
     >
       {g && <GuidelineEditor key={g.id} g={g} kind={kind} />}
-      {confirming && (
-        <RemoveDialog g={confirming} open onOpenChange={(open) => !open && setConfirming(null)} onConfirm={() => reset.mutate([confirming.id])} />
-      )}
+      {confirming && <RemoveDialog g={confirming} open onOpenChange={(open) => !open && setConfirming(null)} onConfirm={() => reset.mutate([confirming.id])} />}
     </TwoPane>
   )
 }

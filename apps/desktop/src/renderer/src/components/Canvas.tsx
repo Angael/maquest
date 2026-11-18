@@ -307,13 +307,7 @@ export function Canvas() {
   )
   useEffect(() => {
     const handle = (event: KeyboardEvent) => {
-      if (
-        useUI.getState().view !== 'canvas' ||
-        isEditing(event.target) ||
-        !(event.ctrlKey || event.metaKey) ||
-        event.altKey
-      )
-        return
+      if (useUI.getState().view !== 'canvas' || isEditing(event.target) || !(event.ctrlKey || event.metaKey) || event.altKey) return
       const key = event.key.toLowerCase()
       if (key === 'a' && !event.shiftKey) {
         event.preventDefault()
@@ -471,7 +465,7 @@ export function Canvas() {
       }
       return next
     })
-  }, [])
+  }, [setLocal])
   const saveLayout = useCallback(
     async (...args: Parameters<typeof api.setLayout>) => {
       saving.current++

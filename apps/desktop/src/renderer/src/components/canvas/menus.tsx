@@ -21,7 +21,17 @@ import {
   Unlink,
   type LucideIcon,
 } from 'lucide-react'
-import { EDGE_TYPES, GROUP_COLORS, onBoard, type Board, type EdgeType, type Group as GroupT, type GroupColor, type NodeType, type StoryNode } from '@maquest/core/schema'
+import {
+  EDGE_TYPES,
+  GROUP_COLORS,
+  onBoard,
+  type Board,
+  type EdgeType,
+  type Group as GroupT,
+  type GroupColor,
+  type NodeType,
+  type StoryNode,
+} from '@maquest/core/schema'
 import { api } from '../../lib/api'
 import { currentBoardId, useGraph, useNodes } from '../../lib/queries'
 import { useUI } from '../../lib/store'
@@ -170,12 +180,13 @@ export function CardMenu({ ids, actions }: { ids: string[]; actions: CardActions
   )
 }
 
+const go = (nodeId: string) => useUI.getState().focusNode(nodeId, currentBoardId())
+
 /** Right-click menu of a connection line (or its label). Containment lines only offer detaching the child. */
 export function EdgeMenu({ id, select }: { id: string; select: () => void }) {
   const { data: graph } = useGraph()
   const { data: nodes } = useNodes()
   const title = (nodeId: string) => nodes?.find((n) => n.id === nodeId)?.title ?? nodeId
-  const go = (nodeId: string) => useUI.getState().focusNode(nodeId, currentBoardId())
   if (id.startsWith('contains:')) {
     const child = id.slice('contains:'.length)
     const parent = nodes?.find((n) => n.id === child)?.parent

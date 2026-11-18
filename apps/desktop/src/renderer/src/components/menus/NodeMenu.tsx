@@ -60,7 +60,11 @@ export function renameInInspector(id: string) {
 }
 
 export async function duplicateNode(node: StoryNode) {
-  const copies = await act(node.type === 'map' ? api.duplicateMap(node.id, `${node.title} copy`).then((n) => [n.id]) : api.duplicateNodes([node.id], { x: 40, y: 40 }, currentBoardId()))
+  const copies = await act(
+    node.type === 'map'
+      ? api.duplicateMap(node.id, `${node.title} copy`).then((n) => [n.id])
+      : api.duplicateNodes([node.id], { x: 40, y: 40 }, currentBoardId()),
+  )
   await queryClient.refetchQueries({ queryKey: ['nodes'] })
   if (copies?.[0] && node.type !== 'map') useUI.getState().select({ kind: 'node', id: copies[0] })
 }

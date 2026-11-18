@@ -175,6 +175,8 @@ function ViewTabs() {
 }
 
 /** One tab per open map, right after Maps; middle click or the cross closes it. */
+const closeMaps = (ids: string[]) => ids.forEach((m) => useUI.getState().closeMap(m))
+
 function MapTabs() {
   const maps = useUI((s) => s.maps)
   const current = useUI((s) => (s.view === 'map' ? s.map : null))
@@ -192,19 +194,18 @@ function MapTabs() {
       const title = titles.get(id)!
       const open = maps.filter((m) => titles.has(m))
       const at = open.indexOf(id)
-      const close = (ids: string[]) => ids.forEach((m) => useUI.getState().closeMap(m))
       const menu = () => (
         <NodeMenu id={id} open={() => useUI.getState().openMap(id)}>
-          <MenuItem icon={X} onClick={() => close([id])}>
+          <MenuItem icon={X} onClick={() => closeMaps([id])}>
             Close
           </MenuItem>
-          <MenuItem disabled={open.length < 2} onClick={() => close(open.filter((m) => m !== id))}>
+          <MenuItem disabled={open.length < 2} onClick={() => closeMaps(open.filter((m) => m !== id))}>
             Close others
           </MenuItem>
-          <MenuItem disabled={at >= open.length - 1} onClick={() => close(open.slice(at + 1))}>
+          <MenuItem disabled={at >= open.length - 1} onClick={() => closeMaps(open.slice(at + 1))}>
             Close tabs to the right
           </MenuItem>
-          <MenuItem onClick={() => close(open)}>Close all maps</MenuItem>
+          <MenuItem onClick={() => closeMaps(open)}>Close all maps</MenuItem>
         </NodeMenu>
       )
       return (
