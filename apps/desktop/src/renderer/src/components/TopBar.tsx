@@ -22,9 +22,10 @@ import {
 import { api } from '../lib/api'
 import { useCurrent, useNodes, useRecent } from '../lib/queries'
 import { useUI, type View } from '../lib/store'
-import { Button, IconButton, Menu, MenuItem, MenuLabel, MenuSeparator, Popover, Separator, Shortcut, cn } from './ui'
+import { Button, IconButton, Menu, MenuItem, MenuLabel, MenuSeparator, Popover, Separator, Shortcut, Tooltip, cn } from './ui'
 import { Logo, TitleBar } from './TitleBar'
 import { syncProject } from './SyncToast'
+import { useLeaveProject, useOpenFolderShortcut } from '../lib/project'
 import { ProblemsMenu } from './Problems'
 import { contextMenu } from './ContextMenu'
 import { NodeMenu } from './menus/NodeMenu'
@@ -32,7 +33,7 @@ import { NodeMenu } from './menus/NodeMenu'
 /** Modifier key label for shortcut hints. */
 export const MOD = window.maquest.platform === 'darwin' ? '⌘' : 'Ctrl'
 
-const VIEWS: { id: View; label: string; icon: typeof Network }[] = [
+export const VIEWS: { id: View; label: string; icon: typeof Network }[] = [
   { id: 'canvas', label: 'Canvas', icon: Network },
   { id: 'maps', label: 'Maps', icon: MapIcon },
   { id: 'backlog', label: 'Backlog', icon: Lightbulb },
@@ -57,26 +58,12 @@ export function TopBar() {
   )
 }
 
-/** Forgets everything tied to the open project, so the next one (or the start screen) starts clean. */
-function useLeaveProject() {
-  const qc = useQueryClient()
-  /** `open` switches to another project and resolves falsy when nothing changed (a cancelled folder picker); without it the project closes. */
-  return async (open?: () => Promise<unknown>) => {
-    if (open) {
-      if (!(await open())) return
-    } else await api.close()
-    useUI.setState({ selection: null, selectedNodeIds: [], tabs: [], viewSelections: {}, guideline: null, board: 'main', storyScope: null })
-    qc.removeQueries({ predicate: (q) => q.queryKey[0] !== 'app' })
-    if (!open) qc.setQueryData(['app', 'current'], null)
-    await qc.invalidateQueries({ queryKey: ['app'] })
-  }
-}
-
 function ProjectMenu() {
   const { data: current } = useCurrent()
   const { data: recent } = useRecent()
   const leave = useLeaveProject()
   const others = recent?.filter((r) => r.root !== current?.root).slice(0, 6) ?? []
+  useOpenFolderShortcut(() => void leave(() => api.pickFolder()))
   return (
     <Menu
       trigger={
@@ -95,7 +82,7 @@ function ProjectMenu() {
       <MenuItem icon={FolderSearch} onClick={() => void api.reveal()}>
         Show in file manager
       </MenuItem>
-      <MenuItem icon={FolderOpen} onClick={() => void leave(() => api.pickFolder())}>
+      <MenuItem icon={FolderOpen} shortcut={`${MOD}+O`} onClick={() => void leave(() => api.pickFolder())}>
         Open folder…
       </MenuItem>
       {others.length > 0 && (
@@ -148,24 +135,48 @@ const tabClass = (on: boolean) =>
     on ? 'bg-active text-fg' : 'text-fg-subtle hover:bg-hover hover:text-fg',
   )
 
+/** Ctrl/⌘+1…5 switches to the views in title-bar order (also from inside editors: the digits are free there). */
+function useViewShortcuts() {
+  useEffect(() => {
+    const handle = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || e.defaultPrevented) return
+      const view = VIEWS[Number(e.key) - 1]
+      if (!/^[1-9]$/.test(e.key) || !view) return
+      e.preventDefault()
+      useUI.getState().setView(view.id)
+    }
+    window.addEventListener('keydown', handle)
+    return () => window.removeEventListener('keydown', handle)
+  }, [])
+}
+
 function ViewTabs() {
   const view = useUI((s) => s.view)
   const setView = useUI((s) => s.setView)
   const { data: nodes } = useNodes()
   const ideas = useMemo(() => nodes?.reduce((count, n) => count + (n.type === 'idea' ? 1 : 0), 0) ?? 0, [nodes])
+  useViewShortcuts()
   return (
     <nav aria-label="Views" className="flex min-w-0 items-center gap-0.5">
-      {VIEWS.map(({ id, label, icon: Icon }) => {
+      {VIEWS.map(({ id, label, icon: Icon }, index) => {
         const on = view === id
         return (
           <span key={id} className="contents">
-            <button type="button" aria-current={on ? 'page' : undefined} onClick={() => setView(id)} className={tabClass(on)}>
-              <Icon size={14} aria-hidden className={on ? 'text-fg-muted' : undefined} />
-              <span className="max-w-40 truncate">{label}</span>
-              {id === 'backlog' && ideas > 0 && (
-                <span className="tabular -mr-0.5 ml-0.5 rounded-[4px] bg-active px-1 text-2xs leading-4 text-fg-muted">{ideas}</span>
-              )}
-            </button>
+            <Tooltip content={label} shortcut={`${MOD}+${index + 1}`}>
+              <button
+                type="button"
+                aria-current={on ? 'page' : undefined}
+                aria-keyshortcuts={`Control+${index + 1} Meta+${index + 1}`}
+                onClick={() => setView(id)}
+                className={tabClass(on)}
+              >
+                <Icon size={14} aria-hidden className={on ? 'text-fg-muted' : undefined} />
+                <span className="max-w-40 truncate">{label}</span>
+                {id === 'backlog' && ideas > 0 && (
+                  <span className="tabular -mr-0.5 ml-0.5 rounded-[4px] bg-active px-1 text-2xs leading-4 text-fg-muted">{ideas}</span>
+                )}
+              </button>
+            </Tooltip>
             {id === 'maps' && <MapTabs />}
           </span>
         )

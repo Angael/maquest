@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Check, MoreHorizontal, X, type LucideIcon } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, MoreHorizontal, X, type LucideIcon } from 'lucide-react'
 import { useUI } from '../../lib/store'
+import { navigate, useNavigation } from '../../lib/navigation'
 import { IconButton, Menu, Tooltip, cn } from '../ui'
 
 /** Copies `text`; returns a flag that stays true briefly for inline "copied" feedback. */
@@ -27,6 +28,7 @@ export function InspectorHeader({
   color,
   id,
   menu,
+  history,
 }: {
   icon: LucideIcon
   label: string
@@ -35,6 +37,8 @@ export function InspectorHeader({
   id?: string
   /** Menu items for the "…" actions menu. */
   menu: ReactNode
+  /** Show back/forward buttons for the inspector's node history. */
+  history?: boolean
 }) {
   const select = useUI((s) => s.select)
   const [copied, copy] = useCopy()
@@ -62,11 +66,42 @@ export function InspectorHeader({
         {copied ? 'Copied' : ''}
       </span>
       <div className="ml-auto flex shrink-0 items-center">
+        {history && <HistoryButtons />}
         <Menu align="end" trigger={<IconButton icon={MoreHorizontal} label="More actions" size="sm" />}>
           {menu}
         </Menu>
         <IconButton icon={X} label="Close inspector" shortcut="Esc" size="sm" onClick={() => select(null)} />
       </div>
     </div>
+  )
+}
+
+const mac = window.maquest.platform === 'darwin'
+
+/** Back / forward through the nodes shown in the inspector (also Alt+← / Alt+→ and the mouse's thumb buttons). */
+function HistoryButtons() {
+  const canBack = useNavigation((s) => s.back.length > 0)
+  const canForward = useNavigation((s) => s.forward.length > 0)
+  return (
+    <>
+      <IconButton
+        icon={ArrowLeft}
+        label="Back"
+        shortcut={mac ? '⌘+[' : 'Alt+←'}
+        aria-keyshortcuts={mac ? 'Meta+BracketLeft' : 'Alt+ArrowLeft'}
+        size="sm"
+        disabled={!canBack}
+        onClick={() => navigate(-1)}
+      />
+      <IconButton
+        icon={ArrowRight}
+        label="Forward"
+        shortcut={mac ? '⌘+]' : 'Alt+→'}
+        aria-keyshortcuts={mac ? 'Meta+BracketRight' : 'Alt+ArrowRight'}
+        size="sm"
+        disabled={!canForward}
+        onClick={() => navigate(1)}
+      />
+    </>
   )
 }

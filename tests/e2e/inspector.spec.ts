@@ -87,7 +87,7 @@ test('markdown tables render as tables and show raw markdown while edited', asyn
 test('properties: tag chips, custom fields and Esc to close', async ({ desktop }) => {
   const { page, project, ids } = desktop
   await page.locator(`.react-flow__node[data-id="${ids[1]}"]`).click()
-  const tags = page.getByRole('textbox', { name: 'Tags' })
+  const tags = page.getByRole('combobox', { name: 'Tags' })
   await tags.fill('damp, dark')
   await tags.press('Enter')
   await expect.poll(() => project.getNode(ids[1])?.tags).toEqual(['damp', 'dark'])

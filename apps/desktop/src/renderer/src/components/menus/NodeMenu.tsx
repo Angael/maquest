@@ -1,12 +1,29 @@
 import type { ReactNode } from 'react'
 import { toast } from 'sonner'
-import { CircleDot, CopyPlus, ExternalLink, FolderOpen, Inbox, LayoutDashboard, Link2, Map as MapIcon, Network, Pencil, PlusSquare, Trash2 } from 'lucide-react'
-import { onBoard, type Status, type StoryNode } from '@maquest/core/schema'
+import {
+  CircleDot,
+  ClipboardCopy,
+  CopyPlus,
+  ExternalLink,
+  FileDown,
+  FileText,
+  FolderOpen,
+  Inbox,
+  LayoutDashboard,
+  Link2,
+  Map as MapIcon,
+  Network,
+  Pencil,
+  PlusSquare,
+  Trash2,
+} from 'lucide-react'
+import { STRUCTURE_TYPES, onBoard, type Status, type StoryNode } from '@maquest/core/schema'
 import { api } from '../../lib/api'
 import { currentBoardId, queryClient, useGraph, useNodes } from '../../lib/queries'
 import { useUI } from '../../lib/store'
 import { useDeleteEverywhere } from '../../lib/deletion'
 import { useTypes } from '../../lib/styles'
+import { exportManuscript } from '../../lib/manuscript'
 import { STATUSES, STATUS_LABEL, StatusDot } from '../inspector/properties'
 import { leaveFocus } from '../ContextMenu'
 import { MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuSub } from '../ui'
@@ -164,12 +181,25 @@ export function NodeMenu({
       <MenuItem icon={Link2} onClick={() => copyText(`[[${id}]]`, 'Link copied')}>
         Copy link
       </MenuItem>
+      {!isMap && (
+        <MenuItem icon={ClipboardCopy} disabled={!node.body.trim()} onClick={() => copyText(node.body, 'Text copied')}>
+          Copy text
+        </MenuItem>
+      )}
       <StatusMenu nodes={[node]} />
       {node.type !== 'idea' && <AddToBoardMenu ids={[id]} />}
       <MenuSeparator />
       <MenuItem icon={FolderOpen} onClick={() => void api.reveal(node.path)}>
         Show file in folder
       </MenuItem>
+      <MenuItem icon={FileText} onClick={() => void api.openFile(node.path)}>
+        Open file in default app
+      </MenuItem>
+      {STRUCTURE_TYPES.some((t) => t === node.type) && (
+        <MenuItem icon={FileDown} onClick={() => void exportManuscript(id)}>
+          Export as Markdown…
+        </MenuItem>
+      )}
       {node.type !== 'idea' && !isMap && (
         <MenuItem icon={Inbox} onClick={() => void act(api.updateNode(id, { type: 'idea', parent: null }))}>
           Move to backlog

@@ -19,6 +19,7 @@ import {
   type FieldSection,
 } from '@maquest/core/sheet'
 import { Button, IconButton, cn } from '../ui'
+import { useFlushOnLeave } from '../../lib/pending'
 import { GhostSelect, GhostText, PropertyRow, TagInput, ghost, oneLine } from '../inspector/fields'
 import { fullOnHover, useLimit } from '../fit'
 
@@ -62,6 +63,7 @@ export function FieldForm({
     if (Object.keys(patch).length) onSave(patch)
   }, SAVE_DELAY)
   useEffect(() => () => save.flush(), [save])
+  useFlushOnLeave(() => save.flush())
   useEffect(() => {
     setDraft((d) => {
       const next = { ...values }

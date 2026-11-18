@@ -5,14 +5,17 @@ import { Project } from '@maquest/core'
 import { handlers, mediaPath } from './handlers'
 import { setupUpdates } from './updater'
 import { externalLinks, loadRenderer } from './windows'
+import { rememberWindowState, saveBeforeClose, savedWindowState } from './windowState'
 import { applySpellcheck, attachContextMenu } from './contextMenu'
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'maquest-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } }])
 
 function createWindow() {
+  const saved = savedWindowState()
   const win = new BrowserWindow({
     width: 1440,
     height: 900,
+    ...saved.bounds,
     minWidth: 900,
     minHeight: 600,
     backgroundColor: '#161311',
@@ -27,7 +30,10 @@ function createWindow() {
       sandbox: false,
     },
   })
+  if (saved.maximized) win.maximize()
   externalLinks(win)
+  rememberWindowState(win)
+  saveBeforeClose(win)
   attachContextMenu(win)
   const sendMaximized = () => win.webContents.send('window:maximized', win.isMaximized())
   win.on('maximize', sendMaximized)

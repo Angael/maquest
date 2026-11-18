@@ -7,6 +7,7 @@ import { api } from '../lib/api'
 import { useRecent } from '../lib/queries'
 import { Button, IconButton, Input, Menu, MenuItem, MenuSeparator, Select } from './ui'
 import { Logo, TitleBar } from './TitleBar'
+import { useOpenFolderShortcut } from '../lib/project'
 import { contextMenu } from './ContextMenu'
 import { copyText } from './menus/NodeMenu'
 
@@ -41,6 +42,8 @@ export function StartScreen() {
       setBusy(false)
     }
   }
+
+  useOpenFolderShortcut(() => !busy && void run(() => api.pickFolder()))
 
   const create = () => {
     const trimmed = name.trim()

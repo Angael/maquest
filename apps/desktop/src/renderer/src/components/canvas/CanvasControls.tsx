@@ -3,53 +3,20 @@ import { MiniMap, Panel, useReactFlow, useStore, useStoreApi, type Node as FlowN
 import { Keyboard, Lock, LockOpen, Map as MapIcon, Maximize, Minus, Plus } from 'lucide-react'
 import { useUI } from '../../lib/store'
 import { GROUP_STYLE, useTypes } from '../../lib/styles'
-import { IconButton, Popover, Separator, Shortcut, cn, floating } from '../ui'
+import { Button, IconButton, Popover, Separator, Shortcut, cn, floating } from '../ui'
+import { ShortcutList } from '../ShortcutsDialog'
+import { MOD, SHORTCUTS } from '../../lib/shortcuts'
 import type { GroupFlowNode } from '../GroupFrame'
 import { FIT_VIEW, isCard } from './shared'
-
-const SHORTCUTS: { group: string; items: [string, string][] }[] = [
-  {
-    group: 'Cards',
-    items: [
-      ['Add a card at the pointer', 'A'],
-      ['Copy reference', 'Ctrl+C'],
-      ['Paste reference', 'Ctrl+V'],
-      ['Duplicate', 'Ctrl+D'],
-      ['Group selection', 'Ctrl+G'],
-      ['Select all', 'Ctrl+A'],
-      ['Remove from board', 'Del'],
-      ['Delete everywhere', 'Shift+Del'],
-    ],
-  },
-  {
-    group: 'Canvas',
-    items: [
-      ['Undo', 'Ctrl+Z'],
-      ['Redo', 'Ctrl+Shift+Z'],
-      ['Add to selection', 'Shift+Click'],
-      ['Open in a new tab', 'Middle-click'],
-      ['Pan', 'Middle-drag'],
-    ],
-  },
-]
 
 function ShortcutsPanel() {
   return (
     <div className="w-72 p-3">
-      {SHORTCUTS.map(({ group, items }, i) => (
-        <section key={group} className={cn(i > 0 && 'mt-3')}>
-          <h3 className="mb-1 text-2xs font-medium text-fg-subtle">{group}</h3>
-          <ul>
-            {items.map(([label, keys]) => (
-              <li key={label} className="flex h-6 items-center justify-between gap-3 text-xs text-fg-muted">
-                {label}
-                <Shortcut keys={keys} />
-              </li>
-            ))}
-          </ul>
-        </section>
-      ))}
-      <p className="mt-3 text-2xs text-fg-faint">Right-click blank space to add, right-click cards for actions. Drag from a card's edge to connect.</p>
+      <ShortcutList groups={SHORTCUTS.canvas} />
+      <p className="text-2xs text-fg-faint">Right-click blank space to add, right-click cards for actions. Drag from a card's edge to connect.</p>
+      <Button size="sm" variant="ghost" className="-ml-2 mt-1.5 gap-2 text-fg-subtle" onClick={() => useUI.getState().setShortcutsOpen(true)}>
+        All shortcuts <Shortcut keys={`${MOD}+/`} />
+      </Button>
     </div>
   )
 }

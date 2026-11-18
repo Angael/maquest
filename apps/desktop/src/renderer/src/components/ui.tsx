@@ -2,6 +2,7 @@ import clsx, { type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import {
   forwardRef,
+  useRef,
   type ButtonHTMLAttributes,
   type InputHTMLAttributes,
   type ReactElement,
@@ -156,12 +157,19 @@ export function Menu({
   align?: 'start' | 'center' | 'end'
   className?: string
 }) {
+  const triggerRef = useRef<HTMLButtonElement>(null)
   return (
     <BaseMenu.Root>
-      <BaseMenu.Trigger render={trigger} />
+      <BaseMenu.Trigger ref={triggerRef} render={trigger} />
       <BaseMenu.Portal>
         <BaseMenu.Positioner side={side} align={align} sideOffset={6} className="z-[60]">
-          <BaseMenu.Popup className={cn(popupSurface, 'popup-motion min-w-48', className)}>{children}</BaseMenu.Popup>
+          <BaseMenu.Popup
+            // An item may replace the trigger or open a field that takes focus (e.g. rename); then leave focus where it went.
+            finalFocus={() => !!triggerRef.current?.isConnected && !document.activeElement?.matches('input, textarea, [contenteditable="true"]')}
+            className={cn(popupSurface, 'popup-motion min-w-48', className)}
+          >
+            {children}
+          </BaseMenu.Popup>
         </BaseMenu.Positioner>
       </BaseMenu.Portal>
     </BaseMenu.Root>

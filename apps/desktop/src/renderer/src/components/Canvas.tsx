@@ -63,6 +63,7 @@ import { renameInInspector } from './menus/NodeMenu'
 import { PhaseLanes } from './canvas/PhaseLanes'
 import { useCanvasNavigation } from './canvas/useCanvasNavigation'
 import { hoverEdge, hoverNode } from './canvas/hover'
+import { travel, useHistoryState } from '../lib/history'
 import { EDGE_REF, FIT_VIEW, cardSize, isCard, reuseItems, type AnyFlowNode, type CardFlowNode } from './canvas/shared'
 
 const nodeTypes = { card: StoryCard, frame: GroupFrame }
@@ -176,8 +177,6 @@ export function Canvas() {
   }
   const addEdge = useAddEdge()
   const setLayout = useAction(api.setLayout)
-  const undo = useAction(api.undo)
-  const redo = useAction(api.redo)
   const duplicate = useAction(api.duplicateNodes)
   const place = useAction(api.placeNodes)
   const removeFromBoard = useRemoveFromBoard()
@@ -289,22 +288,9 @@ export function Canvas() {
     )
   }
   const history = useQuery({ queryKey: ['history'], queryFn: () => api.history() })
-  const historyBusy = undo.isPending || redo.isPending
-  const historyQueue = useRef(Promise.resolve())
+  const historyBusy = useHistoryState((s) => s.busy)
+  const historyError = useHistoryState((s) => s.error)
   const visibleRef = useRef<{ key: string; node: StoryNode }[]>([])
-  const travel = useCallback(
-    (direction: 'undo' | 'redo') => {
-      // Queue rapid shortcuts; query refetches must not drop the next keystroke.
-      historyQueue.current = historyQueue.current
-        .then(async () => {
-          await (direction === 'undo' ? undo : redo).mutateAsync([])
-        })
-        .catch(() => {
-          /* Mutation errors are rendered below. */
-        })
-    },
-    [undo, redo],
-  )
   useEffect(() => {
     const handle = (event: KeyboardEvent) => {
       if (useUI.getState().view !== 'canvas' || isEditing(event.target) || !(event.ctrlKey || event.metaKey) || event.altKey) return
@@ -327,14 +313,11 @@ export function Canvas() {
         if (!ids.length || event.repeat || currentBoardId() === ALL_BOARD) return
         event.preventDefault()
         duplicateNodes(ids)
-      } else if (key === 'z' || key === 'y') {
-        event.preventDefault()
-        travel(key === 'y' || event.shiftKey ? 'redo' : 'undo')
       }
     }
     window.addEventListener('keydown', handle)
     return () => window.removeEventListener('keydown', handle)
-  }, [travel, copyRefs, paste, duplicateNodes, selectNodes])
+  }, [copyRefs, paste, duplicateNodes, selectNodes])
 
   const visible = useMemo(() => {
     let list = all.filter((n) => !hiddenNodes.includes(n.type) && (!board || onBoard(board, n.id)))
@@ -934,8 +917,7 @@ export function Canvas() {
     createGroup.error ??
     updateGroup.error ??
     deleteGroup.error ??
-    undo.error ??
-    redo.error ??
+    historyError ??
     history.error ??
     setLayout.error ??
     addEdge.error ??

@@ -10,6 +10,7 @@ import { IconButton, MenuItem, MenuSeparator } from '../ui'
 import { InspectorHeader } from './Header'
 import { GhostSelect, PropertyRow, ghost } from './fields'
 import { nodeLinkProps } from '../../lib/nodeLink'
+import { useFlushOnLeave } from '../../lib/pending'
 
 function Endpoint({ node, id, role }: { node?: StoryNode; id: string; role: 'From' | 'To' }) {
   const types = useTypes()
@@ -54,6 +55,10 @@ export function EdgeInspector({ id }: { id: string }) {
     labelQueue.current = labelQueue.current.then(persist)
     return labelQueue.current
   }, 400)
+  useFlushOnLeave(() => {
+    saveLabel.flush()
+    return labelQueue.current
+  })
   useEffect(() => {
     if (!dirty.current) setLabel(edge?.label ?? '')
   }, [edge?.label])

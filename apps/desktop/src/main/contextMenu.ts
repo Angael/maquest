@@ -27,6 +27,12 @@ export function applySpellcheck(session: Session) {
   session.setSpellCheckerEnabled(readSettings().spellcheck ?? true)
 }
 
+/** Turns "Check spelling while typing" on or off for a session and remembers the choice. */
+export function setSpellcheck(session: Session, on: boolean) {
+  session.setSpellCheckerEnabled(on)
+  writeSettings({ spellcheck: on })
+}
+
 /**
  * The OS menu for text fields, selections, links and images. Maquest's own menus (cards, rows, tabs…) are drawn by the
  * renderer and cancel the DOM event, so Electron only reports right clicks nobody else handled.
@@ -43,9 +49,7 @@ export function attachContextMenu(win: BrowserWindow) {
         case 'learn':
           return arg && contents.session.addWordToSpellCheckerDictionary(arg)
         case 'spellcheck': {
-          const on = !contents.session.isSpellCheckerEnabled()
-          contents.session.setSpellCheckerEnabled(on)
-          return writeSettings({ spellcheck: on })
+          return setSpellcheck(contents.session, !contents.session.isSpellCheckerEnabled())
         }
         case 'undo':
         case 'redo':

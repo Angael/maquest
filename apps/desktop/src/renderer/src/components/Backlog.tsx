@@ -1,16 +1,18 @@
-import { memo, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from 'react'
-import { ArrowUpRight, Lightbulb, Trash2 } from 'lucide-react'
+import { memo, useDeferredValue, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from 'react'
+import { ArrowUpRight, Lightbulb, Search, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import type { NodeType, StoryNode } from '@maquest/core/schema'
 import { api } from '../lib/api'
 import { useAction, useNodes } from '../lib/queries'
 import { useUI } from '../lib/store'
 import { useTypes, type TypeStyle } from '../lib/styles'
-import { Button, IconButton, Kbd, Menu, MenuItem, MenuLabel, MenuSub, cn } from './ui'
+import { Button, IconButton, Input, Kbd, Menu, MenuItem, MenuLabel, MenuSub, cn } from './ui'
 import { PageHeader } from './views/ViewLayout'
 import { nodeLinkProps } from '../lib/nodeLink'
 import { openContextMenu } from './ContextMenu'
 import { NodeMenu } from './menus/NodeMenu'
+import { absolute, ago } from '../lib/time'
+import { matchesFilter } from '../lib/search'
 
 const PROMOTE: NodeType[] = ['note', 'scene', 'chapter', 'story']
 const TITLE_MAX = 80
@@ -24,6 +26,9 @@ export function Backlog() {
   const ideas = useMemo(() => (all ?? []).filter((n) => n.type === 'idea').toSorted((a, b) => (b.created ?? '').localeCompare(a.created ?? '')), [all])
   const selected = useUI((s) => (s.selection?.kind === 'node' ? s.selection.id : null))
   const capture = useRef<HTMLInputElement>(null)
+  const [filter, setFilter] = useState('')
+  const deferred = useDeferredValue(filter)
+  const shown = useMemo(() => (deferred.trim() ? ideas.filter((n) => matchesFilter(deferred, n)) : ideas), [ideas, deferred])
 
   return (
     <div className="flex h-full flex-col">
@@ -35,9 +40,17 @@ export function Backlog() {
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="max-w-3xl px-6 pt-5 pb-10">
           <Capture ref={capture} />
-          {ideas.length ? (
-            <ul className="mt-6 space-y-2" aria-label="Ideas">
-              {ideas.map((n) => (
+          {ideas.length > 1 && <Filter value={filter} onChange={setFilter} shown={shown.length} total={ideas.length} />}
+          {ideas.length && !shown.length ? (
+            <p className="mt-6 text-sm text-fg-faint">
+              No ideas match “{filter.trim()}”.{' '}
+              <button type="button" className="text-accent-text underline-offset-2 hover:underline" onClick={() => setFilter('')}>
+                Clear filter
+              </button>
+            </p>
+          ) : ideas.length ? (
+            <ul className={cn('space-y-2', ideas.length > 1 ? 'mt-3' : 'mt-6')} aria-label="Ideas">
+              {shown.map((n) => (
                 <IdeaCard key={n.id} idea={n} selected={n.id === selected} promote={promote} titles={titles} />
               ))}
             </ul>
@@ -46,6 +59,40 @@ export function Backlog() {
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+/** Narrows the list by words and `#tags`; Escape clears it. */
+function Filter({ value, onChange, shown, total }: { value: string; onChange: (value: string) => void; shown: number; total: number }) {
+  return (
+    <div className="mt-6 flex items-center gap-3">
+      <div className="relative min-w-0 flex-1">
+        <Search size={14} aria-hidden className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-fg-faint" />
+        <Input
+          type="search"
+          aria-label="Filter ideas"
+          placeholder="Filter ideas… (#tag to match a tag)"
+          value={value}
+          spellCheck={false}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key !== 'Escape' || !value) return
+            e.preventDefault()
+            e.stopPropagation()
+            onChange('')
+          }}
+          className="pr-7 pl-7 [&::-webkit-search-cancel-button]:hidden"
+        />
+        {value && (
+          <IconButton icon={X} size="sm" label="Clear filter" className="absolute top-1/2 right-1 size-5 -translate-y-1/2" onClick={() => onChange('')} />
+        )}
+      </div>
+      {value.trim() && (
+        <span className="tabular shrink-0 text-xs text-fg-faint" aria-live="polite">
+          {shown} of {total}
+        </span>
+      )}
     </div>
   )
 }
@@ -140,27 +187,6 @@ function excerpt(body: string, titles: Map<string, string>) {
     )
     .filter(Boolean)
     .join(' · ')
-}
-
-const relative = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto', style: 'short' })
-const absolute = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' })
-const STEPS: [Intl.RelativeTimeFormatUnit, number][] = [
-  ['minute', 60],
-  ['hour', 24],
-  ['day', 7],
-  ['week', 4.35],
-  ['month', 12],
-  ['year', Infinity],
-]
-function ago(iso: string) {
-  let value = (Date.parse(iso) - Date.now()) / 60_000
-  if (Number.isNaN(value)) return null
-  if (Math.abs(value) < 1) return 'just now'
-  for (const [unit, size] of STEPS) {
-    if (Math.abs(value) < size) return relative.format(Math.round(value), unit)
-    value /= size
-  }
-  return null
 }
 
 const IdeaCard = memo(function IdeaCard({

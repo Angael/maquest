@@ -1,15 +1,15 @@
 import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useDebouncedCallback } from 'use-debounce'
-import { CopyPlus, FolderOpen, Map as MapIcon, Gauge, ImagePlus, Inbox, Link2, Plus, TextCursorInput, Trash2 } from 'lucide-react'
+import { Map as MapIcon, Gauge, ImagePlus, Plus, TextCursorInput } from 'lucide-react'
 import { ALLOWED_PARENTS, type NodeType, type Status, type StoryNode } from '@maquest/core/schema'
 import { api } from '../../lib/api'
-import { currentBoardId, queryClient, useAction, useNodes } from '../../lib/queries'
+import { useAction, useNodes } from '../../lib/queries'
 import { useUI } from '../../lib/store'
-import { BEFORE_DELETE, useDeleteEverywhere } from '../../lib/deletion'
+import { BEFORE_DELETE } from '../../lib/deletion'
 import { useTypes } from '../../lib/styles'
 import { MarkdownEditor } from '../MarkdownEditor'
-import { Button, Menu, MenuItem, MenuSeparator, cn } from '../ui'
-import { InspectorHeader, useCopy } from './Header'
+import { Button, Menu, MenuItem, cn } from '../ui'
+import { InspectorHeader } from './Header'
 import { GhostSelect, GhostText, PropertyRow, TagInput, ghost, oneLine } from './fields'
 import { BoardsProperty, ClockProperty, MediaProperty, STATUSES, STATUS_LABEL, StatusDot, attachMedia } from './properties'
 import { Connections, Contains } from './Connections'
@@ -17,6 +17,9 @@ import { AddTab, Sheet, useSheet } from '../sheet/Sheet'
 import { FieldInput, fieldPatch } from '../sheet/FieldForm'
 import { mergeValues, propertyRows } from '@maquest/core/sheet'
 import { MapThumb } from '../map/MapThumb'
+import { useFlushOnLeave } from '../../lib/pending'
+import { DocumentFooter } from './DocumentFooter'
+import { NodeMenu } from '../menus/NodeMenu'
 
 type Draft = Pick<StoryNode, 'title' | 'summary' | 'body' | 'fields' | 'tags'>
 /** Unsaved changes; `fields` holds only changed keys, null marking removal (maps merge one level, like the server). */
@@ -57,6 +60,11 @@ export function NodeInspector({ id }: { id: string }) {
     saveQueue.current = saveQueue.current.then(persist)
     return saveQueue.current
   }, 500)
+
+  useFlushOnLeave(() => {
+    save.flush()
+    return saveQueue.current
+  })
 
   // Never replace an in-flight draft with an older watcher/refetch result.
   useEffect(() => {
@@ -164,6 +172,7 @@ export function NodeInspector({ id }: { id: string }) {
       </div>
 
       <BodyArea node={node} body={draft.body} onBody={changeBody} />
+      <DocumentFooter node={node} body={draft.body} all={all} />
 
       <div className="mt-6 space-y-5 px-4">
         <Contains items={children} />
@@ -189,44 +198,8 @@ function BodyArea({ node, body, onBody }: { node: StoryNode; body: string; onBod
 }
 
 const NodeHeader = memo(function NodeHeader({ node }: { node: StoryNode }) {
-  const types = useTypes()
-  const select = useUI((s) => s.select)
-  const update = useAction(api.updateNode)
-  const duplicate = useAction(api.duplicateNodes)
-  const destroy = useDeleteEverywhere()
-  const [, copy] = useCopy()
-  const S = types.of(node.type)
-  const menu = (
-    <>
-      <MenuItem icon={Link2} onClick={() => copy(`[[${node.id}]]`)}>
-        Copy link
-      </MenuItem>
-      <MenuItem
-        icon={CopyPlus}
-        onClick={() =>
-          void duplicate.mutateAsync([[node.id], { x: 40, y: 40 }, currentBoardId()]).then(async (copies) => {
-            await queryClient.refetchQueries({ queryKey: ['nodes'] })
-            if (copies[0]) select({ kind: 'node', id: copies[0] })
-          })
-        }
-      >
-        Duplicate
-      </MenuItem>
-      <MenuItem icon={FolderOpen} onClick={() => void api.reveal(node.path)}>
-        Show file in folder
-      </MenuItem>
-      {node.type !== 'idea' && (
-        <MenuItem icon={Inbox} onClick={() => update.mutate([node.id, { type: 'idea', parent: null }])}>
-          Move to backlog
-        </MenuItem>
-      )}
-      <MenuSeparator />
-      <MenuItem icon={Trash2} danger onClick={() => destroy([node.id])}>
-        Delete…
-      </MenuItem>
-    </>
-  )
-  return <InspectorHeader icon={S.icon} label={S.label} color={S.color} id={node.id} menu={menu} />
+  const S = useTypes().of(node.type)
+  return <InspectorHeader icon={S.icon} label={S.label} color={S.color} id={node.id} menu={<NodeMenu id={node.id} />} history />
 })
 
 /** Type, status and parent. */
@@ -284,9 +257,16 @@ const CoreProperties = memo(function CoreProperties({ node }: { node: StoryNode 
 
 const TagsRow = memo(function TagsRow({ tags, onChange }: { tags: string[]; onChange: (patch: Patch) => void }) {
   const tagId = useId()
+  const { data: all = NO_NODES } = useNodes()
+  // Every tag used in the project, most used first, as suggestions.
+  const known = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const n of all) for (const t of n.tags) counts.set(t, (counts.get(t) ?? 0) + 1)
+    return [...counts].toSorted((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([t]) => t)
+  }, [all])
   return (
     <PropertyRow label="Tags" htmlFor={tagId}>
-      <TagInput id={tagId} tags={tags} onChange={(next) => onChange({ tags: next })} />
+      <TagInput id={tagId} tags={tags} suggestions={known} onChange={(next) => onChange({ tags: next })} />
     </PropertyRow>
   )
 })

@@ -6,6 +6,7 @@ import { IconButton, floating, cn } from './ui'
 import { api } from '../lib/api'
 import { useUI } from '../lib/store'
 import { MarkdownEditor } from './MarkdownEditor'
+import { useFlushOnLeave } from '../lib/pending'
 
 const MOD = window.maquest.platform === 'darwin' ? '⌘' : 'Ctrl'
 
@@ -28,6 +29,7 @@ export function LiveNotesPanel() {
     if (saved !== undefined && !dirty.current) setDraft(saved)
   }, [saved])
   useEffect(() => () => void save.flush(), [save])
+  useFlushOnLeave(() => save.flush())
 
   // Ctrl+J toggles the panel from anywhere.
   useEffect(() => {

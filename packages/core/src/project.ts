@@ -10,8 +10,10 @@ import { arrange, type LayoutMode } from './layout'
 import { RULES, runChecks, type CheckReport, type QuickFix } from './checks'
 import { isEmptyValue, mergeValues, plainText, propertyRows } from './sheet'
 import type { EdgeType } from './schema'
+import { compileManuscript, countWords, type ManuscriptNode } from './text'
 import { MapDoc, applyMapOps, emptyMap, stringifyMap, type MapOp } from './map'
 import {
+  STRUCTURE_TYPES,
   ALLOWED_PARENTS,
   Board,
   CARD_SIZE,
@@ -891,9 +893,27 @@ export class Project {
       title: n.title,
       status: n.status,
       summary: n.summary,
+      words: countWords(n.body),
       children: (byParent.get(n.id) ?? []).map(build),
     })
     return all.filter((n) => n.type === 'story' && (!storyId || n.id === storyId)).map(build)
+  }
+
+  /**
+   * A story, chapter or scene with every chapter and scene under it, in outline order, as one markdown document (see
+   * compileManuscript). Notes and other children are planning, not prose, and are left out.
+   */
+  manuscript(id: string, opts: { media?: (path: string) => string } = {}): string {
+    const root = this.requireNode(id)
+    const all = this.listNodes()
+    const byParent = new Map<string, StoryNode[]>()
+    for (const n of all) if (n.parent && STRUCTURE_TYPES.some((t) => t === n.type)) byParent.set(n.parent, [...(byParent.get(n.parent) ?? []), n])
+    const seen = new Set<string>()
+    const build = (n: StoryNode): ManuscriptNode => {
+      seen.add(n.id)
+      return { id: n.id, title: n.title, body: n.body, children: (byParent.get(n.id) ?? []).filter((c) => !seen.has(c.id)).map(build) }
+    }
+    return compileManuscript(build(root), { titles: new Map(all.map((n) => [n.id, n.title])), media: opts.media })
   }
 
   // ---------- graph ----------

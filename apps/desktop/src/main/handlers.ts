@@ -1,6 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { app, BrowserWindow, clipboard, ClipboardItem, dialog, nativeImage, shell } from 'electron'
+import { pathToFileURL } from 'node:url'
+import { app, BrowserWindow, clipboard, ClipboardItem, dialog, nativeImage, session, shell } from 'electron'
+import { setSpellcheck } from './contextMenu'
 import chokidar, { type FSWatcher } from 'chokidar'
 import {
   Project,
@@ -152,6 +154,10 @@ export const handlers = {
     if (rel) shell.showItemInFolder(p().resolve(rel))
     else void shell.openPath(p().root)
   },
+  /** Shows an absolute path (e.g. an exported file) in the OS file manager. */
+  showPath: (abs: string) => shell.showItemInFolder(abs),
+  /** Opens a project file (e.g. a node's markdown) in the OS default app. Resolves to an error message, or '' on success. */
+  openFile: (rel: string) => shell.openPath(p().resolve(rel)),
   /** Opens a recent project's folder in the file manager (no project needs to be open). */
   showFolder: (root: string) => {
     if (!Project.isProject(root)) throw new Error(`Not a Maquest project: ${root}`)
@@ -163,6 +169,9 @@ export const handlers = {
     if (image.isEmpty()) throw new Error(`Not an image: ${rel}`)
     await clipboard.write([new ClipboardItem({ 'image/png': new Blob([new Uint8Array(image.toPNG())], { type: 'image/png' }) })])
   },
+  /** "Check spelling while typing" (shared with the native text menu's checkbox; saved in userData/settings.json). */
+  spellcheck: () => session.defaultSession.isSpellCheckerEnabled(),
+  setSpellcheck: (on: boolean) => setSpellcheck(session.defaultSession, on),
   mcpLaunch: () => mcpLaunch(),
 
   // ---- project ----
@@ -330,6 +339,22 @@ export const handlers = {
     if (r.canceled || !r.filePath) return null
     const svg = mapSvg(project.readMap(id), { ...opts, imageHref: (src) => embedMedia(project, src) })
     fs.writeFileSync(r.filePath, svg)
+    return r.filePath
+  },
+  /**
+   * Asks where to save, then writes a story, chapter or scene with its chapters and scenes as one markdown document.
+   * Images point at the project's media files, so the document renders anywhere on this machine. Returns the path or null.
+   */
+  exportManuscript: async (id: string) => {
+    const project = p()
+    const node = project.requireNode(id)
+    const r = await dialog.showSaveDialog({
+      title: `Export “${node.title}” as Markdown`,
+      defaultPath: path.join(app.getPath('documents'), `${node.id}.md`),
+      filters: [{ name: 'Markdown', extensions: ['md'] }],
+    })
+    if (r.canceled || !r.filePath) return null
+    fs.writeFileSync(r.filePath, project.manuscript(id, { media: (src) => pathToFileURL(project.resolve(src)).href }))
     return r.filePath
   },
   importMedia: (absPath: string) => p().importMedia(absPath),

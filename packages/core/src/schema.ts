@@ -797,7 +797,16 @@ export type Guideline = {
   reads?: number
   writes?: number
 }
-export type OutlineNode = { id: string; type: NodeType; title: string; status?: Status; summary?: string; children: OutlineNode[] }
+export type OutlineNode = {
+  id: string
+  type: NodeType
+  title: string
+  status?: Status
+  summary?: string
+  /** Words in the node's own body (see countWords). */
+  words: number
+  children: OutlineNode[]
+}
 
 // ---------- tidying (used after programmatic group edits, e.g. from agents) ----------
 

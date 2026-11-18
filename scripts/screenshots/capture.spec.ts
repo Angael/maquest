@@ -16,7 +16,7 @@
  *   07 view      button /^View:/ (top-right) opens the view popover; its "Lines" section expands
  *   08 add menu  toolbar button "Add" (aria-haspopup=menu); menu "Add node"
  *   09 context   right-click on a card; role=menu
- *   10 palette   Ctrl/Cmd+K; placeholder "Search everything…"
+ *   10 palette   Ctrl/Cmd+K; placeholder "Search everything or type a command…"
  *   11-13 views  TopBar nav buttons "Backlog" / "Guidelines" / "Types"; idea title button (hover); guideline list button by title;
  *                Types listitem "Clue"
  *   14 live      Ctrl/Cmd+J; region "Live notes"
@@ -193,7 +193,7 @@ test('capture UI states', async ({ playwright }) => {
 
     await shot('10-command-palette', async () => {
       await page.keyboard.press('ControlOrMeta+k')
-      const input = page.getByPlaceholder('Search everything…')
+      const input = page.getByPlaceholder('Search everything or type a command…')
       await expect(input).toBeVisible()
       await input.pressSequentially('ember', { delay: 20 })
     })

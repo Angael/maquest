@@ -68,6 +68,12 @@ type UI = {
   /** Text the palette opens with (e.g. "Search project for …" in the text menu). Not persisted. */
   paletteQuery: string
   setPaletteOpen: (open: boolean, query?: string) => void
+  /** Keyboard shortcuts reference (Ctrl+/) open. Not persisted. */
+  shortcutsOpen: boolean
+  setShortcutsOpen: (open: boolean) => void
+  /** Collapsed sidebar sections (`section:<type>`) and outline rows (node ids). */
+  collapsed: string[]
+  setCollapsed: (key: string, collapsed: boolean) => void
   /** Shows a node on the canvas: switches to `board` (when given), selects and centers it. */
   focusNode: (id: string, board?: string) => void
   setView: (v: View) => void
@@ -139,6 +145,11 @@ export const useUI = create<UI>()(
       sidebarWidth: 248,
       paletteOpen: false,
       paletteQuery: '',
+      shortcutsOpen: false,
+      setShortcutsOpen: (shortcutsOpen) => set({ shortcutsOpen }),
+      collapsed: [],
+      setCollapsed: (key, collapsed) =>
+        set((s) => (s.collapsed.includes(key) === collapsed ? {} : { collapsed: collapsed ? [...s.collapsed, key] : s.collapsed.filter((k) => k !== key) })),
       minimap: false,
       setMinimap: (minimap) => set({ minimap }),
       tabs: [],
@@ -229,6 +240,7 @@ export const useUI = create<UI>()(
           sidebarOpen: saved.sidebarOpen ?? true,
           sidebarWidth: saved.sidebarWidth ?? 248,
           minimap: saved.minimap ?? false,
+          collapsed: saved.collapsed ?? [],
         }
       },
       partialize: ({
@@ -243,7 +255,9 @@ export const useUI = create<UI>()(
         sidebarOpen,
         sidebarWidth,
         minimap,
+        collapsed,
       }) => ({
+        collapsed,
         liveNotesOpen,
         liveNotesSize,
         sidebarOpen,

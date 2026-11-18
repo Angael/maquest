@@ -1,6 +1,6 @@
 import { useEffect, type CSSProperties } from 'react'
 import { ReactFlowProvider } from '@xyflow/react'
-import { useCurrent, useLiveProject } from './lib/queries'
+import { useCurrent, useLiveProject, useNodes } from './lib/queries'
 import { useUI } from './lib/store'
 import { StartScreen } from './components/StartScreen'
 import { TopBar } from './components/TopBar'
@@ -23,6 +23,10 @@ import { useDeleteShortcut } from './lib/deletion'
 import { LiveNotesPanel } from './components/LiveNotes'
 import { InspectorTabs } from './components/InspectorTabs'
 import { TooltipProvider } from './components/ui'
+import { ShortcutsDialog } from './components/ShortcutsDialog'
+import { flushPending } from './lib/pending'
+import { useHistoryShortcuts } from './lib/history'
+import { useNavigationShortcuts } from './lib/navigation'
 import './components/shell.css'
 
 export function App() {
@@ -35,9 +39,16 @@ export function App() {
   )
 }
 
+/** Views that show the node inspector next to them. */
+const INSPECTOR_VIEWS = new Set(['canvas', 'backlog'])
+
 function Main() {
   useLiveProject()
   useDeleteShortcut()
+  useHistoryShortcuts()
+  useNavigationShortcuts()
+  // The main process asks before the window closes; unsaved typing is written first.
+  useEffect(() => window.maquest.onBeforeClose(() => flushPending()), [])
   const { data: current, isLoading } = useCurrent()
   const view = useUI((s) => s.view)
   const selection = useUI((s) => s.selection)
@@ -63,8 +74,10 @@ function Main() {
 
   return (
     <ReactFlowProvider>
+      <WindowTitle project={current.config.name} />
       <SyncToast root={current.root} />
       <ImageViewer />
+      <ShortcutsDialog />
       <ContextMenuHost />
       <div className="flex h-full flex-col bg-app">
         <CommandPalette />
@@ -86,7 +99,7 @@ function Main() {
             {view === 'map' && <MapEditor />}
             <LiveNotesPanel />
           </main>
-          {selection && view !== 'guidelines' && view !== 'types' && view !== 'map' && view !== 'maps' && (
+          {selection && INSPECTOR_VIEWS.has(view) && (
             <InspectorPanel>
               <div className="flex min-h-0 w-full min-w-0 flex-col">
                 <InspectorTabs />
@@ -98,4 +111,21 @@ function Main() {
       </div>
     </ReactFlowProvider>
   )
+}
+
+const VIEW_TITLES: Record<string, string> = { canvas: 'Canvas', maps: 'Maps', backlog: 'Backlog', guidelines: 'Guidelines', types: 'Types' }
+
+/** The OS window title (task switchers, docks): what is open, then the project. */
+function WindowTitle({ project }: { project: string }) {
+  const view = useUI((s) => s.view)
+  const shown = useUI((s) => (s.view === 'map' ? s.map : s.selection?.kind === 'node' && INSPECTOR_VIEWS.has(s.view) ? s.selection.id : null))
+  const { data: nodes } = useNodes()
+  const title = (shown && nodes?.find((n) => n.id === shown)?.title) || VIEW_TITLES[view] || ''
+  useEffect(() => {
+    document.title = title ? `${title} — ${project}` : project
+    return () => {
+      document.title = 'Maquest'
+    }
+  }, [title, project])
+  return null
 }

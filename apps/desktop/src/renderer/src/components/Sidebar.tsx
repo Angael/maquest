@@ -1,7 +1,7 @@
 import { createContext, memo, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ChevronRight, ChevronsDownUp, ChevronsUpDown, Palette, Plus } from 'lucide-react'
 import { create as createStore } from 'zustand'
-import type { NodeType, OutlineNode, StoryNode } from '@maquest/core/schema'
+import type { NodeType, OutlineNode, Status, StoryNode } from '@maquest/core/schema'
 import { NODE_DRAG_TYPE, useCreateNode, useRevealNode } from '../lib/actions'
 import { api } from '../lib/api'
 import { queryClient, useAction, useNodes, useOutline } from '../lib/queries'
@@ -10,6 +10,7 @@ import { useTypes, type TypeStyle } from '../lib/styles'
 import { IconButton, MenuItem, MenuSeparator, cn } from './ui'
 import { contextMenu, leaveFocus } from './ContextMenu'
 import { NodeMenu, act } from './menus/NodeMenu'
+import { STATUS_LABEL, StatusDot } from './inspector/properties'
 import { openNodeTab, preventMiddleDown } from '../lib/nodeLink'
 
 /** Row being dragged in the sidebar, so siblings of the same type can show where it would land. */
@@ -79,6 +80,7 @@ const Row = memo(function Row({
   id,
   type,
   title,
+  status,
   depth,
   style,
   open,
@@ -88,6 +90,7 @@ const Row = memo(function Row({
   id: string
   type: NodeType
   title: string
+  status?: Status
   depth: number
   style: TypeStyle
   open?: boolean
@@ -198,6 +201,12 @@ const Row = memo(function Row({
       </span>
       <Icon size={14} style={{ color: style.color }} className="shrink-0" aria-hidden />
       {renaming ? <RenameField id={id} title={title} /> : <span className="min-w-0 flex-1 truncate">{title}</span>}
+      {status && !renaming && (
+        <span title={STATUS_LABEL[status]} className="flex size-4 shrink-0 items-center justify-center">
+          <StatusDot status={status} />
+          <span className="sr-only">{STATUS_LABEL[status]}</span>
+        </span>
+      )}
       {child && !renaming && (
         <IconButton
           icon={Plus}
@@ -216,14 +225,18 @@ const Row = memo(function Row({
 })
 
 function Tree({ node, depth, styleOf }: { node: OutlineNode; depth: number; styleOf: (t: NodeType) => TypeStyle }) {
-  const [open, setOpen] = useState(true)
-  const toggle = useCallback(() => setOpen((o) => !o), [])
+  const open = useUI((s) => !s.collapsed.includes(node.id))
+  const toggle = useCallback(() => {
+    const ui = useUI.getState()
+    ui.setCollapsed(node.id, !ui.collapsed.includes(node.id))
+  }, [node.id])
   return (
     <>
       <Row
         id={node.id}
         type={node.type}
         title={node.title}
+        status={node.status}
         depth={depth}
         style={styleOf(node.type)}
         open={open}
@@ -236,7 +249,9 @@ function Tree({ node, depth, styleOf }: { node: OutlineNode; depth: number; styl
 
 function Section({ title, type, count, children }: { title: string; type: NodeType; count: number; children: ReactNode }) {
   const actions = useActions()
-  const [open, setOpen] = useState(true)
+  const key = `section:${type}`
+  const open = useUI((s) => !s.collapsed.includes(key))
+  const setOpen = (value: boolean) => useUI.getState().setCollapsed(key, !value)
   const contentId = useId()
   const menu = () => (
     <>
@@ -267,7 +282,7 @@ function Section({ title, type, count, children }: { title: string; type: NodeTy
           aria-controls={contentId}
           className="flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-md text-left text-xs font-medium text-fg-subtle outline-none hover:text-fg-muted focus-visible:shadow-[inset_0_0_0_1px_var(--color-accent)] focus-visible:outline-none!"
           style={{ paddingLeft: PAD }}
-          onClick={() => setOpen((value) => !value)}
+          onClick={() => setOpen(!open)}
         >
           <span className="flex size-4 shrink-0 items-center justify-center text-fg-faint">
             <ChevronRight size={12} aria-hidden className={cn('transition-transform duration-100', open && 'rotate-90')} />
@@ -367,7 +382,7 @@ export function Sidebar() {
           {sections.map((t) => (
             <Section key={t.id} title={t.plural} type={t.id} count={byType.get(t.id)?.length ?? 0}>
               {byType.get(t.id)?.map((n) => (
-                <Row key={n.id} id={n.id} type={t.id} title={n.title} depth={0} style={t} reorderable />
+                <Row key={n.id} id={n.id} type={t.id} title={n.title} status={n.status} depth={0} style={t} reorderable />
               ))}
             </Section>
           ))}

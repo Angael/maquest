@@ -1,6 +1,14 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { UpdateStatus } from '../main/updater'
 
+/** Saves pending edits before the window closes; the main process waits for the reply (with a timeout). */
+let beforeClose: (() => Promise<unknown>) | null = null
+ipcRenderer.on('app:before-close', () => {
+  void Promise.resolve(beforeClose?.())
+    .catch(() => {})
+    .finally(() => ipcRenderer.send('app:close-ready'))
+})
+
 export type MenuCommand = { command: 'search'; text: string } | { command: 'viewImage'; url: string }
 
 const bridge = {
@@ -23,6 +31,10 @@ const bridge = {
     return () => void ipcRenderer.removeListener('window:maximized', listener)
   },
   installUpdate: () => ipcRenderer.invoke('update:install'),
+  /** Runs (and awaits) `cb` before the window closes, e.g. to flush debounced saves. One handler; a new one replaces it. */
+  onBeforeClose: (cb: () => Promise<unknown>) => {
+    beforeClose = cb
+  },
   /** Commands from the native text menu that the renderer carries out (search the project, view an image). */
   onMenuCommand: (cb: (command: MenuCommand) => void) => {
     const listener = (_e: unknown, command: MenuCommand) => cb(command)

@@ -4,6 +4,7 @@ import { openImage } from './Lightbox'
 import { insertNewlineContinueMarkup, markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { insertNewlineAndIndent } from '@codemirror/commands'
 import { Prec } from '@codemirror/state'
+import { completionStatus } from '@codemirror/autocomplete'
 import { keymap } from '@codemirror/view'
 import { languages } from '@codemirror/language-data'
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
@@ -16,8 +17,10 @@ import { useUI } from '../lib/store'
 import { livePreview, setNodeTitles } from '../lib/livePreview'
 import { cn } from './ui'
 import { nodeLinkProps, openNodeTab } from '../lib/nodeLink'
+import { linkCompletion, setLinkTargets } from '../lib/linkCompletion'
+import { useTypes } from '../lib/styles'
 
-const NO_NODES: { id: string; title: string }[] = []
+const NO_NODES: { id: string; title: string; type: string }[] = []
 const embed = (paths: string[]) => paths.map((p) => `![${p.split('/').pop()}](${p})`).join('\n')
 
 /**
@@ -31,6 +34,8 @@ const listEnter = Prec.highest(
       key: 'Enter',
       run: (view) => {
         const { state } = view
+        // Enter picks the highlighted [[ suggestion instead.
+        if (completionStatus(state) === 'active') return false
         const sel = state.selection.main
         if (!sel.empty) return insertNewlineContinueMarkup(view)
         const line = state.doc.lineAt(sel.head)
@@ -76,7 +81,17 @@ const editorTheme = EditorView.theme(
   { dark: true },
 )
 
-const basicSetup = { lineNumbers: false, foldGutter: false, highlightActiveLine: false, highlightActiveLineGutter: false, syntaxHighlighting: false }
+/** One instance for every editor, so reconfiguring (e.g. toggling spellcheck) keeps the suggested nodes. */
+const nodeLinks = linkCompletion()
+
+const basicSetup = {
+  autocompletion: false,
+  lineNumbers: false,
+  foldGutter: false,
+  highlightActiveLine: false,
+  highlightActiveLineGutter: false,
+  syntaxHighlighting: false,
+}
 
 /** `breaks` keeps single newlines as line breaks, for short texts written line by line (sheet records). */
 export function MarkdownPreview({ source, breaks }: { source: string; breaks?: boolean }) {
@@ -154,17 +169,20 @@ export const MarkdownEditor = memo(function MarkdownEditor({
   })
   const [view, setView] = useState<EditorView>()
   const titles = useMemo(() => new Map(nodes.map((n) => [n.id, n.title])), [nodes])
+  const types = useTypes()
+  useEffect(() => view?.dispatch({ effects: setLinkTargets.of({ nodes, label: (type) => types.of(type).label }) }), [view, nodes, types])
   useEffect(() => view?.dispatch({ effects: setNodeTitles.of(titles) }), [view, titles])
   const extensions = useMemo(
     () => [
       markdown({ base: markdownLanguage, codeLanguages: languages }),
       listEnter,
       EditorView.lineWrapping,
-      // Prose: spelling is checked like any text field (right click for suggestions, or to turn it off).
-      EditorView.contentAttributes.of({ spellcheck: 'true' }),
       mediaHandlers,
       editorTheme,
+      nodeLinks,
       livePreview({ open: (id, newTab) => (newTab ? openNodeTab(id) : select({ kind: 'node', id })) }),
+      // Prose: spelling is checked like any text field (right click for suggestions; turned off there or in the palette).
+      EditorView.contentAttributes.of({ spellcheck: 'true', autocapitalize: 'sentences' }),
     ],
     [select],
   )
@@ -201,7 +219,7 @@ export const MarkdownEditor = memo(function MarkdownEditor({
       {hint && focused && !value && (
         <p className={cn('pointer-events-none text-xs text-fg-faint', doc ? 'pb-2' : 'absolute right-3 bottom-2')}>
           <span translate="no" className="font-mono text-2xs text-fg-subtle">
-            [[node-id]]
+            [[
           </span>{' '}
           links a node · drop or paste images and videos
         </p>
