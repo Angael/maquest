@@ -1,10 +1,11 @@
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { app, BrowserWindow, ipcMain, net, protocol } from 'electron'
+import { app, BrowserWindow, ipcMain, nativeTheme, net, protocol, session } from 'electron'
 import { Project } from '@maquest/core'
 import { handlers, mediaPath } from './handlers'
 import { setupUpdates } from './updater'
 import { externalLinks, loadRenderer } from './windows'
+import { applySpellcheck, attachContextMenu } from './contextMenu'
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'maquest-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } }])
 
@@ -27,6 +28,7 @@ function createWindow() {
     },
   })
   externalLinks(win)
+  attachContextMenu(win)
   const sendMaximized = () => win.webContents.send('window:maximized', win.isMaximized())
   win.on('maximize', sendMaximized)
   win.on('unmaximize', sendMaximized)
@@ -36,6 +38,9 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  // The app is dark only; native menus and dialogs follow.
+  nativeTheme.themeSource = 'dark'
+  applySpellcheck(session.defaultSession)
   // maquest-media://p/media/file.png -> <project>/media/file.png
   protocol.handle('maquest-media', (req) => {
     const rel = decodeURIComponent(new URL(req.url).pathname).replace(/^\/+/, '')

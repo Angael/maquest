@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { app, BrowserWindow, dialog, shell } from 'electron'
+import { app, BrowserWindow, clipboard, ClipboardItem, dialog, nativeImage, shell } from 'electron'
 import chokidar, { type FSWatcher } from 'chokidar'
 import {
   Project,
@@ -151,6 +151,17 @@ export const handlers = {
   reveal: (rel?: string) => {
     if (rel) shell.showItemInFolder(p().resolve(rel))
     else void shell.openPath(p().root)
+  },
+  /** Opens a recent project's folder in the file manager (no project needs to be open). */
+  showFolder: (root: string) => {
+    if (!Project.isProject(root)) throw new Error(`Not a Maquest project: ${root}`)
+    void shell.openPath(root)
+  },
+  /** Puts a project media image on the clipboard as an image. */
+  copyMedia: async (rel: string) => {
+    const image = nativeImage.createFromPath(p().resolve(rel))
+    if (image.isEmpty()) throw new Error(`Not an image: ${rel}`)
+    await clipboard.write([new ClipboardItem({ 'image/png': new Blob([new Uint8Array(image.toPNG())], { type: 'image/png' }) })])
   },
   mcpLaunch: () => mcpLaunch(),
 
