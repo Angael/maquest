@@ -1,12 +1,14 @@
 import { createContext, memo, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ChevronRight, Plus } from 'lucide-react'
-import type { NodeType, OutlineNode, StoryNode } from '@maquest/core/schema'
+import type { NodeType, OutlineNode, Status, StoryNode } from '@maquest/core/schema'
 import { NODE_DRAG_TYPE, useCreateNode, useRevealNode } from '../lib/actions'
 import { api } from '../lib/api'
 import { queryClient, useAction, useNodes, useOutline } from '../lib/queries'
 import { useUI } from '../lib/store'
 import { useTypes, type TypeStyle } from '../lib/styles'
-import { IconButton, cn } from './ui'
+import { ContextMenu, IconButton, cn } from './ui'
+import { NodeMenuItems } from './NodeMenu'
+import { STATUS_LABEL, StatusDot } from './inspector/properties'
 import { openNodeTab, preventMiddleDown } from '../lib/nodeLink'
 
 /** Row being dragged in the sidebar, so siblings of the same type can show where it would land. */
@@ -38,6 +40,7 @@ const Row = memo(function Row({
   id,
   type,
   title,
+  status,
   depth,
   style,
   open,
@@ -47,6 +50,7 @@ const Row = memo(function Row({
   id: string
   type: NodeType
   title: string
+  status?: Status
   depth: number
   style: TypeStyle
   open?: boolean
@@ -62,110 +66,122 @@ const Row = memo(function Row({
   const Icon = style.icon
   const canDrop = () => reorderable && draggedRow && draggedRow.type === type && draggedRow.id !== id
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      aria-label={title}
-      aria-pressed={selected}
-      aria-expanded={onToggle ? open : undefined}
-      className={cn(
-        'group/row relative flex h-7 cursor-default items-center gap-1.5 rounded-md pr-1 text-sm outline-none select-none focus-visible:shadow-[inset_0_0_0_1px_var(--color-accent)] focus-visible:outline-none!',
-        selected ? 'bg-active text-fg' : 'text-fg-muted hover:bg-hover hover:text-fg',
-        dropAt === 'before' && 'shadow-[inset_0_2px_0_var(--color-accent)]',
-        dropAt === 'after' && 'shadow-[inset_0_-2px_0_var(--color-accent)]',
-      )}
-      data-row={id}
-      style={{ paddingLeft: PAD + depth * INDENT }}
-      draggable
-      onDragStart={(event) => {
-        event.dataTransfer.setData(NODE_DRAG_TYPE, id)
-        event.dataTransfer.effectAllowed = 'copyMove'
-        draggedRow = { id, type }
-      }}
-      onDragEnd={() => {
-        draggedRow = null
-      }}
-      onDragOver={(event) => {
-        if (!canDrop()) return
-        event.preventDefault()
-        event.dataTransfer.dropEffect = 'move'
-        const rect = event.currentTarget.getBoundingClientRect()
-        setDropAt(event.clientY > rect.top + rect.height / 2 ? 'after' : 'before')
-      }}
-      onDragLeave={() => setDropAt(null)}
-      onDrop={(event) => {
-        setDropAt(null)
-        if (!canDrop() || !draggedRow) return
-        event.preventDefault()
-        const rect = event.currentTarget.getBoundingClientRect()
-        actions.move(type, id, draggedRow.id, event.clientY > rect.top + rect.height / 2)
-        draggedRow = null
-      }}
-      onClick={(event) => {
-        event.currentTarget.focus()
-        actions.focus(id)
-      }}
-      onMouseDown={preventMiddleDown}
-      onAuxClick={(event) => {
-        if (event.button !== 1) return
-        event.preventDefault()
-        if (type === 'map') useUI.getState().openMap(id, true)
-        else openNodeTab(id)
-      }}
-      onKeyDown={(event) => {
-        if (event.target !== event.currentTarget) return
-        if (event.key === 'Enter' || event.key === ' ') actions.focus(id)
-        else if (event.key === 'ArrowDown') focusSibling(event.currentTarget, 1)
-        else if (event.key === 'ArrowUp') focusSibling(event.currentTarget, -1)
-        else if (event.key === 'ArrowRight' && onToggle && !open) onToggle()
-        else if (event.key === 'ArrowLeft' && onToggle && open) onToggle()
-        else return
-        event.preventDefault()
-      }}
-    >
-      {/* Indent guides: one hairline under each ancestor's chevron. */}
-      {Array.from({ length: depth }, (_, level) => (
-        <span key={level} aria-hidden className="absolute inset-y-0 w-px bg-line" style={{ left: PAD + level * INDENT + 7.5 }} />
-      ))}
-      <span
-        aria-hidden
-        className="flex size-4 shrink-0 items-center justify-center rounded-[4px] text-fg-faint hover:text-fg"
-        onClick={(e) => {
-          if (!onToggle) return
-          e.stopPropagation()
-          onToggle()
+    <ContextMenu menu={<NodeMenuItems id={id} openTab onAddChild={actions.create} />}>
+      <div
+        role="button"
+        tabIndex={0}
+        aria-label={title}
+        aria-pressed={selected}
+        aria-expanded={onToggle ? open : undefined}
+        className={cn(
+          'group/row relative flex h-7 cursor-default items-center gap-1.5 rounded-md pr-1 text-sm outline-none select-none focus-visible:shadow-[inset_0_0_0_1px_var(--color-accent)] focus-visible:outline-none!',
+          selected ? 'bg-active text-fg' : 'text-fg-muted hover:bg-hover hover:text-fg',
+          dropAt === 'before' && 'shadow-[inset_0_2px_0_var(--color-accent)]',
+          dropAt === 'after' && 'shadow-[inset_0_-2px_0_var(--color-accent)]',
+        )}
+        data-row={id}
+        style={{ paddingLeft: PAD + depth * INDENT }}
+        draggable
+        onDragStart={(event) => {
+          event.dataTransfer.setData(NODE_DRAG_TYPE, id)
+          event.dataTransfer.effectAllowed = 'copyMove'
+          draggedRow = { id, type }
+        }}
+        onDragEnd={() => {
+          draggedRow = null
+        }}
+        onDragOver={(event) => {
+          if (!canDrop()) return
+          event.preventDefault()
+          event.dataTransfer.dropEffect = 'move'
+          const rect = event.currentTarget.getBoundingClientRect()
+          setDropAt(event.clientY > rect.top + rect.height / 2 ? 'after' : 'before')
+        }}
+        onDragLeave={() => setDropAt(null)}
+        onDrop={(event) => {
+          setDropAt(null)
+          if (!canDrop() || !draggedRow) return
+          event.preventDefault()
+          const rect = event.currentTarget.getBoundingClientRect()
+          actions.move(type, id, draggedRow.id, event.clientY > rect.top + rect.height / 2)
+          draggedRow = null
+        }}
+        onClick={(event) => {
+          event.currentTarget.focus()
+          actions.focus(id)
+        }}
+        onMouseDown={preventMiddleDown}
+        onAuxClick={(event) => {
+          if (event.button !== 1) return
+          event.preventDefault()
+          if (type === 'map') useUI.getState().openMap(id, true)
+          else openNodeTab(id)
+        }}
+        onKeyDown={(event) => {
+          if (event.target !== event.currentTarget) return
+          if (event.key === 'Enter' || event.key === ' ') actions.focus(id)
+          else if (event.key === 'ArrowDown') focusSibling(event.currentTarget, 1)
+          else if (event.key === 'ArrowUp') focusSibling(event.currentTarget, -1)
+          else if (event.key === 'ArrowRight' && onToggle && !open) onToggle()
+          else if (event.key === 'ArrowLeft' && onToggle && open) onToggle()
+          else return
+          event.preventDefault()
         }}
       >
-        {onToggle && <ChevronRight size={12} className={cn('transition-transform duration-100', open && 'rotate-90')} />}
-      </span>
-      <Icon size={14} style={{ color: style.color }} className="shrink-0" aria-hidden />
-      <span className="min-w-0 flex-1 truncate">{title}</span>
-      {child && (
-        <IconButton
-          icon={Plus}
-          size="sm"
-          label={`Add ${child}`}
-          tooltipSide="right"
-          className="size-5 opacity-0 group-focus-within/row:opacity-100 group-hover/row:opacity-100 focus-visible:opacity-100"
+        {/* Indent guides: one hairline under each ancestor's chevron. */}
+        {Array.from({ length: depth }, (_, level) => (
+          <span key={level} aria-hidden className="absolute inset-y-0 w-px bg-line" style={{ left: PAD + level * INDENT + 7.5 }} />
+        ))}
+        <span
+          aria-hidden
+          className="flex size-4 shrink-0 items-center justify-center rounded-[4px] text-fg-faint hover:text-fg"
           onClick={(e) => {
+            if (!onToggle) return
             e.stopPropagation()
-            actions.create(child, id)
+            onToggle()
           }}
-        />
-      )}
-    </div>
+        >
+          {onToggle && <ChevronRight size={12} className={cn('transition-transform duration-100', open && 'rotate-90')} />}
+        </span>
+        <Icon size={14} style={{ color: style.color }} className="shrink-0" aria-hidden />
+        <span className="min-w-0 flex-1 truncate">{title}</span>
+        {status && (
+          <span title={STATUS_LABEL[status]} className="flex size-4 shrink-0 items-center justify-center">
+            <StatusDot status={status} />
+            <span className="sr-only">{STATUS_LABEL[status]}</span>
+          </span>
+        )}
+        {child && (
+          <IconButton
+            icon={Plus}
+            size="sm"
+            label={`Add ${child}`}
+            tooltipSide="right"
+            className="size-5 opacity-0 group-focus-within/row:opacity-100 group-hover/row:opacity-100 focus-visible:opacity-100"
+            onClick={(e) => {
+              e.stopPropagation()
+              actions.create(child, id)
+            }}
+          />
+        )}
+      </div>
+    </ContextMenu>
   )
 })
 
 function Tree({ node, depth, styleOf }: { node: OutlineNode; depth: number; styleOf: (t: NodeType) => TypeStyle }) {
-  const [open, setOpen] = useState(true)
-  const toggle = useCallback(() => setOpen((o) => !o), [])
+  const open = useUI((s) => !s.collapsed.includes(node.id))
+  const toggle = useCallback(() => {
+    const ui = useUI.getState()
+    ui.setCollapsed(node.id, !ui.collapsed.includes(node.id))
+  }, [node.id])
   return (
     <>
       <Row
         id={node.id}
         type={node.type}
         title={node.title}
+        status={node.status}
         depth={depth}
         style={styleOf(node.type)}
         open={open}
@@ -178,7 +194,9 @@ function Tree({ node, depth, styleOf }: { node: OutlineNode; depth: number; styl
 
 function Section({ title, type, count, children }: { title: string; type: NodeType; count: number; children: ReactNode }) {
   const actions = useActions()
-  const [open, setOpen] = useState(true)
+  const key = `section:${type}`
+  const open = useUI((s) => !s.collapsed.includes(key))
+  const setOpen = (value: boolean) => useUI.getState().setCollapsed(key, !value)
   const contentId = useId()
   return (
     <section className="mb-2" aria-label={title}>
@@ -189,7 +207,7 @@ function Section({ title, type, count, children }: { title: string; type: NodeTy
           aria-controls={contentId}
           className="flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-md text-left text-xs font-medium text-fg-subtle outline-none hover:text-fg-muted focus-visible:shadow-[inset_0_0_0_1px_var(--color-accent)] focus-visible:outline-none!"
           style={{ paddingLeft: PAD }}
-          onClick={() => setOpen((value) => !value)}
+          onClick={() => setOpen(!open)}
         >
           <span className="flex size-4 shrink-0 items-center justify-center text-fg-faint">
             <ChevronRight size={12} aria-hidden className={cn('transition-transform duration-100', open && 'rotate-90')} />
@@ -289,7 +307,7 @@ export function Sidebar() {
           {sections.map((t) => (
             <Section key={t.id} title={t.plural} type={t.id} count={byType.get(t.id)?.length ?? 0}>
               {byType.get(t.id)?.map((n) => (
-                <Row key={n.id} id={n.id} type={t.id} title={n.title} depth={0} style={t} reorderable />
+                <Row key={n.id} id={n.id} type={t.id} title={n.title} status={n.status} depth={0} style={t} reorderable />
               ))}
             </Section>
           ))}
