@@ -1,6 +1,14 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { UpdateStatus } from '../main/updater'
 
+/** Saves pending edits before the window closes; the main process waits for the reply (with a timeout). */
+let beforeClose: (() => Promise<unknown>) | null = null
+ipcRenderer.on('app:before-close', () => {
+  void Promise.resolve(beforeClose?.())
+    .catch(() => {})
+    .finally(() => ipcRenderer.send('app:close-ready'))
+})
+
 const bridge = {
   invoke: (method: string, args: unknown[]) => ipcRenderer.invoke('api', method, args),
   onChanged: (cb: () => void) => {
@@ -21,6 +29,10 @@ const bridge = {
     return () => void ipcRenderer.removeListener('window:maximized', listener)
   },
   installUpdate: () => ipcRenderer.invoke('update:install'),
+  /** Runs (and awaits) `cb` before the window closes, e.g. to flush debounced saves. One handler; a new one replaces it. */
+  onBeforeClose: (cb: () => Promise<unknown>) => {
+    beforeClose = cb
+  },
   /** Absolute path of a File dropped from the OS. */
   pathForFile: (file: File) => webUtils.getPathForFile(file),
 }

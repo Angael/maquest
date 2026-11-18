@@ -6,6 +6,7 @@ import { api } from '../lib/api'
 import { useAction, useConfig, useGuidelines } from '../lib/queries'
 import { useUI } from '../lib/store'
 import { MarkdownEditor } from './MarkdownEditor'
+import { useFlushOnLeave } from '../lib/pending'
 import { Button, IconButton, Menu, MenuItem, Select, Tooltip, cn } from './ui'
 import { ConfirmDialog, CreateButton, ListGroup, PageHeader, Switch, TwoPane, listRow } from './views/ViewLayout'
 
@@ -151,8 +152,9 @@ function GuidelineEditor({ g, kind }: { g: Guideline; kind: ProjectKind | undefi
   const [title, setTitle] = useState(g.title)
   const [body, setBody] = useState(g.body)
   const [confirming, setConfirming] = useState(false)
-  const save = useDebouncedCallback((patch: { title?: string; body?: string }) => setGuideline.mutate([g.id, patch]), 600)
-  useEffect(() => () => void save.flush(), [save])
+  const save = useDebouncedCallback((patch: { title?: string; body?: string }) => setGuideline.mutateAsync([g.id, patch]), 600)
+  useEffect(() => () => void save.flush()?.catch(() => {}), [save])
+  useFlushOnLeave(() => save.flush())
   // Adopt edits made elsewhere (agents via MCP, git, a reset) unless the user has unsaved typing in flight.
   const [seen, setSeen] = useState({ title: g.title, body: g.body })
   if ((seen.title !== g.title || seen.body !== g.body) && !save.isPending()) {

@@ -1,17 +1,21 @@
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { app, BrowserWindow, ipcMain, net, protocol } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, net, protocol } from 'electron'
 import { Project } from '@maquest/core'
 import { handlers, mediaPath } from './handlers'
 import { setupUpdates } from './updater'
 import { externalLinks, loadRenderer } from './windows'
+import { rememberWindowState, saveBeforeClose, savedWindowState } from './windowState'
+import { editMenuTemplate } from './editMenu'
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'maquest-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } }])
 
 function createWindow() {
+  const saved = savedWindowState()
   const win = new BrowserWindow({
     width: 1440,
     height: 900,
+    ...saved.bounds,
     minWidth: 900,
     minHeight: 600,
     backgroundColor: '#161311',
@@ -26,7 +30,17 @@ function createWindow() {
       sandbox: false,
     },
   })
+  if (saved.maximized) win.maximize()
   externalLinks(win)
+  rememberWindowState(win)
+  saveBeforeClose(win)
+  win.webContents.on('context-menu', (_event, params) => {
+    const template = editMenuTemplate(params, {
+      replace: (word) => win.webContents.replaceMisspelling(word),
+      learn: (word) => win.webContents.session.addWordToSpellCheckerDictionary(word),
+    })
+    if (template.length) Menu.buildFromTemplate(template).popup({ window: win })
+  })
   const sendMaximized = () => win.webContents.send('window:maximized', win.isMaximized())
   win.on('maximize', sendMaximized)
   win.on('unmaximize', sendMaximized)

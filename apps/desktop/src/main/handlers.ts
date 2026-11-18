@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, dialog, shell } from 'electron'
 import chokidar, { type FSWatcher } from 'chokidar'
 import {
@@ -152,6 +153,10 @@ export const handlers = {
     if (rel) shell.showItemInFolder(p().resolve(rel))
     else void shell.openPath(p().root)
   },
+  /** Shows an absolute path (e.g. an exported file) in the OS file manager. */
+  showPath: (abs: string) => shell.showItemInFolder(abs),
+  /** Opens a project file (e.g. a node's markdown) in the OS default app. Resolves to an error message, or '' on success. */
+  openFile: (rel: string) => shell.openPath(p().resolve(rel)),
   mcpLaunch: () => mcpLaunch(),
 
   // ---- project ----
@@ -319,6 +324,22 @@ export const handlers = {
     if (r.canceled || !r.filePath) return null
     const svg = mapSvg(project.readMap(id), { ...opts, imageHref: (src) => embedMedia(project, src) })
     fs.writeFileSync(r.filePath, svg)
+    return r.filePath
+  },
+  /**
+   * Asks where to save, then writes a story, chapter or scene with its chapters and scenes as one markdown document.
+   * Images point at the project's media files, so the document renders anywhere on this machine. Returns the path or null.
+   */
+  exportManuscript: async (id: string) => {
+    const project = p()
+    const node = project.requireNode(id)
+    const r = await dialog.showSaveDialog({
+      title: `Export “${node.title}” as Markdown`,
+      defaultPath: path.join(app.getPath('documents'), `${node.id}.md`),
+      filters: [{ name: 'Markdown', extensions: ['md'] }],
+    })
+    if (r.canceled || !r.filePath) return null
+    fs.writeFileSync(r.filePath, project.manuscript(id, { media: (src) => pathToFileURL(project.resolve(src)).href }))
     return r.filePath
   },
   importMedia: (absPath: string) => p().importMedia(absPath),
