@@ -18,6 +18,7 @@ import { FieldInput, fieldPatch } from '../sheet/FieldForm'
 import { mergeValues, propertyRows } from '@maquest/core/sheet'
 import { MapThumb } from '../map/MapThumb'
 import { useFlushOnLeave } from '../../lib/pending'
+import { DocumentFooter } from './DocumentFooter'
 
 type Draft = Pick<StoryNode, 'title' | 'summary' | 'body' | 'fields' | 'tags'>
 /** Unsaved changes; `fields` holds only changed keys, null marking removal (maps merge one level, like the server). */
@@ -169,6 +170,7 @@ export function NodeInspector({ id }: { id: string }) {
       </div>
 
       <BodyArea node={node} body={draft.body} onBody={changeBody} />
+      <DocumentFooter node={node} body={draft.body} all={all} />
 
       <div className="mt-6 space-y-5 px-4">
         <Contains items={children} />

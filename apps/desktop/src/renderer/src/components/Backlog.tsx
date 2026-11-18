@@ -9,6 +9,7 @@ import { useTypes, type TypeStyle } from '../lib/styles'
 import { Button, IconButton, Kbd, Menu, MenuItem, MenuLabel, cn } from './ui'
 import { PageHeader } from './views/ViewLayout'
 import { nodeLinkProps } from '../lib/nodeLink'
+import { absolute, ago } from '../lib/time'
 
 const PROMOTE: NodeType[] = ['note', 'scene', 'chapter', 'story']
 const TITLE_MAX = 80
@@ -138,27 +139,6 @@ function excerpt(body: string, titles: Map<string, string>) {
     )
     .filter(Boolean)
     .join(' · ')
-}
-
-const relative = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto', style: 'short' })
-const absolute = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' })
-const STEPS: [Intl.RelativeTimeFormatUnit, number][] = [
-  ['minute', 60],
-  ['hour', 24],
-  ['day', 7],
-  ['week', 4.35],
-  ['month', 12],
-  ['year', Infinity],
-]
-function ago(iso: string) {
-  let value = (Date.parse(iso) - Date.now()) / 60_000
-  if (Number.isNaN(value)) return null
-  if (Math.abs(value) < 1) return 'just now'
-  for (const [unit, size] of STEPS) {
-    if (Math.abs(value) < size) return relative.format(Math.round(value), unit)
-    value /= size
-  }
-  return null
 }
 
 const IdeaCard = memo(function IdeaCard({
