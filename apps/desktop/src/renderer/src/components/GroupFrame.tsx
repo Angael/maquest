@@ -1,4 +1,5 @@
-import { memo, useState } from 'react'
+import { memo, useEffect, useState } from 'react'
+import { create } from 'zustand'
 import { NodeResizeControl, NodeToolbar, Position, ResizeControlVariant, type ControlPosition, type Node, type NodeProps } from '@xyflow/react'
 import { Ungroup } from 'lucide-react'
 import { GROUP_COLORS, GROUP_HEADER, type Group, type GroupColor, type Rect } from '@maquest/core/schema'
@@ -17,6 +18,10 @@ export type GroupData = {
   resized: (rect: Rect) => void
 }
 export type GroupFlowNode = Node<GroupData, 'frame'>
+
+/** The group whose title is being renamed from its context menu. */
+const useRenaming = create<{ id: string | null }>(() => ({ id: null }))
+export const renameGroup = (id: string) => useRenaming.setState({ id })
 
 const LINES: ControlPosition[] = ['top', 'right', 'bottom', 'left']
 const CORNERS: ControlPosition[] = ['top-left', 'top-right', 'bottom-left', 'bottom-right']
@@ -37,6 +42,14 @@ export const GroupFrame = memo(function GroupFrame({ data, selected }: NodeProps
   const { group } = data
   const style = GROUP_STYLE[group.color]
   const [title, setTitle] = useState<string | null>(null)
+  const renaming = useRenaming((s) => s.id === group.id)
+  useEffect(() => {
+    if (!renaming) return
+    useRenaming.setState({ id: null })
+    // After the menu has handed focus back, or the field would lose it at once.
+    const frame = requestAnimationFrame(() => setTitle(group.title))
+    return () => cancelAnimationFrame(frame)
+  }, [renaming, group.title])
   const commit = () => {
     if (title?.trim() && title.trim() !== group.title) data.rename(title.trim())
     setTitle(null)

@@ -1,12 +1,37 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
-import { ClipboardPaste, Copy, CopyPlus, EyeOff, Group, Search, Trash2, type LucideIcon } from 'lucide-react'
-import { onBoard, type Board, type NodeType, type StoryNode } from '@maquest/core/schema'
-import { useTypes } from '../../lib/styles'
-import { cn, popupSurface } from '../ui'
+import {
+  ArrowDownRight,
+  ArrowLeftRight,
+  ArrowUpLeft,
+  BoxSelect,
+  ClipboardPaste,
+  Copy,
+  CopyPlus,
+  EyeOff,
+  FolderOpen,
+  Group,
+  Link2,
+  Map as MapIcon,
+  Palette,
+  Pencil,
+  Search,
+  Spline,
+  Trash2,
+  Ungroup,
+  Unlink,
+  type LucideIcon,
+} from 'lucide-react'
+import { EDGE_TYPES, GROUP_COLORS, onBoard, type Board, type EdgeType, type Group as GroupT, type GroupColor, type NodeType, type StoryNode } from '@maquest/core/schema'
+import { api } from '../../lib/api'
+import { currentBoardId, useGraph, useNodes } from '../../lib/queries'
+import { useUI } from '../../lib/store'
+import { EDGE_STYLE, GROUP_STYLE, useTypes } from '../../lib/styles'
+import { AddToBoardMenu, StatusMenu, act, copyText, openNode, renameInInspector } from '../menus/NodeMenu'
+import { MenuItem, MenuLabel, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuSub, cn, popupSurface } from '../ui'
 
 /*
- * Cursor-positioned menus (right-click, A key). Hand-placed at the pointer and deliberately not animated: they open
- * dozens of times a session, often from the keyboard.
+ * The add-card menu (right-click on the empty canvas, A key) and the menus of cards, lines and groups. The add menu is hand-placed
+ * because it holds a search field; the others use the shared context menu host.
  */
 
 type Point = { x: number; y: number }
@@ -87,42 +112,160 @@ function Item({
 const Divider = () => <div role="separator" className="mx-1 my-1 h-px bg-line" />
 const Heading = ({ children }: { children: ReactNode }) => <div className="px-2 pt-1.5 pb-1 text-2xs font-medium text-fg-subtle">{children}</div>
 
-export type NodeActions = Record<'copy' | 'duplicate' | 'group' | 'remove' | 'destroy', () => void>
+export type CardActions = Record<'copy' | 'duplicate' | 'group' | 'remove' | 'destroy', () => void>
 
-export function NodeMenu({ point, count, close, actions }: { point: Point; count: number; close: () => void; actions: NodeActions }) {
-  const menu = useFloatingMenu(point, close)
-  const run = (action: () => void) => () => {
-    close()
-    action()
-  }
+/** Right-click menu of one card or of the selected cards (`ids` are entity ids). */
+export function CardMenu({ ids, actions }: { ids: string[]; actions: CardActions }) {
+  const { data: nodes } = useNodes()
+  const picked = (nodes ?? []).filter((n) => ids.includes(n.id))
+  const one = ids.length === 1 ? picked[0] : undefined
+  const types = useTypes()
+  const S = one && types.of(one.type)
   return (
-    <div
-      ref={menu}
-      role="menu"
-      aria-label={count === 1 ? 'Card actions' : `Actions for ${count} cards`}
-      className={cn(popupSurface, 'fixed z-50 w-64')}
-      style={{ left: point.x, top: point.y }}
-      onContextMenu={(event) => event.preventDefault()}
-      onKeyDown={(event) => menuKeys(event, close)}
-    >
-      {count > 1 && <Heading>{count} cards</Heading>}
-      <Item icon={Copy} shortcut="Ctrl+C" onClick={run(actions.copy)}>
+    <>
+      {ids.length > 1 && <MenuLabel>{ids.length} cards</MenuLabel>}
+      {one && S && (
+        <>
+          <MenuItem icon={one.type === 'map' ? MapIcon : S.icon} color={one.type === 'map' ? undefined : S.color} onClick={() => openNode(one, true)}>
+            {one.type === 'map' ? 'Open map' : 'Open in new tab'}
+          </MenuItem>
+          <MenuItem icon={Pencil} shortcut="F2" onClick={() => (one.type === 'map' ? openNode(one) : renameInInspector(one.id))}>
+            Rename
+          </MenuItem>
+          <MenuSeparator />
+        </>
+      )}
+      <MenuItem icon={Copy} shortcut="Ctrl+C" onClick={actions.copy}>
         Copy reference
-      </Item>
-      <Item icon={CopyPlus} shortcut="Ctrl+D" onClick={run(actions.duplicate)}>
+      </MenuItem>
+      {one && (
+        <MenuItem icon={Link2} onClick={() => copyText(`[[${one.id}]]`, 'Link copied')}>
+          Copy link
+        </MenuItem>
+      )}
+      <MenuItem icon={CopyPlus} shortcut="Ctrl+D" onClick={actions.duplicate}>
         Duplicate
-      </Item>
-      <Item icon={Group} shortcut="Ctrl+G" onClick={run(actions.group)}>
+      </MenuItem>
+      <MenuItem icon={Group} shortcut="Ctrl+G" onClick={actions.group}>
         Group
-      </Item>
-      <Divider />
-      <Item icon={EyeOff} shortcut="Del" onClick={run(actions.remove)}>
+      </MenuItem>
+      {picked.length > 0 && <StatusMenu nodes={picked} />}
+      <AddToBoardMenu ids={ids} />
+      {one && (
+        <>
+          <MenuSeparator />
+          <MenuItem icon={FolderOpen} onClick={() => void api.reveal(one.path)}>
+            Show file in folder
+          </MenuItem>
+        </>
+      )}
+      <MenuSeparator />
+      <MenuItem icon={EyeOff} shortcut="Del" onClick={actions.remove}>
         Remove from board
-      </Item>
-      <Item icon={Trash2} shortcut="Shift+Del" danger onClick={run(actions.destroy)}>
+      </MenuItem>
+      <MenuItem icon={Trash2} shortcut="Shift+Del" danger onClick={actions.destroy}>
         Delete everywhere…
-      </Item>
-    </div>
+      </MenuItem>
+    </>
+  )
+}
+
+/** Right-click menu of a connection line (or its label). Containment lines only offer detaching the child. */
+export function EdgeMenu({ id, select }: { id: string; select: () => void }) {
+  const { data: graph } = useGraph()
+  const { data: nodes } = useNodes()
+  const title = (nodeId: string) => nodes?.find((n) => n.id === nodeId)?.title ?? nodeId
+  const go = (nodeId: string) => useUI.getState().focusNode(nodeId, currentBoardId())
+  if (id.startsWith('contains:')) {
+    const child = id.slice('contains:'.length)
+    const parent = nodes?.find((n) => n.id === child)?.parent
+    return (
+      <>
+        {parent && (
+          <MenuItem icon={ArrowUpLeft} onClick={() => go(parent)}>
+            Go to {title(parent)}
+          </MenuItem>
+        )}
+        <MenuItem icon={ArrowDownRight} onClick={() => go(child)}>
+          Go to {title(child)}
+        </MenuItem>
+        <MenuSeparator />
+        <MenuItem icon={Unlink} onClick={() => void act(api.updateNode(child, { parent: null }))}>
+          Detach from parent
+        </MenuItem>
+      </>
+    )
+  }
+  const edge = graph?.edges.find((e) => e.id === id)
+  if (!edge) return <MenuItem disabled>Not found</MenuItem>
+  return (
+    <>
+      <MenuItem icon={Pencil} onClick={select}>
+        Edit connection
+      </MenuItem>
+      <MenuSub label="Type" icon={Spline}>
+        <MenuRadioGroup value={edge.type} onValueChange={(type) => void act(api.updateEdge(id, { type: type as EdgeType }))}>
+          {EDGE_TYPES.map((t) => (
+            <MenuRadioItem key={t} value={t} iconNode={<span className="size-2 rounded-full" style={{ background: EDGE_STYLE[t].color }} />}>
+              {t}
+            </MenuRadioItem>
+          ))}
+        </MenuRadioGroup>
+      </MenuSub>
+      <MenuItem icon={ArrowLeftRight} onClick={() => void act(api.updateEdge(id, { source: edge.target, target: edge.source }))}>
+        Reverse direction
+      </MenuItem>
+      <MenuSeparator />
+      <MenuItem icon={ArrowUpLeft} onClick={() => go(edge.source)}>
+        Go to {title(edge.source)}
+      </MenuItem>
+      <MenuItem icon={ArrowDownRight} onClick={() => go(edge.target)}>
+        Go to {title(edge.target)}
+      </MenuItem>
+      <MenuSeparator />
+      <MenuItem icon={Trash2} danger shortcut="Del" onClick={() => void act(api.removeEdge(id))}>
+        Delete connection
+      </MenuItem>
+    </>
+  )
+}
+
+/** Right-click menu of a group frame. */
+export function GroupMenu({
+  group,
+  rename,
+  recolor,
+  selectCards,
+  ungroup,
+}: {
+  group: GroupT
+  rename: () => void
+  recolor: (color: GroupColor) => void
+  selectCards: () => void
+  ungroup: () => void
+}) {
+  return (
+    <>
+      <MenuItem icon={Pencil} onClick={rename}>
+        Rename
+      </MenuItem>
+      <MenuSub label="Color" icon={Palette}>
+        <MenuRadioGroup value={group.color} onValueChange={(c) => recolor(c as GroupColor)}>
+          {GROUP_COLORS.map((c) => (
+            <MenuRadioItem key={c} value={c} iconNode={<span className="size-3 rounded-full" style={{ background: GROUP_STYLE[c].border }} />}>
+              {c[0].toUpperCase() + c.slice(1)}
+            </MenuRadioItem>
+          ))}
+        </MenuRadioGroup>
+      </MenuSub>
+      <MenuItem icon={BoxSelect} disabled={!group.nodes.length} onClick={selectCards}>
+        Select cards
+      </MenuItem>
+      <MenuSeparator />
+      <MenuItem icon={Ungroup} shortcut="Del" onClick={ungroup}>
+        Ungroup
+      </MenuItem>
+    </>
   )
 }
 
