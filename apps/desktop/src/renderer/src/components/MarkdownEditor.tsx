@@ -160,6 +160,8 @@ export const MarkdownEditor = memo(function MarkdownEditor({
       markdown({ base: markdownLanguage, codeLanguages: languages }),
       listEnter,
       EditorView.lineWrapping,
+      // Prose: spelling is checked like any text field (right click for suggestions, or to turn it off).
+      EditorView.contentAttributes.of({ spellcheck: 'true' }),
       mediaHandlers,
       editorTheme,
       livePreview({ open: (id, newTab) => (newTab ? openNodeTab(id) : select({ kind: 'node', id })) }),

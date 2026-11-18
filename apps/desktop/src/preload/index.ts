@@ -1,6 +1,8 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { UpdateStatus } from '../main/updater'
 
+export type MenuCommand = { command: 'search'; text: string } | { command: 'viewImage'; url: string }
+
 const bridge = {
   invoke: (method: string, args: unknown[]) => ipcRenderer.invoke('api', method, args),
   onChanged: (cb: () => void) => {
@@ -21,6 +23,12 @@ const bridge = {
     return () => void ipcRenderer.removeListener('window:maximized', listener)
   },
   installUpdate: () => ipcRenderer.invoke('update:install'),
+  /** Commands from the native text menu that the renderer carries out (search the project, view an image). */
+  onMenuCommand: (cb: (command: MenuCommand) => void) => {
+    const listener = (_e: unknown, command: MenuCommand) => cb(command)
+    ipcRenderer.on('menu:command', listener)
+    return () => void ipcRenderer.removeListener('menu:command', listener)
+  },
   /** Absolute path of a File dropped from the OS. */
   pathForFile: (file: File) => webUtils.getPathForFile(file),
 }

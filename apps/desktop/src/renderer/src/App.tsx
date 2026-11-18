@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react'
+import { useEffect, type CSSProperties } from 'react'
 import { ReactFlowProvider } from '@xyflow/react'
 import { useCurrent, useLiveProject } from './lib/queries'
 import { useUI } from './lib/store'
@@ -17,7 +17,8 @@ import { CommandPalette } from './components/CommandPalette'
 import { UpdateToast } from './components/UpdateToast'
 import { SyncToast } from './components/SyncToast'
 import { Toaster } from 'sonner'
-import { ImageViewer } from './components/Lightbox'
+import { ImageViewer, openImage } from './components/Lightbox'
+import { ContextMenuHost } from './components/ContextMenu'
 import { useDeleteShortcut } from './lib/deletion'
 import { LiveNotesPanel } from './components/LiveNotes'
 import { InspectorTabs } from './components/InspectorTabs'
@@ -41,13 +42,30 @@ function Main() {
   const view = useUI((s) => s.view)
   const selection = useUI((s) => s.selection)
 
+  // Commands from the native text menu.
+  useEffect(
+    () =>
+      window.maquest.onMenuCommand((c) => {
+        if (c.command === 'search') useUI.getState().setPaletteOpen(true, c.text)
+        else openImage(c.url)
+      }),
+    [],
+  )
+
   if (isLoading) return null
-  if (!current) return <StartScreen />
+  if (!current)
+    return (
+      <>
+        <StartScreen />
+        <ContextMenuHost />
+      </>
+    )
 
   return (
     <ReactFlowProvider>
       <SyncToast root={current.root} />
       <ImageViewer />
+      <ContextMenuHost />
       <div className="flex h-full flex-col bg-app">
         <CommandPalette />
         <TopBar />

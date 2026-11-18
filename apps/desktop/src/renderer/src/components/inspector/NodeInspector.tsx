@@ -100,6 +100,7 @@ export function NodeInspector({ id }: { id: string }) {
       <div className="px-4">
         <GhostText
           aria-label="Title"
+          data-node-title={node.id}
           value={draft.title}
           placeholder="Untitled"
           className="-mx-1.5 py-0.5 font-serif text-[22px] leading-[1.3] font-semibold tracking-[-0.005em] text-fg focus:bg-transparent focus:shadow-none"

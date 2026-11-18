@@ -11,9 +11,8 @@ import {
 } from 'react'
 import { Tooltip as BaseTooltip } from '@base-ui/react/tooltip'
 import { Menu as BaseMenu } from '@base-ui/react/menu'
-import { ContextMenu as BaseContextMenu } from '@base-ui/react/context-menu'
 import { Popover as BasePopover } from '@base-ui/react/popover'
-import { ChevronDown, type LucideIcon } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, type LucideIcon } from 'lucide-react'
 
 export const cn = (...c: ClassValue[]) => twMerge(clsx(c))
 
@@ -169,20 +168,38 @@ export function Menu({
   )
 }
 
+/** Leading 14px slot shared by icons, swatches and check marks, so labels line up. */
+function MenuIcon({ icon: Icon, iconNode, color, danger }: { icon?: LucideIcon; iconNode?: ReactNode; color?: string; danger?: boolean }) {
+  if (iconNode) return <span className="flex size-3.5 shrink-0 items-center justify-center">{iconNode}</span>
+  if (!Icon) return null
+  return <Icon size={14} aria-hidden className={cn('shrink-0', !color && !danger && 'text-fg-subtle')} style={color ? { color } : undefined} />
+}
+
+const MenuShortcut = ({ keys }: { keys?: string }) => (keys ? <span className="shrink-0 pl-3 text-2xs text-fg-faint">{keys}</span> : null)
+
+type ItemLook = {
+  icon?: LucideIcon
+  /** Custom leading visual (status dot, color swatch) in the icon slot. */
+  iconNode?: ReactNode
+  /** Icon color (node types). */
+  color?: string
+  shortcut?: string
+  disabled?: boolean
+}
+
 export function MenuItem({
-  icon: Icon,
+  icon,
+  iconNode,
+  color,
   children,
   shortcut,
   danger,
   onClick,
   disabled,
-}: {
-  icon?: LucideIcon
+}: ItemLook & {
   children: ReactNode
-  shortcut?: string
   danger?: boolean
   onClick?: () => void
-  disabled?: boolean
 }) {
   return (
     <BaseMenu.Item
@@ -190,24 +207,92 @@ export function MenuItem({
       onClick={onClick}
       disabled={disabled}
     >
-      {Icon && <Icon size={14} className={danger ? '' : 'text-fg-subtle'} aria-hidden />}
+      <MenuIcon icon={icon} iconNode={iconNode} color={color} danger={danger} />
       <span className="flex-1 truncate">{children}</span>
-      {shortcut && <span className="text-2xs text-fg-faint">{shortcut}</span>}
+      <MenuShortcut keys={shortcut} />
     </BaseMenu.Item>
   )
 }
 
-/** Right-click menu for `children` (rendered as the trigger element); fill it with `MenuItem`s. */
-export function ContextMenu({ children, menu, className }: { children: ReactElement; menu: ReactNode; className?: string }) {
+/** A nested menu that opens beside its row (hover, click or the right arrow key). */
+export function MenuSub({ label, children, className, ...look }: ItemLook & { label: ReactNode; children: ReactNode; className?: string }) {
   return (
-    <BaseContextMenu.Root>
-      <BaseContextMenu.Trigger render={children} />
-      <BaseContextMenu.Portal>
-        <BaseContextMenu.Positioner className="z-[60]">
-          <BaseContextMenu.Popup className={cn(popupSurface, 'popup-motion min-w-48', className)}>{menu}</BaseContextMenu.Popup>
-        </BaseContextMenu.Positioner>
-      </BaseContextMenu.Portal>
-    </BaseContextMenu.Root>
+    <BaseMenu.SubmenuRoot>
+      <BaseMenu.SubmenuTrigger className={cn(menuItem, 'data-[popup-open]:bg-hover data-[popup-open]:text-fg')} disabled={look.disabled}>
+        <MenuIcon {...look} />
+        <span className="flex-1 truncate">{label}</span>
+        <ChevronRight size={14} aria-hidden className="-mr-0.5 shrink-0 text-fg-faint" />
+      </BaseMenu.SubmenuTrigger>
+      <BaseMenu.Portal>
+        <BaseMenu.Positioner alignOffset={-4} sideOffset={2} collisionPadding={6} className="z-[60]">
+          <BaseMenu.Popup className={cn(popupSurface, 'context-motion max-h-[var(--available-height)] min-w-44 overflow-y-auto', className)}>
+            {children}
+          </BaseMenu.Popup>
+        </BaseMenu.Positioner>
+      </BaseMenu.Portal>
+    </BaseMenu.SubmenuRoot>
+  )
+}
+
+const Tick = () => <Check size={14} aria-hidden className="text-accent-text" />
+
+/** On/off item with a check mark in the icon slot. Closes the menu like a native one. */
+export function MenuCheckboxItem({
+  checked,
+  onCheckedChange,
+  children,
+  shortcut,
+  disabled,
+}: {
+  checked: boolean
+  onCheckedChange: (checked: boolean) => void
+  children: ReactNode
+  shortcut?: string
+  disabled?: boolean
+}) {
+  return (
+    <BaseMenu.CheckboxItem className={menuItem} checked={checked} onCheckedChange={(on) => onCheckedChange(on)} disabled={disabled} closeOnClick>
+      <span className="flex size-3.5 shrink-0 items-center justify-center">
+        <BaseMenu.CheckboxItemIndicator>
+          <Tick />
+        </BaseMenu.CheckboxItemIndicator>
+      </span>
+      <span className="flex-1 truncate">{children}</span>
+      <MenuShortcut keys={shortcut} />
+    </BaseMenu.CheckboxItem>
+  )
+}
+
+export function MenuRadioGroup({ value, onValueChange, children }: { value: string; onValueChange: (value: string) => void; children: ReactNode }) {
+  return (
+    <BaseMenu.RadioGroup value={value} onValueChange={(v) => onValueChange(v as string)}>
+      {children}
+    </BaseMenu.RadioGroup>
+  )
+}
+
+/** One choice of a `MenuRadioGroup`. With its own icon the check mark sits at the end, otherwise in the icon slot. */
+export function MenuRadioItem({ value, children, ...look }: ItemLook & { value: string; children: ReactNode }) {
+  const own = !!(look.icon || look.iconNode)
+  return (
+    <BaseMenu.RadioItem value={value} closeOnClick disabled={look.disabled} className={menuItem}>
+      {own ? (
+        <MenuIcon {...look} />
+      ) : (
+        <span className="flex size-3.5 shrink-0 items-center justify-center">
+          <BaseMenu.RadioItemIndicator>
+            <Tick />
+          </BaseMenu.RadioItemIndicator>
+        </span>
+      )}
+      <span className="flex-1 truncate">{children}</span>
+      {own && (
+        <BaseMenu.RadioItemIndicator>
+          <Tick />
+        </BaseMenu.RadioItemIndicator>
+      )}
+      <MenuShortcut keys={look.shortcut} />
+    </BaseMenu.RadioItem>
   )
 }
 

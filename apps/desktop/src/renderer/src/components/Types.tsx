@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState, type KeyboardEvent } from 'react'
-import { Check, Pipette, RotateCcw, Trash2 } from 'lucide-react'
+import { Check, Pencil, Pipette, RotateCcw, Trash2 } from 'lucide-react'
 import { TYPE_ID, typeInfo, type TabDef, type TypeDef } from '@maquest/core/schema'
 import { fieldLabel, normalizeName } from '@maquest/core/sheet'
 import { fullOnHover } from './fit'
@@ -7,9 +7,10 @@ import { api } from '../lib/api'
 import { useAction, useConfig, useNodes } from '../lib/queries'
 import { useUI } from '../lib/store'
 import { useTypes, type TypeStyle } from '../lib/styles'
-import { Button, Input, Label, Textarea, Tooltip, cn } from './ui'
+import { Button, Input, Label, MenuCheckboxItem, MenuItem, MenuSeparator, Textarea, Tooltip, cn } from './ui'
 import { IconPicker } from './views/IconPicker'
 import { CreateButton, ListGroup, PageHeader, TwoPane, listRow } from './views/ViewLayout'
+import { contextMenu } from './ContextMenu'
 
 const SWATCHES: [string, string][] = [
   ['#ef4444', 'Red'],
@@ -100,7 +101,36 @@ export function Types() {
       list={groups.map((g) => (
         <ListGroup key={g.label} label={g.label} count={g.items.length}>
           {g.items.map((x) => (
-            <li key={x.id}>
+            <li
+              key={x.id}
+              {...contextMenu(
+                () => {
+                  const count = counts.get(x.id) ?? 0
+                  const hidden = useUI.getState().hiddenNodes.includes(x.id)
+                  return (
+                    <>
+                      <MenuItem icon={Pencil} onClick={() => setActive(x.id)}>
+                        Edit
+                      </MenuItem>
+                      <MenuCheckboxItem checked={!hidden} onCheckedChange={() => useUI.getState().toggleNode(x.id)}>
+                        Show on canvas
+                      </MenuCheckboxItem>
+                      <MenuSeparator />
+                      {x.builtin ? (
+                        <MenuItem icon={RotateCcw} disabled={!config?.types?.[x.id]} onClick={() => save(x.id, null)}>
+                          Reset to defaults
+                        </MenuItem>
+                      ) : (
+                        <MenuItem icon={Trash2} danger disabled={count > 0} onClick={() => save(x.id, null)}>
+                          {count ? `Delete type (${plural(count, 'node')} use it)` : 'Delete type'}
+                        </MenuItem>
+                      )}
+                    </>
+                  )
+                },
+                { label: `${x.label} actions` },
+              )}
+            >
               <button type="button" aria-current={x.id === t?.id ? 'page' : undefined} onClick={() => setActive(x.id)} className={listRow(x.id === t?.id)}>
                 <x.icon size={14} style={{ color: x.color }} aria-hidden className="shrink-0" />
                 <span className="flex-1 truncate">{x.label}</span>

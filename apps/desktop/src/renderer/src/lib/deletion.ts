@@ -7,8 +7,14 @@ import { currentBoardId, useAction, useNodes } from './queries'
 
 export const BEFORE_DELETE = 'maquest:before-delete'
 
+/** Typing in a field, or working in a menu or dialog: app shortcuts (Delete, Ctrl+C…) stay out of the way. */
 export function isEditingTarget(target: EventTarget | null) {
-  return target instanceof Element && !!target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), .cm-editor')
+  return (
+    target instanceof Element &&
+    !!target.closest(
+      'input, textarea, select, [contenteditable]:not([contenteditable="false"]), .cm-editor, [role="menu"], [role="dialog"], [role="alertdialog"]',
+    )
+  )
 }
 
 export function useDeleteSelection() {

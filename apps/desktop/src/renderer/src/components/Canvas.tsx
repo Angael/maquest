@@ -53,15 +53,17 @@ import { EDGE_STYLE, useTypes, type EdgeKind } from '../lib/styles'
 import { inferConnectionType } from '../lib/connections'
 import { StoryCard, type CardData, type CardRef } from './StoryCard'
 import { FloatingConnectionLine, FloatingEdge, type FloatingFlowEdge } from './FloatingEdge'
-import { GroupFrame, type GroupFlowNode } from './GroupFrame'
+import { GroupFrame, renameGroup, type GroupFlowNode } from './GroupFrame'
 import { CanvasToolbar } from './canvas/CanvasToolbar'
 import { CanvasControls, CanvasMinimap } from './canvas/CanvasControls'
 import { ViewMenu } from './canvas/ViewMenu'
-import { AddNodeMenu, NodeMenu } from './canvas/menus'
+import { AddNodeMenu, CardMenu, EdgeMenu, GroupMenu } from './canvas/menus'
+import { openContextMenu } from './ContextMenu'
+import { renameInInspector } from './menus/NodeMenu'
 import { PhaseLanes } from './canvas/PhaseLanes'
 import { useCanvasNavigation } from './canvas/useCanvasNavigation'
 import { hoverEdge, hoverNode } from './canvas/hover'
-import { FIT_VIEW, cardSize, isCard, reuseItems, type AnyFlowNode, type CardFlowNode } from './canvas/shared'
+import { EDGE_REF, FIT_VIEW, cardSize, isCard, reuseItems, type AnyFlowNode, type CardFlowNode } from './canvas/shared'
 
 const nodeTypes = { card: StoryCard, frame: GroupFrame }
 const edgeTypes = { floating: FloatingEdge }
@@ -117,8 +119,6 @@ function useAddEdge() {
 
 /** In-app node clipboard of references: pasting places the same entities on the shown board, never copies them. */
 let clipboard: { ids: string[]; board: string; pastes: number } | null = null
-/** Separates an edge id from the card keys of its extra copies (when a node has several cards). */
-const EDGE_REF = '@'
 
 export function Canvas() {
   const { data: all = NONE } = useNodes()
@@ -227,21 +227,66 @@ export function Canvas() {
     },
     [duplicate, selectNodes],
   )
-  const [nodeMenu, setNodeMenu] = useState<{ x: number; y: number; ids: string[] } | null>(null)
   const middlePress = useRef<{ x: number; y: number } | null>(null)
   useCanvasNavigation(workspace)
-  const openNodeMenu = (event: { preventDefault: () => void; clientX: number; clientY: number }, id?: string) => {
-    event.preventDefault()
-    if (readOnly) return
+  const openNodeMenu = (event: React.MouseEvent, key?: string) => {
+    if (readOnly) return void event.preventDefault()
     const selected = useUI.getState().selectedNodeIds
-    const ids = id && !selected.includes(id) ? [id] : selected
-    if (!ids.length) return
+    const keys = key && !selected.includes(key) ? [key] : selected
+    if (!keys.length) return void event.preventDefault()
     setAddMenu(null)
-    setNodeMenu({ x: event.clientX, y: event.clientY, ids })
+    const ids = [...new Set(keys.map(entityOf))]
+    const card = key ? (event.target as Element).closest('.react-flow__node') : null
+    openContextMenu(
+      event,
+      () => (
+        <CardMenu
+          ids={ids}
+          actions={{
+            copy: () => copyRefs(keys),
+            duplicate: () => duplicateNodes(keys),
+            group: () => {
+              selectNodes(keys)
+              void makeGroup().catch(() => {})
+            },
+            remove: () => void removeFromBoard(keys),
+            destroy: () => deleteEverywhere(keys),
+          }}
+        />
+      ),
+      { label: ids.length === 1 ? 'Card actions' : `Actions for ${ids.length} cards`, target: card, restore: workspace.current, force: true },
+    )
   }
-  const closeNodeMenu = () => {
-    setNodeMenu(null)
-    workspace.current?.focus({ preventScroll: true })
+  const openEdgeMenu = (event: React.MouseEvent, edge: FlowEdge) => {
+    if (readOnly) return void event.preventDefault()
+    const id = edge.id.split(EDGE_REF)[0]
+    setAddMenu(null)
+    openContextMenu(event, () => <EdgeMenu id={id} select={() => select({ kind: 'edge', id })} />, {
+      label: 'Connection actions',
+      restore: workspace.current,
+      force: true,
+    })
+  }
+  const openGroupMenu = (event: React.MouseEvent, node: GroupFlowNode) => {
+    const { group } = node.data
+    if (readOnly || !board) return void event.preventDefault()
+    setAddMenu(null)
+    openContextMenu(
+      event,
+      () => (
+        <GroupMenu
+          group={group}
+          rename={() => renameGroup(group.id)}
+          recolor={node.data.recolor}
+          selectCards={() => {
+            setSelectedGroup(null)
+            selectNodes(group.nodes.filter((id) => flow.getNode(id)))
+          }}
+          ungroup={node.data.ungroup}
+        />
+      ),
+      { label: `Group ${group.title}`, target: (event.target as Element).closest('.react-flow__node'), restore: workspace.current, force: true },
+    )
   }
   const history = useQuery({ queryKey: ['history'], queryFn: () => api.history() })
   const historyBusy = undo.isPending || redo.isPending
@@ -262,13 +307,7 @@ export function Canvas() {
   )
   useEffect(() => {
     const handle = (event: KeyboardEvent) => {
-      if (
-        useUI.getState().view !== 'canvas' ||
-        (event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), .cm-editor')) ||
-        !(event.ctrlKey || event.metaKey) ||
-        event.altKey
-      )
-        return
+      if (useUI.getState().view !== 'canvas' || isEditing(event.target) || !(event.ctrlKey || event.metaKey) || event.altKey) return
       const key = event.key.toLowerCase()
       if (key === 'a' && !event.shiftKey) {
         event.preventDefault()
@@ -426,7 +465,7 @@ export function Canvas() {
       }
       return next
     })
-  }, [])
+  }, [setLocal])
   const saveLayout = useCallback(
     async (...args: Parameters<typeof api.setLayout>) => {
       saving.current++
@@ -873,6 +912,12 @@ export function Canvas() {
         event.preventDefault()
         setSelectedGroup(null)
         deleteGroup.mutate([board.id, selectedGroup])
+      } else if (event.key === 'F2' && selectedGroup) {
+        event.preventDefault()
+        renameGroup(selectedGroup)
+      } else if (event.key === 'F2' && useUI.getState().selectedNodeIds.length === 1) {
+        event.preventDefault()
+        renameInInspector(entityOf(useUI.getState().selectedNodeIds[0]))
       } else if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'g') {
         event.preventDefault()
         void makeGroup().catch(() => {
@@ -1001,12 +1046,14 @@ export function Canvas() {
         onNodeMouseLeave={onNodeLeave}
         onPaneContextMenu={(event) => {
           event.preventDefault()
-          setNodeMenu(null)
           openAddMenu({ x: event.clientX, y: event.clientY })
         }}
         onNodeContextMenu={(event, node) => {
           if (isCard(node)) openNodeMenu(event, node.id)
+          else if (node.type === 'frame') openGroupMenu(event, node as GroupFlowNode)
+          else event.preventDefault()
         }}
+        onEdgeContextMenu={openEdgeMenu}
         onSelectionContextMenu={(event) => openNodeMenu(event)}
         onNodeDragStop={onNodeDragStop}
         selectionOnDrag
@@ -1084,20 +1131,6 @@ export function Canvas() {
             const position = addMenu.position
             closeAddMenu()
             if (board && position) setLayout.mutate([{ [id]: position }, board.id])
-          }}
-        />
-      )}
-      {nodeMenu && (
-        <NodeMenu
-          point={nodeMenu}
-          count={nodeMenu.ids.length}
-          close={closeNodeMenu}
-          actions={{
-            copy: () => copyRefs(nodeMenu.ids),
-            duplicate: () => duplicateNodes(nodeMenu.ids),
-            group: () => void makeGroup().catch(() => {}),
-            remove: () => void removeFromBoard(nodeMenu.ids),
-            destroy: () => deleteEverywhere(nodeMenu.ids),
           }}
         />
       )}

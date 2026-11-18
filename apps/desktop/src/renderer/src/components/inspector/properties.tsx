@@ -1,5 +1,6 @@
 import { memo, useId, useMemo } from 'react'
-import { ImagePlus, Plus, X } from 'lucide-react'
+import { Copy, FolderOpen, ImagePlus, Maximize2, Plus, X } from 'lucide-react'
+import { toast } from 'sonner'
 import { type Status, type StoryNode, onBoard, refsOf } from '@maquest/core/schema'
 import { api, isVideo, mediaUrl } from '../../lib/api'
 import { importFiles } from '../../lib/actions'
@@ -7,7 +8,8 @@ import { useAction, useGraph } from '../../lib/queries'
 import { useUI } from '../../lib/store'
 import { ClockDial } from '../ClockDial'
 import { openImage } from '../Lightbox'
-import { IconButton, Menu, MenuItem, MenuLabel, cn } from '../ui'
+import { IconButton, Menu, MenuItem, MenuLabel, MenuSeparator, cn } from '../ui'
+import { contextMenu } from '../ContextMenu'
 import { GhostSelect, PropertyRow, ghost } from './fields'
 
 export const STATUSES: Status[] = ['idea', 'draft', 'revised', 'done']
@@ -150,7 +152,46 @@ export const MediaProperty = memo(function MediaProperty({ node, onAttach }: { n
         {items.map((m) => {
           const name = m.split('/').pop() ?? m
           return (
-            <div key={m} className="group/media relative">
+            <div
+              key={m}
+              className="group/media relative"
+              {...contextMenu(
+                () => (
+                  <>
+                    {!isVideo(m) && (
+                      <>
+                        <MenuItem icon={Maximize2} onClick={() => openImage(mediaUrl(m))}>
+                          View full size
+                        </MenuItem>
+                        <MenuItem
+                          icon={Copy}
+                          onClick={() =>
+                            void api.copyMedia(m).then(
+                              () => toast('Image copied'),
+                              () => toast.error('Could not copy the image'),
+                            )
+                          }
+                        >
+                          Copy image
+                        </MenuItem>
+                      </>
+                    )}
+                    <MenuItem icon={FolderOpen} onClick={() => void api.reveal(m)}>
+                      Show in folder
+                    </MenuItem>
+                    {m !== node.src && (
+                      <>
+                        <MenuSeparator />
+                        <MenuItem icon={X} onClick={() => update.mutate([node.id, { media: node.media.filter((x) => x !== m) }])}>
+                          Remove from {node.title}
+                        </MenuItem>
+                      </>
+                    )}
+                  </>
+                ),
+                { label: `${name} actions` },
+              )}
+            >
               {isVideo(m) ? (
                 <video src={mediaUrl(m)} className="h-14 rounded-md bg-surface" controls aria-label={name} />
               ) : (

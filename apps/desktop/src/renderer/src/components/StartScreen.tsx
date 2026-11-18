@@ -1,11 +1,14 @@
 import { useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { FolderOpen, MoreHorizontal, Trash2, X } from 'lucide-react'
+import { Copy, FolderOpen, FolderSearch, MoreHorizontal, Trash2, X } from 'lucide-react'
+import { toast } from 'sonner'
 import { PROJECT_KINDS, type ProjectKind } from '@maquest/core/schema'
 import { api } from '../lib/api'
 import { useRecent } from '../lib/queries'
 import { Button, IconButton, Input, Menu, MenuItem, MenuSeparator, Select } from './ui'
 import { Logo, TitleBar } from './TitleBar'
+import { contextMenu } from './ContextMenu'
+import { copyText } from './menus/NodeMenu'
 
 const KIND_LABEL: Record<ProjectKind, string> = { novel: 'Novel', screenplay: 'Screenplay', rpg: 'RPG campaign', mixed: 'Mixed' }
 
@@ -48,6 +51,52 @@ export function StartScreen() {
     }
     void run(() => api.pickFolder({ name: trimmed, kind }))
   }
+
+  /** Actions on a recent project, from its "…" menu or a right click (which also offers Open). */
+  const recentItems = (root: string, withOpen = false) => (
+    <>
+      {withOpen && (
+        <>
+          <MenuItem icon={FolderOpen} disabled={busy} onClick={() => void run(() => api.open(root))}>
+            Open
+          </MenuItem>
+          <MenuSeparator />
+        </>
+      )}
+      <MenuItem icon={FolderSearch} onClick={() => void api.showFolder(root).catch(() => toast.error('The folder is no longer there'))}>
+        Show in file manager
+      </MenuItem>
+      <MenuItem icon={Copy} onClick={() => copyText(root, 'Path copied')}>
+        Copy path
+      </MenuItem>
+      <MenuSeparator />
+      <MenuItem
+        icon={X}
+        disabled={busy}
+        onClick={() =>
+          void run(
+            () => api.removeRecent(root),
+            (m) => m,
+          )
+        }
+      >
+        Remove from recent
+      </MenuItem>
+      <MenuItem
+        icon={Trash2}
+        danger
+        disabled={busy}
+        onClick={() =>
+          void run(
+            () => api.trash(root),
+            (m) => `${m}. You can remove the entry from Recent without deleting its folder.`,
+          )
+        }
+      >
+        Move folder to trash
+      </MenuItem>
+    </>
+  )
 
   return (
     <div className="flex h-full flex-col">
@@ -126,7 +175,11 @@ export function StartScreen() {
               </h2>
               <ul className="space-y-px">
                 {recent.map((r) => (
-                  <li key={r.root} className="group relative flex items-center rounded-lg focus-within:bg-hover hover:bg-hover">
+                  <li
+                    key={r.root}
+                    {...contextMenu(() => recentItems(r.root, true), { label: `${r.config.name} actions` })}
+                    className="group relative flex items-center rounded-lg focus-within:bg-hover hover:bg-hover"
+                  >
                     <button
                       type="button"
                       disabled={busy}
@@ -149,30 +202,7 @@ export function StartScreen() {
                     </button>
                     <div className="absolute right-1.5 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 has-[[data-popup-open]]:opacity-100">
                       <Menu align="end" trigger={<IconButton icon={MoreHorizontal} size="sm" label={`More actions for ${r.config.name}`} disabled={busy} />}>
-                        <MenuItem
-                          icon={X}
-                          onClick={() =>
-                            void run(
-                              () => api.removeRecent(r.root),
-                              (m) => m,
-                            )
-                          }
-                        >
-                          Remove from recent
-                        </MenuItem>
-                        <MenuSeparator />
-                        <MenuItem
-                          icon={Trash2}
-                          danger
-                          onClick={() =>
-                            void run(
-                              () => api.trash(r.root),
-                              (m) => `${m}. You can remove the entry from Recent without deleting its folder.`,
-                            )
-                          }
-                        >
-                          Move folder to trash
-                        </MenuItem>
+                        {recentItems(r.root)}
                       </Menu>
                     </div>
                   </li>

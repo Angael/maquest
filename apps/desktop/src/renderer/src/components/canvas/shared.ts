@@ -62,3 +62,6 @@ export function reuseItems<T extends { id: string }>(cache: Map<string, T>, next
   for (const item of out) cache.set(item.id, item)
   return out
 }
+
+/** Separates an edge id from the card keys of its extra copies (when a node has several cards). */
+export const EDGE_REF = '@'
