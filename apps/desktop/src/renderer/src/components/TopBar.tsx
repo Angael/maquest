@@ -26,6 +26,8 @@ import { Button, IconButton, Menu, MenuItem, MenuLabel, MenuSeparator, Popover, 
 import { Logo, TitleBar } from './TitleBar'
 import { syncProject } from './SyncToast'
 import { ProblemsMenu } from './Problems'
+import { contextMenu } from './ContextMenu'
+import { NodeMenu } from './menus/NodeMenu'
 
 /** Modifier key label for shortcut hints. */
 export const MOD = window.maquest.platform === 'darwin' ? '⌘' : 'Ctrl'
@@ -188,9 +190,27 @@ function MapTabs() {
     .map((id) => {
       const on = current === id
       const title = titles.get(id)!
+      const open = maps.filter((m) => titles.has(m))
+      const at = open.indexOf(id)
+      const close = (ids: string[]) => ids.forEach((m) => useUI.getState().closeMap(m))
+      const menu = () => (
+        <NodeMenu id={id} open={() => useUI.getState().openMap(id)}>
+          <MenuItem icon={X} onClick={() => close([id])}>
+            Close
+          </MenuItem>
+          <MenuItem disabled={open.length < 2} onClick={() => close(open.filter((m) => m !== id))}>
+            Close others
+          </MenuItem>
+          <MenuItem disabled={at >= open.length - 1} onClick={() => close(open.slice(at + 1))}>
+            Close tabs to the right
+          </MenuItem>
+          <MenuItem onClick={() => close(open)}>Close all maps</MenuItem>
+        </NodeMenu>
+      )
       return (
         <div
           key={id}
+          {...contextMenu(menu, { label: `${title} tab` })}
           className={cn(tabClass(on), 'group/tab gap-1 pr-0.5')}
           onAuxClick={(e) => e.button === 1 && useUI.getState().closeMap(id)}
           onMouseDown={(e) => e.button === 1 && e.preventDefault()}

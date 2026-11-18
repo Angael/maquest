@@ -9,6 +9,7 @@ import { api } from '../../lib/api'
 import { useAction, useBoard, useGraph, useNodes } from '../../lib/queries'
 import { useUI } from '../../lib/store'
 import { Button, IconButton, Menu, MenuItem, MenuLabel, MenuSeparator, Separator, Tooltip, cn, floating, menuItem, popupSurface } from '../ui'
+import { contextMenu, leaveFocus } from '../ContextMenu'
 import { FIT_VIEW, cardSize, isCard, type AnyFlowNode } from './shared'
 
 /** Hierarchical auto layout: groups arrange their own content and move as blocks; pinned cards stay put. */
@@ -165,6 +166,65 @@ function Boards() {
   }
   const error = create.error ?? update.error ?? remove.error ?? reorder.error
   const readOnly = board.id === ALL_BOARD
+  /** Actions on one board, from its tab's right-click menu or the "…" menu (the shown board). */
+  const boardItems = (b: Board) => (
+    <>
+      <MenuItem
+        icon={Pencil}
+        onClick={() => {
+          leaveFocus()
+          setBoard(b.id)
+          setTitle(b.title)
+          setEditing('rename')
+        }}
+      >
+        Rename…
+      </MenuItem>
+      <MenuItem
+        icon={Columns3}
+        onClick={() => {
+          setBoard(b.id)
+          setTimeout(() => setPhasesOpen(true))
+        }}
+      >
+        Phase columns…{b.phases.length ? ` (${b.phases.length})` : ''}
+      </MenuItem>
+      <MenuSeparator />
+      <MenuItem
+        icon={Trash2}
+        danger
+        disabled={graph.boards.length < 2}
+        onClick={() => {
+          if (b.id === board.id) setBoard(graph.boards.find((x) => x.id !== b.id)!.id)
+          remove.mutate([b.id])
+        }}
+      >
+        Delete board
+      </MenuItem>
+    </>
+  )
+  const tabMenu = (b: Board) => () => (
+    <>
+      <MenuLabel>{b.title}</MenuLabel>
+      {b.id !== board.id && (
+        <MenuItem icon={Layers} onClick={() => setBoard(b.id)}>
+          Open
+        </MenuItem>
+      )}
+      {boardItems(b)}
+      <MenuSeparator />
+      <MenuItem
+        icon={Plus}
+        onClick={() => {
+          leaveFocus()
+          setTitle('')
+          setEditing('new')
+        }}
+      >
+        New board…
+      </MenuItem>
+    </>
+  )
   const drop = (target: string, after: boolean) => {
     if (!dragged || dragged === target) return
     const ids = graph.boards.map((b) => b.id).filter((id) => id !== dragged)
@@ -219,6 +279,7 @@ function Boards() {
               }}
               draggable
               data-board-tab={b.id}
+              {...contextMenu(tabMenu(b), { label: `Board ${b.title}` })}
               onDragStart={(e) => {
                 e.dataTransfer.setData('application/x-maquest-board', b.id)
                 e.dataTransfer.effectAllowed = 'move'
@@ -263,30 +324,7 @@ function Boards() {
       {!readOnly && (
         <Menu trigger={<IconButton ref={actions} size="sm" icon={Ellipsis} label="Board actions" className="text-fg-subtle" />} className="min-w-52">
           <MenuLabel>{board.title}</MenuLabel>
-          <MenuItem
-            icon={Pencil}
-            onClick={() => {
-              setTitle(board.title)
-              setEditing('rename')
-            }}
-          >
-            Rename…
-          </MenuItem>
-          <MenuItem icon={Columns3} onClick={() => setTimeout(() => setPhasesOpen(true))}>
-            Phase columns…{board.phases.length ? ` (${board.phases.length})` : ''}
-          </MenuItem>
-          <MenuSeparator />
-          <MenuItem
-            icon={Trash2}
-            danger
-            disabled={graph.boards.length < 2}
-            onClick={() => {
-              setBoard(graph.boards.find((b) => b.id !== board.id)!.id)
-              remove.mutate([board.id])
-            }}
-          >
-            Delete board
-          </MenuItem>
+          {boardItems(board)}
         </Menu>
       )}
       {editing !== 'new' && (

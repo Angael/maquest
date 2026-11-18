@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { Copy, Map as MapIcon, MoreHorizontal, Pencil, Play, Plus, Settings2, Trash2 } from 'lucide-react'
+import { Copy, ExternalLink, FolderOpen, Map as MapIcon, MoreHorizontal, Pencil, Play, Plus, Settings2, Trash2 } from 'lucide-react'
 import { emptyMap, mapDefaultsOf } from '@maquest/core/map'
 import type { StoryNode } from '@maquest/core/schema'
 import { api } from '../../lib/api'
@@ -10,6 +10,7 @@ import { Button, IconButton, Input, Menu, MenuItem, MenuSeparator, Popover } fro
 import { MapThumb } from './MapThumb'
 import { MapSettingsForm } from './MapPanel'
 import { useMapUI } from './mapStore'
+import { contextMenu, leaveFocus } from '../ContextMenu'
 
 const refresh = () => queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] !== 'app' })
 
@@ -105,8 +106,52 @@ function MapCard({ node }: { node: StoryNode }) {
     }
   }
 
+  const play = () => {
+    useMapUI.getState().set({ viewMode: 'player', tool: 'select', selected: [] })
+    open()
+  }
+  const items = () => (
+    <>
+      <MenuItem icon={MapIcon} onClick={() => edit()}>
+        Edit
+      </MenuItem>
+      <MenuItem icon={Play} onClick={play}>
+        Play
+      </MenuItem>
+      <MenuItem icon={ExternalLink} onClick={() => edit(true)}>
+        Open in background tab
+      </MenuItem>
+      <MenuSeparator />
+      <MenuItem
+        icon={Pencil}
+        shortcut="F2"
+        onClick={() => {
+          leaveFocus()
+          setRenaming(true)
+        }}
+      >
+        Rename
+      </MenuItem>
+      <MenuItem icon={Copy} onClick={() => void duplicate()}>
+        Duplicate
+      </MenuItem>
+      <MenuItem icon={FolderOpen} onClick={() => void api.reveal(node.path)}>
+        Show file in folder
+      </MenuItem>
+      <MenuSeparator />
+      <MenuItem icon={Trash2} onClick={() => void remove()} danger>
+        Delete
+      </MenuItem>
+    </>
+  )
+
   return (
-    <li className="group relative flex flex-col overflow-hidden rounded-xl bg-surface shadow-[inset_0_0_0_1px_var(--color-line)] transition-shadow duration-100 hover:shadow-[inset_0_0_0_1px_var(--color-line-strong)]">
+    <li
+      {...contextMenu(items, { label: `${node.title} actions` })}
+      onKeyDown={(e) => {
+        if (e.key === 'F2' && !renaming && !(e.target instanceof HTMLInputElement)) setRenaming(true)
+      }}
+      className="group relative flex flex-col overflow-hidden rounded-xl bg-surface shadow-[inset_0_0_0_1px_var(--color-line)] transition-shadow duration-100 hover:shadow-[inset_0_0_0_1px_var(--color-line-strong)]">
       <button
         type="button"
         aria-label={`Open ${node.title}`}
@@ -151,25 +196,10 @@ function MapCard({ node }: { node: StoryNode }) {
         <IconButton
           icon={Play}
           label="Play: open as the players see it (fog covers what they have not seen)"
-          onClick={() => {
-            useMapUI.getState().set({ viewMode: 'player', tool: 'select', selected: [] })
-            open()
-          }}
+          onClick={play}
         />
         <Menu align="end" trigger={<IconButton icon={MoreHorizontal} label={`More actions for ${node.title}`} />}>
-          <MenuItem icon={MapIcon} onClick={() => edit()}>
-            Edit
-          </MenuItem>
-          <MenuItem icon={Pencil} onClick={() => setRenaming(true)}>
-            Rename
-          </MenuItem>
-          <MenuItem icon={Copy} onClick={() => void duplicate()}>
-            Duplicate
-          </MenuItem>
-          <MenuSeparator />
-          <MenuItem icon={Trash2} onClick={() => void remove()} danger>
-            Delete
-          </MenuItem>
+          {items()}
         </Menu>
       </div>
     </li>
