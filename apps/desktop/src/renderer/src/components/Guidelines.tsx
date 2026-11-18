@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useDebouncedCallback } from 'use-debounce'
-import { Bot, EyeOff, Info, MoreHorizontal, RotateCcw, Trash2 } from 'lucide-react'
+import { Bot, EyeOff, FileText, FolderOpen, Info, MoreHorizontal, RotateCcw, Trash2 } from 'lucide-react'
 import { PROJECT_KINDS, type Guideline, type GuidelineScope, type ProjectKind } from '@maquest/core/schema'
 import { api } from '../lib/api'
 import { useAction, useConfig, useGuidelines } from '../lib/queries'
 import { useUI } from '../lib/store'
 import { MarkdownEditor } from './MarkdownEditor'
-import { Button, IconButton, Menu, MenuItem, Select, Tooltip, cn } from './ui'
+import { Button, IconButton, Menu, MenuCheckboxItem, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuSub, Select, Tooltip, cn } from './ui'
+import { contextMenu } from './ContextMenu'
 import { ConfirmDialog, CreateButton, ListGroup, PageHeader, Switch, TwoPane, listRow } from './views/ViewLayout'
 
 const KIND_LABEL: Record<ProjectKind, string> = { novel: 'Novel', screenplay: 'Screenplay', rpg: 'Tabletop RPG', mixed: 'Mixed' }
@@ -23,6 +24,9 @@ export function Guidelines() {
   const setGuideline = useAction(api.setGuideline)
   const active = useUI((s) => s.guideline)
   const setActive = useUI((s) => s.setGuideline)
+  const reset = useAction(api.resetGuideline)
+  /** Guideline whose reset or deletion awaits confirmation (from a row's right-click menu). */
+  const [confirming, setConfirming] = useState<Guideline | null>(null)
   const kind = config?.kind
   const g = list.find((x) => x.id === active) ?? list[0]
   const groups = useMemo(
@@ -85,12 +89,17 @@ export function Guidelines() {
               selected={x.id === g?.id}
               onSelect={() => setActive(x.id)}
               onToggle={(on) => setGuideline.mutate([x.id, { disabled: !on }])}
+              onScope={(scope) => setGuideline.mutate([x.id, { scope }])}
+              onRemove={() => setConfirming(x)}
             />
           ))}
         </ListGroup>
       ))}
     >
       {g && <GuidelineEditor key={g.id} g={g} kind={kind} />}
+      {confirming && (
+        <RemoveDialog g={confirming} open onOpenChange={(open) => !open && setConfirming(null)} onConfirm={() => reset.mutate([confirming.id])} />
+      )}
     </TwoPane>
   )
 }
@@ -110,17 +119,57 @@ function GuidelineRow({
   selected,
   onSelect,
   onToggle,
+  onScope,
+  onRemove,
 }: {
   g: Guideline
   kind: ProjectKind | undefined
   selected: boolean
   onSelect: () => void
   onToggle: (on: boolean) => void
+  onScope: (scope: GuidelineScope) => void
+  onRemove: () => void
 }) {
   const applies = appliesTo(g, kind)
   const muted = g.disabled || !applies
+  const menu = () => (
+    <>
+      <MenuItem icon={FileText} onClick={onSelect}>
+        Open
+      </MenuItem>
+      <MenuCheckboxItem checked={!g.disabled} onCheckedChange={onToggle}>
+        Agents follow it
+      </MenuCheckboxItem>
+      <MenuSub label="Applies to" icon={Bot}>
+        <MenuRadioGroup value={g.scope} onValueChange={(v) => onScope(v as GuidelineScope)}>
+          {SCOPES.map((s) => (
+            <MenuRadioItem key={s} value={s}>
+              {SCOPE_LABEL[s]}
+            </MenuRadioItem>
+          ))}
+        </MenuRadioGroup>
+      </MenuSub>
+      {g.source !== 'default' && (
+        <>
+          <MenuSeparator />
+          <MenuItem icon={FolderOpen} onClick={() => void api.reveal(`guidelines/${g.id}.md`)}>
+            Show file in folder
+          </MenuItem>
+          {g.source === 'override' ? (
+            <MenuItem icon={RotateCcw} onClick={onRemove}>
+              Reset to built-in…
+            </MenuItem>
+          ) : (
+            <MenuItem icon={Trash2} danger onClick={onRemove}>
+              Delete guideline…
+            </MenuItem>
+          )}
+        </>
+      )}
+    </>
+  )
   return (
-    <li className={cn(listRow(selected), 'pr-2')}>
+    <li className={cn(listRow(selected), 'pr-2')} {...contextMenu(menu, { label: `${g.title} actions` })}>
       <button
         type="button"
         aria-current={selected ? 'page' : undefined}
@@ -255,18 +304,26 @@ function GuidelineEditor({ g, kind }: { g: Guideline; kind: ProjectKind | undefi
         <MarkdownEditor label="Guideline" value={body} onChange={(b) => (setBody(b), save({ body: b }))} minHeight="360px" hint={false} />
       </div>
 
-      <ConfirmDialog
-        open={confirming}
-        onOpenChange={setConfirming}
-        title={g.source === 'override' ? 'Reset to the built-in version?' : 'Delete this guideline?'}
-        description={
-          g.source === 'override'
-            ? `Your project edits to “${g.title}” will be lost and ${file} removed.`
-            : `“${g.title}” and ${file} will be deleted. Agents will no longer follow it.`
-        }
-        confirmLabel={g.source === 'override' ? 'Reset' : 'Delete'}
-        onConfirm={() => reset.mutate([g.id])}
-      />
+      <RemoveDialog g={g} open={confirming} onOpenChange={setConfirming} onConfirm={() => reset.mutate([g.id])} />
     </div>
+  )
+}
+
+/** Confirms resetting an edited built-in guideline or deleting a custom one. */
+function RemoveDialog({ g, open, onOpenChange, onConfirm }: { g: Guideline; open: boolean; onOpenChange: (open: boolean) => void; onConfirm: () => void }) {
+  const file = `guidelines/${g.id}.md`
+  return (
+    <ConfirmDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={g.source === 'override' ? 'Reset to the built-in version?' : 'Delete this guideline?'}
+      description={
+        g.source === 'override'
+          ? `Your project edits to “${g.title}” will be lost and ${file} removed.`
+          : `“${g.title}” and ${file} will be deleted. Agents will no longer follow it.`
+      }
+      confirmLabel={g.source === 'override' ? 'Reset' : 'Delete'}
+      onConfirm={onConfirm}
+    />
   )
 }
