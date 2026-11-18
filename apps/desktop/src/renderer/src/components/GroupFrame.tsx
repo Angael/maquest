@@ -4,6 +4,7 @@ import { NodeResizeControl, NodeToolbar, Position, ResizeControlVariant, type Co
 import { Ungroup } from 'lucide-react'
 import { GROUP_COLORS, GROUP_HEADER, type Group, type GroupColor, type Rect } from '@maquest/core/schema'
 import { GROUP_STYLE } from '../lib/styles'
+import { leaveFocus } from './ContextMenu'
 import { IconButton, Separator, cn, floating } from './ui'
 
 export type GroupData = {
@@ -21,7 +22,10 @@ export type GroupFlowNode = Node<GroupData, 'frame'>
 
 /** The group whose title is being renamed from its context menu. */
 const useRenaming = create<{ id: string | null }>(() => ({ id: null }))
-export const renameGroup = (id: string) => useRenaming.setState({ id })
+export const renameGroup = (id: string) => {
+  leaveFocus()
+  useRenaming.setState({ id })
+}
 
 const LINES: ControlPosition[] = ['top', 'right', 'bottom', 'left']
 const CORNERS: ControlPosition[] = ['top-left', 'top-right', 'bottom-left', 'bottom-right']

@@ -83,6 +83,12 @@ export function openContextMenu(event: MenuEvent, render: () => ReactNode, opts:
 
 export const closeContextMenu = () => useMenu.setState({ open: false })
 
+let keepFocus = false
+/** Call from a menu action that moves focus itself (a rename field), so closing the menu leaves it there. */
+export const leaveFocus = () => {
+  keepFocus = true
+}
+
 /** Props that give an element a right-click menu: `<li {...contextMenu(() => <Items />)}>`. */
 export function contextMenu(render: () => ReactNode, opts?: MenuOptions) {
   return { onContextMenu: (event: MenuEvent) => void openContextMenu(event, render, opts) }
@@ -97,6 +103,7 @@ export function ContextMenuHost() {
   const open = useMenu((s) => s.open)
   useEffect(() => {
     if (!open) return
+    keepFocus = false
     const target = menu?.target
     target?.setAttribute('data-context-target', '')
     window.addEventListener('blur', closeContextMenu)
@@ -121,7 +128,7 @@ export function ContextMenuHost() {
             key={menu?.id}
             aria-label={menu?.label}
             data-context-menu
-            finalFocus={() => (restore?.isConnected ? restore : true)}
+            finalFocus={() => (keepFocus ? false : restore?.isConnected ? restore : true)}
             className={cn(popupSurface, 'context-motion max-h-[var(--available-height)] max-w-80 min-w-52 overflow-y-auto')}
           >
             {menu?.render()}

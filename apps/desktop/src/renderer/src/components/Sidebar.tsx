@@ -1,12 +1,15 @@
 import { createContext, memo, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ChevronRight, Plus } from 'lucide-react'
+import { ChevronRight, ChevronsDownUp, ChevronsUpDown, Palette, Plus } from 'lucide-react'
+import { create as createStore } from 'zustand'
 import type { NodeType, OutlineNode, StoryNode } from '@maquest/core/schema'
 import { NODE_DRAG_TYPE, useCreateNode, useRevealNode } from '../lib/actions'
 import { api } from '../lib/api'
 import { queryClient, useAction, useNodes, useOutline } from '../lib/queries'
 import { useUI } from '../lib/store'
 import { useTypes, type TypeStyle } from '../lib/styles'
-import { IconButton, cn } from './ui'
+import { IconButton, MenuItem, MenuSeparator, cn } from './ui'
+import { contextMenu, leaveFocus } from './ContextMenu'
+import { NodeMenu, act } from './menus/NodeMenu'
 import { openNodeTab, preventMiddleDown } from '../lib/nodeLink'
 
 /** Row being dragged in the sidebar, so siblings of the same type can show where it would land. */
@@ -27,6 +30,44 @@ type Actions = {
 /** Stable callbacks shared by every row, so rows don't each subscribe to React Flow and the queries. */
 const ActionsContext = createContext<Actions | null>(null)
 const useActions = () => useContext(ActionsContext)!
+
+/** The row being renamed in place (from its menu or F2). */
+const useRenaming = createStore<{ id: string | null }>(() => ({ id: null }))
+const startRename = (id: string) => {
+  leaveFocus()
+  useRenaming.setState({ id })
+}
+const stopRename = () => useRenaming.setState({ id: null })
+
+/** Title field of a row being renamed: Enter or leaving saves, Escape cancels. */
+function RenameField({ id, title }: { id: string; title: string }) {
+  const done = useRef(false)
+  const finish = (value: string | null) => {
+    if (done.current) return
+    done.current = true
+    stopRename()
+    const next = value?.trim()
+    if (next && next !== title) void act(api.updateNode(id, { title: next }))
+    // Back to the row, so the keyboard keeps its place in the tree.
+    requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-row="${CSS.escape(id)}"]`)?.focus())
+  }
+  return (
+    <input
+      autoFocus
+      aria-label="Name"
+      defaultValue={title}
+      onFocus={(e) => e.currentTarget.select()}
+      onClick={(e) => e.stopPropagation()}
+      onBlur={(e) => finish(e.currentTarget.value)}
+      onKeyDown={(e) => {
+        e.stopPropagation()
+        if (e.key === 'Enter') finish(e.currentTarget.value)
+        else if (e.key === 'Escape') finish(null)
+      }}
+      className="h-6 min-w-0 flex-1 rounded-[4px] bg-surface px-1.5 text-sm text-fg shadow-[inset_0_0_0_1px_var(--color-accent)] outline-none"
+    />
+  )
+}
 
 /** Moves keyboard focus to the previous/next visible row. */
 function focusSibling(from: HTMLElement, step: 1 | -1) {
@@ -61,6 +102,21 @@ const Row = memo(function Row({
   const child = CHILD[type]
   const Icon = style.icon
   const canDrop = () => reorderable && draggedRow && draggedRow.type === type && draggedRow.id !== id
+  const renaming = useRenaming((s) => s.id === id)
+  const menu = () => (
+    <NodeMenu id={id} open={() => actions.focus(id)} rename={() => startRename(id)}>
+      {child && (
+        <MenuItem icon={Plus} onClick={() => actions.create(child, id)}>
+          New {child}
+        </MenuItem>
+      )}
+      {onToggle && (
+        <MenuItem icon={open ? ChevronsDownUp : ChevronsUpDown} onClick={onToggle}>
+          {open ? 'Collapse' : 'Expand'}
+        </MenuItem>
+      )}
+    </NodeMenu>
+  )
   return (
     <div
       role="button"
@@ -76,7 +132,8 @@ const Row = memo(function Row({
       )}
       data-row={id}
       style={{ paddingLeft: PAD + depth * INDENT }}
-      draggable
+      draggable={!renaming}
+      {...contextMenu(menu, { label: `${title} actions` })}
       onDragStart={(event) => {
         event.dataTransfer.setData(NODE_DRAG_TYPE, id)
         event.dataTransfer.effectAllowed = 'copyMove'
@@ -115,6 +172,7 @@ const Row = memo(function Row({
       onKeyDown={(event) => {
         if (event.target !== event.currentTarget) return
         if (event.key === 'Enter' || event.key === ' ') actions.focus(id)
+        else if (event.key === 'F2') startRename(id)
         else if (event.key === 'ArrowDown') focusSibling(event.currentTarget, 1)
         else if (event.key === 'ArrowUp') focusSibling(event.currentTarget, -1)
         else if (event.key === 'ArrowRight' && onToggle && !open) onToggle()
@@ -139,8 +197,8 @@ const Row = memo(function Row({
         {onToggle && <ChevronRight size={12} className={cn('transition-transform duration-100', open && 'rotate-90')} />}
       </span>
       <Icon size={14} style={{ color: style.color }} className="shrink-0" aria-hidden />
-      <span className="min-w-0 flex-1 truncate">{title}</span>
-      {child && (
+      {renaming ? <RenameField id={id} title={title} /> : <span className="min-w-0 flex-1 truncate">{title}</span>}
+      {child && !renaming && (
         <IconButton
           icon={Plus}
           size="sm"
@@ -180,9 +238,29 @@ function Section({ title, type, count, children }: { title: string; type: NodeTy
   const actions = useActions()
   const [open, setOpen] = useState(true)
   const contentId = useId()
+  const menu = () => (
+    <>
+      <MenuItem
+        icon={Plus}
+        onClick={() => {
+          setOpen(true)
+          actions.create(type)
+        }}
+      >
+        New {type}
+      </MenuItem>
+      <MenuItem icon={open ? ChevronsDownUp : ChevronsUpDown} onClick={() => setOpen(!open)}>
+        {open ? 'Collapse section' : 'Expand section'}
+      </MenuItem>
+      <MenuSeparator />
+      <MenuItem icon={Palette} onClick={() => useUI.getState().setView('types')}>
+        Customize types…
+      </MenuItem>
+    </>
+  )
   return (
     <section className="mb-2" aria-label={title}>
-      <div className="group/section flex h-7 items-center pr-1">
+      <div className="group/section flex h-7 items-center pr-1" {...contextMenu(menu, { label: `${title} actions` })}>
         <button
           type="button"
           aria-expanded={open}

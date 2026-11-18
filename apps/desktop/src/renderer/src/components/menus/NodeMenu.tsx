@@ -8,6 +8,7 @@ import { useUI } from '../../lib/store'
 import { useDeleteEverywhere } from '../../lib/deletion'
 import { useTypes } from '../../lib/styles'
 import { STATUSES, STATUS_LABEL, StatusDot } from '../inspector/properties'
+import { leaveFocus } from '../ContextMenu'
 import { MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuSub } from '../ui'
 
 /** Refreshes project queries after a direct api call. */
@@ -43,6 +44,7 @@ export function openNode(node: Pick<StoryNode, 'id' | 'type'>, newTab = false) {
 
 /** Selects a node and puts the cursor in the inspector's title, ready to type. */
 export function renameInInspector(id: string) {
+  leaveFocus()
   const ui = useUI.getState()
   if (ui.view !== 'canvas' && ui.view !== 'backlog') ui.setView('canvas')
   ui.select({ kind: 'node', id })
