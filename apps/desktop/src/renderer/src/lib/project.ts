@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { api } from './api'
 import { flushPending } from './pending'
@@ -20,4 +21,21 @@ export function useLeaveProject() {
     if (!open) qc.setQueryData(['app', 'current'], null)
     await qc.invalidateQueries({ queryKey: ['app'] })
   }
+}
+
+/** Ctrl/⌘+O runs `open` (the folder picker), on the start screen and inside a project. */
+export function useOpenFolderShortcut(open: () => void) {
+  const latest = useRef(open)
+  useEffect(() => {
+    latest.current = open
+  })
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.shiftKey || event.altKey || event.defaultPrevented || event.key.toLowerCase() !== 'o') return
+      event.preventDefault()
+      latest.current()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 }

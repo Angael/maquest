@@ -12,6 +12,7 @@ export const SHORTCUTS = {
       items: [
         ['Search and commands', `${MOD}+K`],
         ['Keyboard shortcuts', `${MOD}+/`],
+        ['Open folder', `${MOD}+O`],
         ['Switch view', `${MOD}+1…5`],
         ['Toggle sidebar', `${MOD}+B`],
         ['Live notes', `${MOD}+J`],

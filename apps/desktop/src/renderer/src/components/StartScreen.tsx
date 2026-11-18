@@ -6,6 +6,7 @@ import { api } from '../lib/api'
 import { useRecent } from '../lib/queries'
 import { Button, IconButton, Input, Menu, MenuItem, MenuSeparator, Select } from './ui'
 import { Logo, TitleBar } from './TitleBar'
+import { useOpenFolderShortcut } from '../lib/project'
 
 const KIND_LABEL: Record<ProjectKind, string> = { novel: 'Novel', screenplay: 'Screenplay', rpg: 'RPG campaign', mixed: 'Mixed' }
 
@@ -38,6 +39,8 @@ export function StartScreen() {
       setBusy(false)
     }
   }
+
+  useOpenFolderShortcut(() => !busy && void run(() => api.pickFolder()))
 
   const create = () => {
     const trimmed = name.trim()

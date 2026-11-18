@@ -25,7 +25,7 @@ import { useUI, type View } from '../lib/store'
 import { Button, IconButton, Menu, MenuItem, MenuLabel, MenuSeparator, Popover, Separator, Shortcut, Tooltip, cn } from './ui'
 import { Logo, TitleBar } from './TitleBar'
 import { syncProject } from './SyncToast'
-import { useLeaveProject } from '../lib/project'
+import { useLeaveProject, useOpenFolderShortcut } from '../lib/project'
 import { ProblemsMenu } from './Problems'
 
 /** Modifier key label for shortcut hints. */
@@ -61,6 +61,7 @@ function ProjectMenu() {
   const { data: recent } = useRecent()
   const leave = useLeaveProject()
   const others = recent?.filter((r) => r.root !== current?.root).slice(0, 6) ?? []
+  useOpenFolderShortcut(() => void leave(() => api.pickFolder()))
   return (
     <Menu
       trigger={
@@ -79,7 +80,7 @@ function ProjectMenu() {
       <MenuItem icon={FolderSearch} onClick={() => void api.reveal()}>
         Show in file manager
       </MenuItem>
-      <MenuItem icon={FolderOpen} onClick={() => void leave(() => api.pickFolder())}>
+      <MenuItem icon={FolderOpen} shortcut={`${MOD}+O`} onClick={() => void leave(() => api.pickFolder())}>
         Open folder…
       </MenuItem>
       {others.length > 0 && (
