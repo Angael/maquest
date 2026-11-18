@@ -76,12 +76,13 @@ export function Sheet({ node, body, onBody }: { node: StoryNode; body: string; o
         {source ? (
           <span className="flex h-9 flex-1 items-center text-xs font-medium text-fg-subtle">Whole document</span>
         ) : (
-          <Tabs.List aria-label="Sheet" className="relative -mb-px flex min-w-0 flex-1 overflow-x-auto [scrollbar-width:none]">
+          <Tabs.List aria-label="Sheet" data-allow-scroll className="relative -mb-px flex min-w-0 flex-1 overflow-x-auto [scrollbar-width:none]">
             {tabs.map((t) => (
               <Tabs.Tab
                 key={t.key}
                 value={t.key}
-                className="h-9 shrink-0 border-b-2 border-transparent px-2 text-sm font-medium whitespace-nowrap text-fg-subtle outline-none transition-colors duration-100 first:-ml-2 hover:text-fg focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-accent/70 focus-visible:ring-inset data-[active]:border-accent data-[active]:text-fg"
+                title={t.title.length > 24 ? t.title : undefined}
+                className="h-9 max-w-[14rem] shrink-0 truncate border-b-2 border-transparent px-2 text-sm font-medium whitespace-nowrap text-fg-subtle outline-none transition-colors duration-100 first:-ml-2 hover:text-fg focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-accent/70 focus-visible:ring-inset data-[active]:border-accent data-[active]:text-fg"
               >
                 {t.title}
               </Tabs.Tab>
@@ -181,7 +182,7 @@ function EmptyFields({ title, none, onFill }: { title: string; none: boolean; on
     )
   return (
     <div className="flex flex-col items-start gap-2 py-2">
-      <p className="text-sm text-fg-subtle">Nothing in {title} yet.</p>
+      <p className="text-sm wrap-anywhere text-fg-subtle">Nothing in {title} yet.</p>
       <Button variant="outline" size="sm" onClick={onFill}>
         <Pencil size={13} aria-hidden /> Fill in
       </Button>

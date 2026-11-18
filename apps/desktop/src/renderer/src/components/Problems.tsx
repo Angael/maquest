@@ -222,7 +222,7 @@ function IssueRow({ issue, close }: { issue: Issue; close: () => void }) {
           onClick={ignore}
         />
       )}
-      <div className="text-sm leading-5 text-fg-muted">
+      <div className="text-sm leading-5 wrap-anywhere text-fg-muted">
         {(node || board) && (
           <button
             type="button"
@@ -236,7 +236,7 @@ function IssueRow({ issue, close }: { issue: Issue; close: () => void }) {
         {!node && issue.node && <span className="mr-1.5 font-mono text-xs text-fg">{issue.node}</span>}
         {issue.message}
       </div>
-      {issue.hint && <p className="mt-0.5 text-xs leading-4 text-fg-subtle">{issue.hint}</p>}
+      {issue.hint && <p className="mt-0.5 text-xs leading-4 wrap-anywhere text-fg-subtle">{issue.hint}</p>}
       {(fixes.length > 0 || (node && issue.open)) && (
         <div className="mt-1 mb-0.5 flex flex-wrap items-center gap-1">
           {fixes.map((f) => (
@@ -245,8 +245,8 @@ function IssueRow({ issue, close }: { issue: Issue; close: () => void }) {
             </Button>
           ))}
           {node && issue.open && (
-            <Button size="sm" variant="outline" onClick={open}>
-              Edit {issue.open}
+            <Button size="sm" variant="outline" className="max-w-full" onClick={open}>
+              <span className="truncate">Edit {issue.open}</span>
             </Button>
           )}
         </div>

@@ -2,6 +2,7 @@ import { useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { Check, Pipette, RotateCcw, Trash2 } from 'lucide-react'
 import { TYPE_ID, typeInfo, type TabDef, type TypeDef } from '@maquest/core/schema'
 import { fieldLabel, normalizeName } from '@maquest/core/sheet'
+import { fullOnHover } from './fit'
 import { api } from '../lib/api'
 import { useAction, useConfig, useNodes } from '../lib/queries'
 import { useUI } from '../lib/store'
@@ -361,9 +362,14 @@ function SheetSettings({ t, save }: { t: TypeStyle; save: (change: Change | null
         {t.fields.length > 0 && (
           <ul className="mt-2 flex flex-wrap gap-1" aria-label="Defined fields">
             {t.fields.map((f) => (
-              <li key={f.key} className="inline-flex h-6 items-center gap-1.5 rounded-md bg-surface px-2 text-xs shadow-[inset_0_0_0_1px_var(--color-line)]">
-                <span className="text-fg">{fieldLabel(f)}</span>
-                <span className="text-fg-faint">
+              <li
+                key={f.key}
+                className="inline-flex h-6 max-w-full items-center gap-1.5 rounded-md bg-surface px-2 text-xs shadow-[inset_0_0_0_1px_var(--color-line)]"
+              >
+                <span className="min-w-0 truncate text-fg" {...fullOnHover(fieldLabel(f))}>
+                  {fieldLabel(f)}
+                </span>
+                <span className="shrink-0 text-fg-faint">
                   {f.widget}
                   {f.style ? ` · ${f.style}` : ''}
                 </span>
