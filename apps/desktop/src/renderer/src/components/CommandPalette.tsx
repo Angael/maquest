@@ -42,7 +42,7 @@ function Palette() {
   const types = useTypes()
   const { data: guidelines = [] } = useGuidelines()
   const current = useBoard()
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useState(() => useUI.getState().paletteQuery)
   // The highlighted item, remembered only for the query it was picked under.
   const [picked, setPicked] = useState({ search: '', value: '' })
 

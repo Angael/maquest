@@ -134,6 +134,21 @@ textarea::placeholder {
 .popup-motion[data-ending-style] {
   transition-duration: 90ms;
 }
+/* Context menus appear instantly (like native ones) and fade out briefly. */
+.context-motion {
+  transition: opacity 90ms var(--ease-out);
+}
+.context-motion[data-starting-style] {
+  transition: none;
+}
+.context-motion[data-ending-style] {
+  opacity: 0;
+}
+/* The row, card or tab whose context menu is open. */
+[data-context-target] {
+  outline: 1px solid color-mix(in oklch, var(--color-accent) 70%, transparent);
+  outline-offset: -1px;
+}
 .tooltip-motion {
   transition: opacity 120ms var(--ease-out);
 }

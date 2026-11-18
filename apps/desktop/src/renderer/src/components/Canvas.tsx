@@ -264,7 +264,7 @@ export function Canvas() {
     const handle = (event: KeyboardEvent) => {
       if (
         useUI.getState().view !== 'canvas' ||
-        (event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), .cm-editor')) ||
+        isEditing(event.target) ||
         !(event.ctrlKey || event.metaKey) ||
         event.altKey
       )

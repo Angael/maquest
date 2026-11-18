@@ -1,3 +1,6 @@
+import { createElement } from 'react'
+import { openContextMenu } from '../components/ContextMenu'
+import { NodeMenu } from '../components/menus/NodeMenu'
 import { syntaxTree } from '@codemirror/language'
 import { type EditorState, type Extension, type Range, StateEffect, StateField } from '@codemirror/state'
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate, WidgetType } from '@codemirror/view'
@@ -142,6 +145,8 @@ class NodeLinkWidget extends WidgetType {
       e.preventDefault()
       this.open(this.id, e.button === 1)
     })
+    // The rendered link is not text to edit: right click gives the node's menu instead of the text menu.
+    el.addEventListener('contextmenu', (e) => openContextMenu(e, () => createElement(NodeMenu, { id: this.id }), { force: true, label: 'Node actions' }))
     return el
   }
   ignoreEvent() {

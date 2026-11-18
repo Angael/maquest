@@ -65,7 +65,9 @@ type UI = {
   setSidebarWidth: (width: number) => void
   /** Command palette (Ctrl+K) open. Not persisted. */
   paletteOpen: boolean
-  setPaletteOpen: (open: boolean) => void
+  /** Text the palette opens with (e.g. "Search project for …" in the text menu). Not persisted. */
+  paletteQuery: string
+  setPaletteOpen: (open: boolean, query?: string) => void
   /** Shows a node on the canvas: switches to `board` (when given), selects and centers it. */
   focusNode: (id: string, board?: string) => void
   setView: (v: View) => void
@@ -136,6 +138,7 @@ export const useUI = create<UI>()(
       sidebarOpen: true,
       sidebarWidth: 248,
       paletteOpen: false,
+      paletteQuery: '',
       minimap: false,
       setMinimap: (minimap) => set({ minimap }),
       tabs: [],
@@ -164,7 +167,7 @@ export const useUI = create<UI>()(
       setLiveNotesSize: (liveNotesSize) => set({ liveNotesSize }),
       setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
       setSidebarWidth: (sidebarWidth) => set({ sidebarWidth }),
-      setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
+      setPaletteOpen: (paletteOpen, query = '') => set({ paletteOpen, paletteQuery: query }),
       setView: (view) =>
         set((s) =>
           s.view === view
