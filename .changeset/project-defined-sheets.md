@@ -1,6 +1,4 @@
 ---
-'@maquest/core': minor
-'@maquest/mcp': minor
 '@maquest/desktop': minor
 ---
 
