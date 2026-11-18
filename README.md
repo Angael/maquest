@@ -30,7 +30,7 @@ The warning/error button in the title bar lists what Maquest detected: broken li
 
 - **Right-click empty canvas**, or focus the canvas and press **A**, to open the Add menu at the pointer. Choose a node type to place it there; arrow keys and Enter also work, and Escape or clicking outside dismisses the menu. The toolbar **Add** button opens the same menu but places nodes at the canvas center. Middle-drag pans; double-click zooms. Creation shortcuts do not run while typing in editors.
 - Drag a selection box on empty canvas to select several cards; Shift-click or Ctrl/⌘-click adds to the selection. Drag a selected card to move the group.
-- Undo persisted canvas edits with **Ctrl/⌘+Z**; redo with **Ctrl+Y** or **Ctrl/⌘+Shift+Z**. Editing text keeps the editor's own undo history.
+- Undo persisted edits with **Ctrl/⌘+Z** on the canvas and in the Backlog; redo with **Ctrl+Y** or **Ctrl/⌘+Shift+Z**. Editing text keeps the editor's own undo history.
 - Choose a view mode for everyday filtering. **Advanced** exposes individual node and connection filters and the full list of connection types.
 - New lines default to **Auto**, using drag direction and card types: character/location/item → location uses `located-at`; character → faction uses `member-of`; character/faction → item uses `owns`; same-kind characters or factions use `relationship`; scene/chapter → character/faction/item uses `involves`; scene → scene uses `leads-to`. Scene/chapter → location also uses `located-at`; ambiguous pairs use `link`. Hierarchy is never inferred.
 - Choose an explicit **Connect as** type in **Advanced** to override Auto; view presets do not change that choice. Switch back to **Auto** to resume inference. Newly drawn connection types are made visible; select a line to edit it. Existing saved connection defaults reset to Auto once on upgrade, preserving filters.
@@ -40,7 +40,19 @@ The warning/error button in the title bar lists what Maquest detected: broken li
 - Press **Delete** outside a text editor to immediately delete the current selection, including selections made in the sidebar, without confirmation. Unselected children survive and are detached from deleted parents. Use undo to restore deleted nodes or connections.
 - In Recent, **×** removes an entry from the list without touching project files. The trash button moves the project to the system trash immediately, without confirmation; restore it through your system trash if needed. Trash failures are shown inline (some Linux mounts, including `/tmp`, cannot be trashed); use **×** to dismiss those entries.
 - Drag the inspector's left divider to resize it, or focus the divider and use the arrow keys. Its width is remembered.
-- Click a sidebar section heading (Stories, Characters, Locations, Factions, Items, or Notes) to collapse or expand it independently; focused headings also support Enter and Space. The **+** button stays available when collapsed and expands the section when adding a node.
+- Click a sidebar section heading (Stories, Characters, Locations, Factions, Items, or Notes) to collapse or expand it independently (the app remembers which sections and story branches you collapsed); focused headings also support Enter and Space. The **+** button stays available when collapsed and expands the section when adding a node.
+- Right-click a sidebar row for its actions: open in a new tab, add a chapter or scene, copy its link or text, duplicate, show or open its file, export a story, chapter or scene as one Markdown file, move to the backlog, or delete. Story, chapter and scene rows show their status as a dot. The inspector's **…** menu has the same actions.
+
+## Writing and navigation
+
+- **Ctrl/⌘+K** searches nodes, boards and guidelines, and also runs commands (switch views, create nodes, undo/redo, toggle the sidebar, spellcheck or minimap, export, git sync…). With an empty query it lists recently viewed nodes; queries of three letters or more also search document text and show the matching passage. When nothing matches exactly, it offers to create a node with the query as its title.
+- **Ctrl/⌘+/** lists every keyboard shortcut. **Ctrl/⌘+1…5** switch views, **Ctrl/⌘+O** opens a folder.
+- **Alt+←/→** (⌘[ / ⌘] on macOS), the mouse's back/forward buttons, or the arrows in the inspector header walk back and forward through the nodes you viewed.
+- Type **[[** in a document to link a node: suggestions match titles, ids and tags, and Enter inserts the link. Tags suggest the ones already used in the project.
+- Under each document: its word count and reading time, the total with its chapters and scenes, when it was last edited, and links to the previous and next chapter or scene in reading order.
+- The OS spellchecker underlines prose; right-click a word for suggestions or to add it to the dictionary. Turn it off from the command palette.
+- Filter the Backlog by words, or by `#tag`.
+- Edits still waiting to be saved are written before the window closes or the project changes, and the window reopens at its last size and position.
 
 Undo/redo history belongs to the open desktop session, not the project files or MCP server. Conflicting external edits are protected rather than silently overwritten.
 
