@@ -87,7 +87,7 @@ the same night, and the city of Emberhold begins to *burn from the inside out*.
     type: 'chapter',
     parent: story.id,
     title: 'Chapter 1: Ashes and Bells',
-    status: 'revised',
+    status: 'done',
     summary: 'The party is hired to find a missing ledger and stumbles onto the theft of the crown.',
     body: '## Goals\n\n- Introduce Vess and the Lanternwrights\n- Plant the bell-tower sigil\n- End on the first fire\n',
   })
@@ -121,7 +121,7 @@ the same night, and the city of Emberhold begins to *burn from the inside out*.
     'The Siege of Emberhold': { pov: 'Corin', goal: 'Hold the gate', conflict: 'Iselde’s fire-priests', outcome: 'Tunnels open, the gate falls' },
     'The Crown Unmade': { pov: 'Maelis', goal: 'Break the binding', conflict: 'The spirit wants a new host', outcome: 'TBD at the table' },
   }
-  const scene = (title: string, parent: string, summary: string, status: 'idea' | 'draft' | 'revised' | 'done', body: string, tags: string[] = []) =>
+  const scene = (title: string, parent: string, summary: string, status: 'idea' | 'draft' | 'done', body: string, tags: string[] = []) =>
     p.createNode({ type: 'scene', parent, title, summary, status, body, tags, fields: sceneFields[title] })
   const s1 = scene(
     'The Ash Market',
@@ -154,7 +154,7 @@ Grey snow falls on the **Ash Market**. Stalls sell relics salvaged from the burn
     'Whispers in the Bell Tower',
     ch1.id,
     'The party climbs the old tower to read the sigil, but Brother Ash is waiting for them.',
-    'revised',
+    'done',
     `## Setup
 
 The bell tower has been silent for twenty years. Tonight it rang.

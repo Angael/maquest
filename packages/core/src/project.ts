@@ -497,6 +497,8 @@ export class Project {
       const { data, body } = parseFrontmatter(fs.readFileSync(file, 'utf8'))
       const meta = NodeMeta.safeParse({ title: path.basename(file, '.md'), ...legacyMeta(data), id: path.basename(file, '.md') })
       if (!meta.success) return null
+      // Migrate the retired `revised` status to `done` on disk.
+      if (data.status === 'revised') writeAtomic(file, stringifyFrontmatter({ ...data, status: 'done' }, body))
       return { ...meta.data, body, path: path.relative(this.root, file) }
     } catch {
       return null

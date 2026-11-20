@@ -12,12 +12,11 @@ import { IconButton, Menu, MenuItem, MenuLabel, MenuSeparator, cn } from '../ui'
 import { contextMenu } from '../ContextMenu'
 import { GhostSelect, PropertyRow, ghost } from './fields'
 
-export const STATUSES: Status[] = ['idea', 'draft', 'revised', 'done']
-export const STATUS_LABEL: Record<Status, string> = { idea: 'Idea', draft: 'Draft', revised: 'Revised', done: 'Done' }
+export const STATUSES: Status[] = ['idea', 'draft', 'done']
+export const STATUS_LABEL: Record<Status, string> = { idea: 'Idea', draft: 'Draft', done: 'Done' }
 const STATUS_DOT: Record<Status, string> = {
   idea: 'bg-fg-subtle',
   draft: 'bg-warning',
-  revised: 'bg-accent',
   done: 'bg-success',
 }
 

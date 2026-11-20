@@ -35,7 +35,9 @@ export const ALLOWED_PARENTS: Partial<Record<NodeType, NodeType[]>> = {
   note: ['story', 'chapter', 'scene'],
 }
 
-export const Status = z.enum(['idea', 'draft', 'revised', 'done'])
+export const STATUSES = ['idea', 'draft', 'done'] as const
+/** The retired `revised` status reads as `done` (projects are rewritten on read, see Project.readNodeFile). */
+export const Status = z.preprocess((v) => (v === 'revised' ? 'done' : v), z.enum(STATUSES))
 export type Status = z.infer<typeof Status>
 
 /** Progress clock (fronts, threats, countdowns): `filled` of `size` segments, optional text per segment. */

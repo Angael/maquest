@@ -244,7 +244,7 @@ export const RULES: RuleMeta[] = [
     title: 'Missing status',
     category: 'content',
     level: 'warn',
-    description: 'A node has no status (idea, draft, revised, done), so progress on the project is invisible.',
+    description: 'A node has no status (idea, draft, done), so progress on the project is invisible.',
     fix: 'Give every node a status (write status: "draft"); set it as you create the node.',
     options: [{ key: 'excludeTypes', label: 'Skip types', type: 'types', default: ['media'] }, scope[0], scope[2]],
   },

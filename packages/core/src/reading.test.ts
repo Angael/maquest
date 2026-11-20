@@ -80,3 +80,14 @@ test('live notes are cleared only when they still read what the caller saw', (t)
   assert.equal(p.liveNotes(), '')
   p.clearLiveNotes('stale') // nothing left to clear is not an error
 })
+
+test('the retired revised status migrates to done on read and as input', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'maquest-revised-'))
+  const p = Project.init(root, { name: 'T', kind: 'novel' })
+  const n = p.createNode({ type: 'character', title: 'Ann' })
+  const file = path.join(root, n.path)
+  fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('title: Ann', 'title: Ann\nstatus: revised'))
+  assert.equal(p.getNode(n.id)?.status, 'done')
+  assert.match(fs.readFileSync(file, 'utf8'), /status: done/)
+  assert.equal(p.updateNode(n.id, { status: 'revised' as never }).status, 'done')
+})
