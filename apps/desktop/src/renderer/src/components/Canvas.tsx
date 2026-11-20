@@ -935,6 +935,9 @@ export function Canvas() {
         if ((e.target as Element).closest('.react-flow__node')) e.preventDefault()
         if (e.button === 1) {
           e.preventDefault() // No autoscroll; middle drag pans the canvas.
+          // useCanvasNavigation owns middle-drag panning. xyflow's d3-zoom also starts a pan for a
+          // middle press on a node or edge, which would apply every move twice.
+          e.stopPropagation()
           middlePress.current = { x: e.clientX, y: e.clientY }
         }
       }}

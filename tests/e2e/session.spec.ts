@@ -118,6 +118,22 @@ test('middle click opens nodes as inspector tabs', async ({ desktop }) => {
   await expect(page.getByRole('textbox', { name: 'Title' })).toHaveValue('Cellar')
 })
 
+test('middle drag from a node pans the canvas exactly with the pointer', async ({ desktop }) => {
+  const { page, ids } = desktop
+  const node = page.locator(`.react-flow__node[data-id="${ids[0]}"]`)
+  const before = await node.boundingBox()
+  if (!before) throw new Error('node not visible')
+  const x = before.x + 20
+  const y = before.y + 20
+  await page.mouse.move(x, y)
+  await page.mouse.down({ button: 'middle' })
+  for (let i = 1; i <= 10; i++) await page.mouse.move(x + i * 8, y + i * 5)
+  await page.mouse.up({ button: 'middle' })
+  const after = await node.boundingBox()
+  expect(after!.x - before.x).toBeCloseTo(80, 0)
+  expect(after!.y - before.y).toBeCloseTo(50, 0)
+})
+
 test('middle click on a sidebar row opens the node in a new tab', async ({ desktop }) => {
   const { page, ids } = desktop
   await page.locator(`.react-flow__node[data-id="${ids[0]}"]`).click()
