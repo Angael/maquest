@@ -1,5 +1,11 @@
 # @maquest/desktop
 
+## 0.16.0
+
+### Minor Changes
+
+- 1c740ef: Remove the "Revised" status. Nodes still marked `revised` are migrated to `done` automatically when a project is read, and agents passing `revised` get `done`.
+
 ## 0.15.0
 
 ### Minor Changes
