@@ -68,6 +68,5 @@ export const GROUP_STYLE: Record<GroupColor, { border: string; fill: string; tex
 export const STATUS_STYLE: Record<Status, { color: string; label: string }> = {
   idea: { color: '#857f79', label: 'Idea' },
   draft: { color: '#e8be62', label: 'Draft' },
-  revised: { color: '#70b4dc', label: 'Revised' },
   done: { color: '#61c594', label: 'Done' },
 }
