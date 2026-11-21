@@ -1,5 +1,11 @@
 # @maquest/desktop
 
+## 0.16.1
+
+### Patch Changes
+
+- 1b46ae8: Fix middle-drag panning moving the canvas at double speed when the drag starts on a card or connection.
+
 ## 0.16.0
 
 ### Minor Changes
