@@ -25,6 +25,7 @@ import {
   Redo2,
   Search,
   SpellCheck,
+  ChartColumn,
   Undo2,
   type LucideIcon,
 } from 'lucide-react'
@@ -39,6 +40,7 @@ import { travel } from '../lib/history'
 import { useCreateNode } from '../lib/actions'
 import { useLeaveProject } from '../lib/project'
 import { exportManuscript } from '../lib/manuscript'
+import { setUsageStats, usageStatsEnabled } from '../lib/analytics'
 import { MOD } from '../lib/shortcuts'
 import { Kbd, Shortcut } from './ui'
 import { openNodeTab, preventMiddleDown } from '../lib/nodeLink'
@@ -456,6 +458,13 @@ function useCommands(): PaletteCommand[] {
       icon: SpellCheck,
       keywords: ['spelling', 'dictionary'],
       run: () => void api.setSpellcheck(!spellcheck).then(() => refetchSpellcheck()),
+    },
+    {
+      id: 'usage-stats',
+      label: usageStatsEnabled() ? 'Turn off anonymous usage statistics' : 'Turn on anonymous usage statistics',
+      icon: ChartColumn,
+      keywords: ['analytics', 'telemetry', 'privacy', 'tracking'],
+      run: () => setUsageStats(!usageStatsEnabled()),
     },
     { id: 'shortcuts', label: 'Keyboard shortcuts', icon: Keyboard, shortcut: `${MOD}+/`, keywords: ['keys', 'help'], run: () => ui.setShortcutsOpen(true) },
     { id: 'recent', label: 'Clear recent nodes', icon: History, keywords: ['history'], run: () => useNavigation.setState({ recent: [] }) },

@@ -68,6 +68,11 @@ app.whenReady().then(() => {
     return win.isMaximized()
   })
 
+  // Read synchronously by the preload, before the renderer starts.
+  ipcMain.on('app:info', (event) => {
+    event.returnValue = { version: app.getVersion(), packaged: app.isPackaged }
+  })
+
   ipcMain.handle('api', (_e, method: keyof typeof handlers, args: unknown[]) => {
     const fn = handlers[method] as (...a: unknown[]) => unknown
     if (typeof fn !== 'function') throw new Error(`Unknown method ${String(method)}`)

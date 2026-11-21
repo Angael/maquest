@@ -1,4 +1,5 @@
 import type { Handlers } from '../../../main/handlers'
+import { trackCall } from './analytics'
 
 type Api = { [K in keyof Handlers]: (...args: Parameters<Handlers[K]>) => Promise<Awaited<ReturnType<Handlers[K]>>> }
 
@@ -6,8 +7,11 @@ type Api = { [K in keyof Handlers]: (...args: Parameters<Handlers[K]>) => Promis
 export const api = new Proxy({} as Api, {
   get:
     (_t, method: string) =>
-    (...args: unknown[]) =>
-      window.maquest.invoke(method, args),
+    async (...args: unknown[]) => {
+      const result: unknown = await window.maquest.invoke(method, args)
+      trackCall({ method, args, result })
+      return result
+    },
 })
 
 export const mediaUrl = (rel: string) => `maquest-media://p/${rel.split('/').map(encodeURIComponent).join('/')}`

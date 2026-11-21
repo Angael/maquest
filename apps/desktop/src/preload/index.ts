@@ -24,6 +24,7 @@ const bridge = {
     return () => void ipcRenderer.removeListener('update:status', listener)
   },
   platform: process.platform,
+  appInfo: ipcRenderer.sendSync('app:info') as { version: string; packaged: boolean },
   window: (action: 'minimize' | 'toggleMaximize' | 'close' | 'isMaximized') => ipcRenderer.invoke('window', action) as Promise<boolean>,
   onMaximized: (cb: (maximized: boolean) => void) => {
     const listener = (_e: unknown, maximized: boolean) => cb(maximized)
