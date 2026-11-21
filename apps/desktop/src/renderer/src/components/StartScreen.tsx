@@ -1,6 +1,6 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Copy, FolderOpen, FolderSearch, MoreHorizontal, Trash2, X } from 'lucide-react'
+import { AlertTriangle, Copy, FolderOpen, FolderSearch, MoreHorizontal, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { PROJECT_KINDS, type ProjectKind } from '@maquest/core/schema'
 import { api } from '../lib/api'
@@ -10,6 +10,9 @@ import { Logo, TitleBar } from './TitleBar'
 import { useOpenFolderShortcut } from '../lib/project'
 import { contextMenu } from './ContextMenu'
 import { copyText } from './menus/NodeMenu'
+import { ErrorReport } from './CrashScreen'
+import { copyAgentPrompt, reportError } from '../lib/errors'
+import type { CrashReport } from '../../../shared/crashReport'
 
 const KIND_LABEL: Record<ProjectKind, string> = { novel: 'Novel', screenplay: 'Screenplay', rpg: 'RPG campaign', mixed: 'Mixed' }
 
@@ -26,24 +29,36 @@ export function StartScreen() {
   const [name, setName] = useState('')
   const [kind, setKind] = useState<ProjectKind>('mixed')
   const [error, setError] = useState<string | null>(null)
+  /** Set when opening a project failed, so the error offers a prompt for the agent. */
+  const [errorReport, setErrorReport] = useState<CrashReport | null>(null)
+  /** The project that failed to open on launch; Maquest started without it. */
+  const [startupProblem, setStartupProblem] = useState<CrashReport | null>(null)
   const [busy, setBusy] = useState(false)
   const nameInput = useRef<HTMLInputElement>(null)
 
-  const run = async (action: () => Promise<unknown>, explain?: (message: string) => string) => {
+  useEffect(() => {
+    void api.takeStartupProblem().then(setStartupProblem)
+  }, [])
+
+  const run = async (action: () => Promise<unknown>, explain?: (message: string) => string, where?: string) => {
     setError(null)
+    setErrorReport(null)
     setBusy(true)
     try {
       if (await action()) await qc.invalidateQueries()
       else await qc.invalidateQueries({ queryKey: ['app'] })
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
+      // IPC wraps main-process errors as "Error invoking remote method 'api': Error: …".
+      const message = (err instanceof Error ? err.message : String(err)).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
       setError(explain ? explain(message) : message)
+      if (where) void reportError(where, err).then(setErrorReport)
     } finally {
       setBusy(false)
     }
   }
+  const openRecent = (root: string) => run(() => api.open(root), undefined, 'Opening a recent project')
 
-  useOpenFolderShortcut(() => !busy && void run(() => api.pickFolder()))
+  useOpenFolderShortcut(() => !busy && void run(() => api.pickFolder(), undefined, 'Opening a project folder'))
 
   const create = () => {
     const trimmed = name.trim()
@@ -60,7 +75,7 @@ export function StartScreen() {
     <>
       {withOpen && (
         <>
-          <MenuItem icon={FolderOpen} disabled={busy} onClick={() => void run(() => api.open(root))}>
+          <MenuItem icon={FolderOpen} disabled={busy} onClick={() => void openRecent(root)}>
             Open
           </MenuItem>
           <MenuSeparator />
@@ -116,6 +131,17 @@ export function StartScreen() {
             <p className="mt-1.5 text-sm text-pretty text-fg-subtle">Stories and worlds in plain markdown, written with your agent.</p>
           </header>
 
+          {startupProblem && (
+            <div className="relative mb-4">
+              <ErrorReport report={startupProblem} title="Couldn’t open your last project">
+                <p className="mt-2 text-sm text-pretty text-fg-subtle">Maquest started without it. Your files were not changed.</p>
+              </ErrorReport>
+              <div className="absolute top-2 right-2">
+                <IconButton icon={X} size="sm" label="Dismiss" onClick={() => setStartupProblem(null)} />
+              </div>
+            </div>
+          )}
+
           <form
             className="rounded-xl bg-panel p-4 shadow-[inset_0_0_0_1px_var(--color-line)]"
             onSubmit={(e) => {
@@ -157,7 +183,7 @@ export function StartScreen() {
           </form>
 
           <div className="mt-3 flex justify-center">
-            <Button size="md" disabled={busy} onClick={() => void run(() => api.pickFolder())}>
+            <Button size="md" disabled={busy} onClick={() => void run(() => api.pickFolder(), undefined, 'Opening a project folder')}>
               <FolderOpen size={14} aria-hidden />
               Open folder…
             </Button>
@@ -165,9 +191,15 @@ export function StartScreen() {
 
           <div aria-live="polite" className="min-h-0">
             {error && (
-              <p role="alert" className="mt-4 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">
+              <div role="alert" className="mt-4 rounded-md bg-danger-soft px-3 py-2 text-sm wrap-anywhere text-danger">
                 {error}
-              </p>
+                {errorReport && (
+                  <Button variant="subtle" size="sm" className="mt-2 flex" onClick={() => void copyAgentPrompt(errorReport)}>
+                    <Copy size={12} aria-hidden />
+                    Copy prompt for your agent
+                  </Button>
+                )}
+              </div>
             )}
           </div>
 
@@ -188,7 +220,7 @@ export function StartScreen() {
                       disabled={busy}
                       title={r.root}
                       className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-2 text-left outline-none focus-visible:shadow-[inset_0_0_0_1px_var(--color-accent)] focus-visible:outline-none!"
-                      onClick={() => void run(() => api.open(r.root))}
+                      onClick={() => void openRecent(r.root)}
                       onKeyDown={(e) => {
                         if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
                         e.preventDefault()
@@ -201,7 +233,14 @@ export function StartScreen() {
                         <span className="truncate text-sm text-fg">{r.config.name}</span>
                         <span className="truncate font-mono text-2xs text-fg-faint">{middle(r.root)}</span>
                       </span>
-                      <span className="shrink-0 pr-8 text-xs text-fg-subtle">{KIND_LABEL[r.config.kind] ?? r.config.kind}</span>
+                      {r.error ? (
+                        <span className="flex shrink-0 items-center gap-1 pr-8 text-xs text-danger" title={r.error}>
+                          <AlertTriangle size={12} aria-hidden />
+                          Can’t read settings
+                        </span>
+                      ) : (
+                        <span className="shrink-0 pr-8 text-xs text-fg-subtle">{KIND_LABEL[r.config.kind] ?? r.config.kind}</span>
+                      )}
                     </button>
                     <div className="absolute right-1.5 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 has-[[data-popup-open]]:opacity-100">
                       <Menu align="end" trigger={<IconButton icon={MoreHorizontal} size="sm" label={`More actions for ${r.config.name}`} disabled={busy} />}>

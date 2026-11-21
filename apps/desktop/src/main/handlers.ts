@@ -28,6 +28,8 @@ import {
 import { mapSvg, type MapDefaults, type MapDoc, type MapOp, type RenderOptions } from '@maquest/core/map'
 import { ProjectHistory } from './history'
 import { isGitRepo, syncFromRemote } from './gitSync'
+import { logError, report } from './crash'
+import type { CrashReport } from '../shared/crashReport'
 
 let current: Project | null = null
 let watcher: FSWatcher | null = null
@@ -72,13 +74,48 @@ function watch(root: string) {
   })
 }
 
+/** Runs a step that opening a project doesn't depend on; a failure is logged instead of blocking the project. */
+function optional(where: string, step: () => void) {
+  try {
+    step()
+  } catch (error) {
+    logError(where, error)
+  }
+}
+
 function openProject(root: string) {
-  current = new Project(root)
+  // Read everything that can reject the project before switching to it, so a broken project leaves the open one alone.
+  const project = new Project(root)
+  const config = project.config()
+  current = project
   history = new ProjectHistory()
-  writeAgentFiles(current.root, mcpLaunch())
-  pushRecent(current.root)
-  watch(current.root)
-  return { root: current.root, config: current.config() }
+  optional('Writing agent files', () => writeAgentFiles(project.root, mcpLaunch()))
+  optional('Updating the recent projects list', () => pushRecent(project.root))
+  optional('Watching the project folder', () => watch(project.root))
+  return { root: project.root, config }
+}
+
+/** A project that failed to open on launch; the start screen shows it with a report for the agent. */
+let startupProblem: CrashReport | null = null
+
+/** Opens the project given on the command line, or the last one, without letting a broken project stop the app from starting. */
+export function openOnLaunch(root: string) {
+  try {
+    openProject(root)
+  } catch (error) {
+    logError(`Opening ${root} on launch`, error)
+    startupProblem = report('Opening the last project on launch', error, root)
+  }
+}
+
+/** One recent entry; a project whose config can't be read still lists (by folder name) so it can be opened, inspected or removed. */
+function recentEntry(root: string): { root: string; config: ProjectConfig; error?: string } {
+  try {
+    return { root, config: new Project(root).config() }
+  } catch (error) {
+    logError(`Reading the recent project ${root}`, error)
+    return { root, config: { name: path.basename(root), kind: 'mixed' } as ProjectConfig, error: error instanceof Error ? error.message : String(error) }
+  }
 }
 
 function p(): Project {
@@ -88,7 +125,19 @@ function p(): Project {
 
 export const handlers = {
   // ---- app ----
-  recent: () => readRecent().map((root) => ({ root, config: new Project(root).config() })),
+  recent: () => readRecent().map(recentEntry),
+  /** Shown once by the start screen, then cleared. */
+  takeStartupProblem: () => {
+    const problem = startupProblem
+    startupProblem = null
+    return problem
+  },
+  /** Errors caught in the renderer go to the same log as the main process's; returns the details for a crash report. */
+  reportError: (where: string, message: string, stack?: string) => {
+    const error = Object.assign(new Error(message), { stack: stack ?? message })
+    logError(where, error)
+    return report(where, error, current?.root)
+  },
   current: () => (current ? { root: current.root, config: current.config() } : null),
   open: (root: string) => openProject(root),
   close: () => {

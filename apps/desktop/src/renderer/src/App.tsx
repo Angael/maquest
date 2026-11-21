@@ -28,6 +28,8 @@ import { flushPending } from './lib/pending'
 import { useHistoryShortcuts } from './lib/history'
 import { useNavigationShortcuts } from './lib/navigation'
 import { analytics } from './lib/analytics'
+import { ErrorBoundary } from './components/CrashScreen'
+import { api } from './lib/api'
 import './components/shell.css'
 
 export function App() {
@@ -79,43 +81,46 @@ function Main() {
     )
 
   return (
-    <ReactFlowProvider>
-      <WindowTitle project={current.config.name} />
-      <SyncToast root={current.root} />
-      <ImageViewer />
-      <ShortcutsDialog />
-      <ContextMenuHost />
-      <div className="flex h-full flex-col bg-app">
-        <CommandPalette />
-        <TopBar />
-        <div className="flex min-h-0 flex-1">
-          <Sidebar />
-          <main className="relative min-w-0 flex-1 bg-app">
-            {/* The canvas stays mounted so other views keep its viewport. */}
-            <div
-              className={view === 'canvas' ? 'absolute inset-0' : 'pointer-events-none invisible absolute inset-0 -z-10 [&_*]:invisible!'}
-              aria-hidden={view !== 'canvas'}
-            >
-              <Canvas />
-            </div>
-            {view === 'backlog' && <Backlog />}
-            {view === 'guidelines' && <Guidelines />}
-            {view === 'types' && <Types />}
-            {view === 'maps' && <MapList />}
-            {view === 'map' && <MapEditor />}
-            <LiveNotesPanel />
-          </main>
-          {selection && INSPECTOR_VIEWS.has(view) && (
-            <InspectorPanel>
-              <div className="flex min-h-0 w-full min-w-0 flex-col">
-                <InspectorTabs />
-                <Inspector key={`${selection.kind}:${selection.id}`} />
+    // A project that crashes the UI can be closed from the error screen, back to the start screen.
+    <ErrorBoundary key={current.root} where="Showing the project" onClose={() => api.close()}>
+      <ReactFlowProvider>
+        <WindowTitle project={current.config.name} />
+        <SyncToast root={current.root} />
+        <ImageViewer />
+        <ShortcutsDialog />
+        <ContextMenuHost />
+        <div className="flex h-full flex-col bg-app">
+          <CommandPalette />
+          <TopBar />
+          <div className="flex min-h-0 flex-1">
+            <Sidebar />
+            <main className="relative min-w-0 flex-1 bg-app">
+              {/* The canvas stays mounted so other views keep its viewport. */}
+              <div
+                className={view === 'canvas' ? 'absolute inset-0' : 'pointer-events-none invisible absolute inset-0 -z-10 [&_*]:invisible!'}
+                aria-hidden={view !== 'canvas'}
+              >
+                <Canvas />
               </div>
-            </InspectorPanel>
-          )}
+              {view === 'backlog' && <Backlog />}
+              {view === 'guidelines' && <Guidelines />}
+              {view === 'types' && <Types />}
+              {view === 'maps' && <MapList />}
+              {view === 'map' && <MapEditor />}
+              <LiveNotesPanel />
+            </main>
+            {selection && INSPECTOR_VIEWS.has(view) && (
+              <InspectorPanel>
+                <div className="flex min-h-0 w-full min-w-0 flex-col">
+                  <InspectorTabs />
+                  <Inspector key={`${selection.kind}:${selection.id}`} />
+                </div>
+              </InspectorPanel>
+            )}
+          </div>
         </div>
-      </div>
-    </ReactFlowProvider>
+      </ReactFlowProvider>
+    </ErrorBoundary>
   )
 }
 

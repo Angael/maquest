@@ -1,12 +1,24 @@
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, ipcMain, nativeTheme, net, protocol, session } from 'electron'
+import { installCrashHandlers, logError, showCrash, watchRenderer } from './crash'
 import { Project } from '@maquest/core'
-import { handlers, mediaPath } from './handlers'
+import { handlers, mediaPath, openOnLaunch } from './handlers'
 import { setupUpdates } from './updater'
 import { externalLinks, loadRenderer } from './windows'
 import { rememberWindowState, saveBeforeClose, savedWindowState } from './windowState'
 import { applySpellcheck, attachContextMenu } from './contextMenu'
+
+installCrashHandlers()
+
+/** Startup steps the window doesn't need: a failure is logged and the app starts anyway. */
+function step(where: string, run: () => void) {
+  try {
+    run()
+  } catch (error) {
+    logError(where, error)
+  }
+}
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'maquest-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } }])
 
@@ -40,13 +52,19 @@ function createWindow() {
   win.on('unmaximize', sendMaximized)
   win.on('enter-full-screen', sendMaximized)
   win.on('leave-full-screen', sendMaximized)
+  watchRenderer(
+    win,
+    () => loadRenderer(win),
+    () => handlers.current()?.root,
+  )
   loadRenderer(win)
 }
 
-app.whenReady().then(() => {
+async function start() {
+  await app.whenReady()
   // The app is dark only; native menus and dialogs follow.
   nativeTheme.themeSource = 'dark'
-  applySpellcheck(session.defaultSession)
+  step('Setting up spellcheck', () => applySpellcheck(session.defaultSession))
   // maquest-media://p/media/file.png -> <project>/media/file.png
   protocol.handle('maquest-media', (req) => {
     const rel = decodeURIComponent(new URL(req.url).pathname).replace(/^\/+/, '')
@@ -80,14 +98,23 @@ app.whenReady().then(() => {
   })
 
   // `maquest <project-folder>` opens it directly; otherwise reopen the last used project.
-  const arg = process.argv.slice(app.isPackaged ? 1 : 2).find((a) => !a.startsWith('-') && Project.isProject(a))
-  const last = handlers.recent()[0]?.root
-  if (arg) handlers.open(path.resolve(arg))
-  else if (last) handlers.open(last)
+  // A project that fails to open must not keep the window from showing: the start screen reports it instead.
+  step('Choosing the project to open', () => {
+    const arg = process.argv.slice(app.isPackaged ? 1 : 2).find((a) => !a.startsWith('-') && Project.isProject(a))
+    const last = handlers.recent()[0]?.root
+    if (arg) openOnLaunch(path.resolve(arg))
+    else if (last) openOnLaunch(last)
+  })
 
+  // Updates first: a broken release must still be able to update itself to the fix.
+  step('Setting up updates', setupUpdates)
   createWindow()
-  setupUpdates()
   app.on('activate', () => BrowserWindow.getAllWindows().length === 0 && createWindow())
+}
+
+start().catch(async (error: unknown) => {
+  await showCrash('Maquest failed to start', error, { actions: ['quit'] })
+  app.exit(1)
 })
 
 app.on('window-all-closed', () => process.platform !== 'darwin' && app.quit())
