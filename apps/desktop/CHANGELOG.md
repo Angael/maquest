@@ -1,5 +1,15 @@
 # @maquest/desktop
 
+## 0.17.0
+
+### Minor Changes
+
+- 7a6128a: Maquest now sends anonymous, cookieless usage statistics (which views are used, projects opened or created, nodes, links and boards created, manuscript exports and update installs) to help decide what to improve. No titles, text, paths or other project content are ever sent. Turn it off anytime with “Turn off anonymous usage statistics” in the command palette (Ctrl+K).
+
+### Patch Changes
+
+- 5eab993: Maquest no longer fails silently. A project that can’t be opened on launch no longer stops the app from starting: the start screen explains what went wrong, and unreadable projects stay in Recent with a warning. Crashes in the window, the main process or during startup show the error instead of a blank or missing window, with a “Copy prompt for your agent” button that has your agent report the problem on GitHub and propose a fix. Errors are also written to a log file.
+
 ## 0.16.1
 
 ### Patch Changes
