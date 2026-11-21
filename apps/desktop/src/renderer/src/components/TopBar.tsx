@@ -20,6 +20,7 @@ import {
   X,
 } from 'lucide-react'
 import { api } from '../lib/api'
+import { analytics } from '../lib/analytics'
 import { useCurrent, useNodes, useRecent } from '../lib/queries'
 import { useUI, type View } from '../lib/store'
 import { Button, IconButton, Menu, MenuItem, MenuLabel, MenuSeparator, Popover, Separator, Shortcut, Tooltip, cn } from './ui'
@@ -339,6 +340,7 @@ function CopyCommand({ command }: { command: string }) {
         className={cn(copied && 'text-success hover:text-success')}
         onClick={() => {
           void navigator.clipboard.writeText(command).then(() => {
+            analytics.track('agent_command_copied')
             setCopied(true)
             clearTimeout(timer.current)
             timer.current = setTimeout(() => setCopied(false), 1500)

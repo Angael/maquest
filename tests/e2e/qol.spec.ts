@@ -147,3 +147,19 @@ test('typing right before closing the project still saves', async ({ desktop }) 
   await expect(page.getByRole('button', { name: /Open folder/ }).first()).toBeVisible()
   expect(project.getNode(ids[0])?.body).toContain('Dust on every shelf.')
 })
+
+test('the palette turns anonymous usage statistics off and on again', async ({ desktop }) => {
+  const { page } = desktop
+  const input = page.getByPlaceholder(PALETTE)
+  const ignored = () => page.evaluate(() => localStorage.getItem('minalytics:ignore'))
+
+  await page.keyboard.press('ControlOrMeta+k')
+  await input.fill('usage statistics')
+  await page.locator('[cmdk-item]').filter({ hasText: 'Turn off anonymous usage statistics' }).click()
+  await expect.poll(ignored).toBe('1')
+
+  await page.keyboard.press('ControlOrMeta+k')
+  await input.fill('usage statistics')
+  await page.locator('[cmdk-item]').filter({ hasText: 'Turn on anonymous usage statistics' }).click()
+  await expect.poll(ignored).toBeNull()
+})

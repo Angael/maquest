@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { toast } from 'sonner'
 import type { UpdateStatus } from '../../../main/updater'
+import { analytics } from '../lib/analytics'
 
 const ID = 'app-update'
 
@@ -53,7 +54,13 @@ export function UpdateToast() {
           toast.success(`Maquest ${status.to} is ready`, {
             ...opts,
             description: `Updating from ${status.from} to ${status.to}`,
-            action: { label: 'Restart', onClick: () => void window.maquest.installUpdate() },
+            action: {
+              label: 'Restart',
+              onClick: () => {
+                analytics.track('update_installed')
+                void window.maquest.installUpdate()
+              },
+            },
           })
         else toast.warning(`Couldn't download Maquest ${status.to}`, { ...opts, description: status.reason })
       }),

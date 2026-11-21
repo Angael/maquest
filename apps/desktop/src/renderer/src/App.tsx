@@ -27,6 +27,7 @@ import { ShortcutsDialog } from './components/ShortcutsDialog'
 import { flushPending } from './lib/pending'
 import { useHistoryShortcuts } from './lib/history'
 import { useNavigationShortcuts } from './lib/navigation'
+import { analytics } from './lib/analytics'
 import './components/shell.css'
 
 export function App() {
@@ -52,6 +53,11 @@ function Main() {
   const { data: current, isLoading } = useCurrent()
   const view = useUI((s) => s.view)
   const selection = useUI((s) => s.selection)
+  const page = isLoading ? null : current ? view : 'start'
+  // Each view counts as a page on the usage dashboard.
+  useEffect(() => {
+    if (page) analytics.pageview(`/${page}`)
+  }, [page])
 
   // Commands from the native text menu.
   useEffect(
