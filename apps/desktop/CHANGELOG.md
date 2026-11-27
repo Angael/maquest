@@ -1,5 +1,11 @@
 # @maquest/desktop
 
+## 0.17.1
+
+### Patch Changes
+
+- 3373923: Images in a note's text open full size on a single click again. Previously the first click switched the image to its raw markdown, so double-clicking it never opened the viewer.
+
 ## 0.17.0
 
 ### Minor Changes
