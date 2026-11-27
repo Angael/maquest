@@ -67,6 +67,20 @@ test('media opens full size in a zoomable viewer', async ({ desktop }) => {
   await expect(viewer).toBeHidden()
 })
 
+test('an image in the text opens full size on click', async ({ desktop }) => {
+  const { page, project, ids } = desktop
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
+  fs.mkdirSync(path.join(project.root, 'media'), { recursive: true })
+  fs.writeFileSync(path.join(project.root, 'media', 'map.png'), png)
+  project.updateNode(ids[1], { body: 'Before.\n\n![Map](media/map.png)\n\nAfter.' })
+  await page.locator(`.react-flow__node[data-id="${ids[1]}"]`).click()
+  const image = page.locator('.cm-content img.cm-md-media')
+  await image.click()
+  await expect(page.locator('.yarl__root img.yarl__slide_image')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(image).toBeVisible()
+})
+
 test('markdown tables render as tables and show raw markdown while edited', async ({ desktop }) => {
   const { page, project, ids } = desktop
   project.updateNode(ids[1], { body: 'Stats:\n\n| STR | DEX |\n|---|---:|\n| 18 (+4) | **11** |\n\nEnd.' })
