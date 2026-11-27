@@ -112,14 +112,17 @@ class MediaWidget extends WidgetType {
     if (el instanceof HTMLVideoElement) el.controls = true
     else {
       el.alt = this.alt
-      el.title = 'Double-click to view full size'
-      el.addEventListener('dblclick', () => openImage(url))
+      el.title = 'View full size'
+      // A click opens the viewer. The editor must not see it: moving the cursor onto the image's line
+      // would swap the image for its raw markdown before a double-click could land on it.
+      el.addEventListener('mousedown', (e) => e.preventDefault())
+      el.addEventListener('click', () => openImage(url))
     }
     return el
   }
-  ignoreEvent(e: Event) {
-    // let video controls and image double-click work; single clicks on images still move the cursor in
-    return e.target instanceof HTMLVideoElement || e.type === 'dblclick'
+  ignoreEvent() {
+    // video controls and image clicks stay with the widget; edit the markup with the keyboard or by clicking beside it
+    return true
   }
 }
 

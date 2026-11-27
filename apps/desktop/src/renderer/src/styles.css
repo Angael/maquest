@@ -482,6 +482,9 @@ textarea::placeholder {
 .cm-md-media {
   @apply my-3 block max-h-96 rounded-md;
 }
+img.cm-md-media {
+  @apply cursor-zoom-in;
+}
 .cm-md-node {
   @apply cursor-pointer rounded-[4px] bg-accent-soft px-1 py-px font-sans text-[0.875em] font-medium text-accent-text transition-colors duration-100 hover:bg-accent/25;
 }
